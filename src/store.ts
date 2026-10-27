@@ -76,11 +76,11 @@ export function getEvents(caseId: string): RecordedEvent[] {
 }
 
 export function appendEvent(caseId: string, event: CourtEvent): RecordedEvent {
-  const d = open();
-  const { next } = d.prepare("SELECT COALESCE(MAX(seq), 0) + 1 AS next FROM events WHERE case_id = ?").get(caseId) as { next: number };
   const at = new Date().toISOString();
-  d.prepare("INSERT INTO events (case_id, seq, at, body) VALUES (?, ?, ?, ?)").run(caseId, next, at, JSON.stringify(event));
-  return { ...event, seq: next, at };
+  const { seq } = open()
+    .prepare("INSERT INTO events (case_id, seq, at, body) SELECT ?, COALESCE(MAX(seq), 0) + 1, ?, ? FROM events WHERE case_id = ? RETURNING seq")
+    .get(caseId, at, JSON.stringify(event), caseId) as { seq: number };
+  return { ...event, seq, at };
 }
 
 export function claimNextCase(): CaseRecord | undefined {

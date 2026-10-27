@@ -10,11 +10,19 @@ import { createCase, getCase, newCaseId, requeueCase, UPLOADS_DIR } from "@/stor
 const IMAGE_TYPES = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif" } as const;
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 
+const PRIVATE_HOST = /^(localhost|.*\.local|.*\.internal|0\.0\.0\.0|127\.\d+\.\d+\.\d+|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+|169\.254\.\d+\.\d+|\[.*\])$/i;
+
 const note = z.string().trim().max(500).optional().transform((v) => v || undefined);
 
 const RequestForm = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("text"), text: z.string().trim().min(20, "Pegá un texto de al menos 20 caracteres.").max(6000, "El texto es demasiado largo (máximo 6000 caracteres).") }),
-  z.object({ kind: z.literal("link"), url: z.url({ protocol: /^https?$/, error: "Ingresá un enlace válido (http o https)." }), note }),
+  z.object({
+    kind: z.literal("link"),
+    url: z
+      .url({ protocol: /^https?$/, error: "Ingresá un enlace válido (http o https)." })
+      .refine((u) => !PRIVATE_HOST.test(new URL(u).hostname), "Ingresá un enlace público."),
+    note,
+  }),
   z.object({
     kind: z.literal("image"),
     image: z

@@ -208,7 +208,7 @@ export async function holdSession(court: Court, docket: Docket): Promise<void> {
         ),
       };
       if (!(await turn(court.judge, "Resolvé la objeción " + objection.id + " con la herramienta rule.", ruleTools, () => ruled)))
-        record({ type: "ruling", objectionId: objection.id, sustained: false, reason: "Sin resolución expresa del juez: se tiene por rechazada." });
+        throw new Error("El juez no resolvió la objeción " + objection.id + ".");
     }
   }
 
@@ -259,15 +259,13 @@ export async function holdSession(court: Court, docket: Docket): Promise<void> {
   }
 
   await Promise.all(
-    COUNSEL.map((c) =>
-      turn(
-        court.counsel[c],
-        "Etapa de instrucción. Investigá cada afirmación y presentá la prueba relevante con file_evidence, una llamada por prueba. Incluí la prueba que contradiga tu intuición inicial. Todavía no argumentes.",
-        { file_evidence: evidenceTool(c) },
-        () => true,
-        docket.images
-      )
-    )
+    COUNSEL.map(async (c) => {
+      const filed = () => log.some((e) => e.type === "evidence_filed" && e.evidence.by === c);
+      const prompt =
+        "Etapa de instrucción. Investigá cada afirmación y presentá la prueba relevante con file_evidence, una llamada por prueba. Incluí la prueba que contradiga tu intuición inicial. Todavía no argumentes.";
+      if (!(await turn(court.counsel[c], prompt, { file_evidence: evidenceTool(c) }, filed, docket.images)))
+        record({ type: "absence", by: c, stage: "discovery" });
+    })
   );
 
   for (const stage of ["opening", "rebuttal"] as const) {

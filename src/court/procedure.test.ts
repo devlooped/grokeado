@@ -43,7 +43,7 @@ function counsel(name: Counsel, votes: Record<string, string> | null): Script {
       }
       return [["address_court", { text: "Mi evaluación de las afirmaciones.", evidenceIds: [p] }]];
     }
-    if (tools.includes("file_evidence"))
+    if (tools.includes("file_evidence") && name !== "claude")
       return [["file_evidence", { claimId: "A1", title: "INDEC, Censo 2022", url: "https://www.indec.gob.ar/", excerpt: "Córdoba: 3.840.905 habitantes." }]];
     return [];
   };
@@ -99,8 +99,31 @@ test("a full session reaches consensus where 2 of 3 agree and sends a split to t
   assert.ok(events.some((e) => e.type === "absence" && e.by === "claude" && e.stage === "closing"), "a counsel that never votes is recorded as absent");
   assert.equal(events.filter((e) => e.type === "vote").length, 4);
 
+  assert.equal(sends.claude.filter((p) => /Etapa de instrucción/.test(p)).length, 2, "a counsel who files no evidence gets one retry");
+  assert.ok(events.some((e) => e.type === "absence" && e.by === "claude" && e.stage === "discovery"), "and is then recorded as absent from discovery");
+
   assert.match(sends.grok[0], /Sos Grok, uno de los tres letrados/, "first turn carries the role brief");
   assert.doesNotMatch(sends.grok[1], /Sos Grok, uno de los tres letrados/, "later turns carry only the news");
+});
+
+test("a judge who never rules on an objection suspends the session instead of a ruling being invented", async () => {
+  const silentJudge: Script = (prompt, tools) => (tools.includes("rule") ? [] : judgeScript(prompt, tools));
+  const sink = { results: [] as { tool: string; isError: boolean; text: string }[], sends: [] as string[] };
+  const seat = (s: Script) => scriptedSeat(s, sink.results, sink.sends);
+  const events: CourtEvent[] = [];
+  await assert.rejects(
+    holdSession(
+      {
+        judge: seat(silentJudge),
+        counsel: { grok: seat(counsel("grok", null)), gemini: seat(counsel("gemini", null)), claude: seat(counsel("claude", null)) },
+        judgeModel: "j",
+        counselModels: { grok: "a", gemini: "b", claude: "c" },
+      },
+      { submission: { kind: "text", text: "x".repeat(30) }, images: [], today: "hoy", record: (e) => (events.push(e), { ...e, seq: events.length, at: "" }) }
+    ),
+    /no resolvió la objeción O1/
+  );
+  assert.ok(!events.some((e) => e.type === "ruling"), "no ruling is recorded in the judge's name");
 });
 
 test("the judge can dismiss a submission with no verifiable claims", async () => {
