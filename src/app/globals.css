@@ -1,0 +1,78 @@
+@import "tailwindcss";
+
+@theme {
+  --color-paper: #f3ede1;
+  --color-paper-deep: #e9e0cf;
+  --color-ink: #1b1915;
+  --color-ink-soft: #57524a;
+  --color-rule: #cfc4ae;
+  --color-celeste: #5b9fd6;
+  --color-celeste-deep: #2f6fa6;
+  --color-seal: #8b2323;
+  --color-verdadero: #2f7a4b;
+  --color-falso: #b3361f;
+  --color-dudoso: #b07d1a;
+  --font-display: var(--font-instrument), "Times New Roman", serif;
+  --font-sans: var(--font-archivo), system-ui, sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, monospace;
+}
+
+html {
+  background: var(--color-paper);
+  color: var(--color-ink);
+}
+
+body {
+  background-image:
+    radial-gradient(circle at 15% 10%, rgb(255 255 255 / 0.55), transparent 45%),
+    radial-gradient(circle at 85% 90%, rgb(91 159 214 / 0.08), transparent 40%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.07'/%3E%3C/svg%3E");
+}
+
+.rule-double {
+  border-top: 3px double var(--color-ink);
+}
+
+.reveal {
+  animation: reveal 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+@keyframes reveal {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+
+.gavel {
+  transform-origin: 80% 80%;
+  animation: gavel 2.4s ease-in-out infinite;
+}
+
+@keyframes gavel {
+  0%, 60%, 100% { transform: rotate(0deg); }
+  70% { transform: rotate(-28deg); }
+  80% { transform: rotate(4deg); }
+  86% { transform: rotate(0deg); }
+}
+
+.session-light {
+  animation: session-light 1.8s ease-in-out infinite;
+}
+
+@keyframes session-light {
+  50% { opacity: 0.35; }
+}
+
+.struck {
+  text-decoration: line-through;
+  text-decoration-color: var(--color-seal);
+  text-decoration-thickness: 1.5px;
+  opacity: 0.6;
+}
+
+mark.cita {
+  background: linear-gradient(transparent 55%, rgb(91 159 214 / 0.35) 55%);
+  color: inherit;
+  padding: 0 1px;
+}
