@@ -12,7 +12,7 @@ import { getCase, getEvents } from "@/store.ts";
 
 export async function generateMetadata(props: PageProps<"/caso/[id]">): Promise<Metadata> {
   const { id } = await props.params;
-  const c = getCase(id);
+  const c = await getCase(id);
   return { title: c ? "Caso Nº " + id + " · Grokeado" : "Grokeado" };
 }
 
@@ -158,12 +158,12 @@ function Suspended({ c }: { c: CaseRecord }) {
 export default async function CasePage(props: PageProps<"/caso/[id]">) {
   await connection();
   const { id } = await props.params;
-  const c = getCase(id);
+  const c = await getCase(id);
   if (!c) notFound();
   if (c.status === "queued" || c.status === "in_session") return <InSession c={c} />;
   if (c.status === "failed") return <Suspended c={c} />;
 
-  const events = getEvents(id);
+  const events = await getEvents(id);
   const view = project(events);
   const byJudge = view.claims.filter((cl) => cl.judgment?.method === "judge").length;
 

@@ -1,11 +1,11 @@
-import type { CourtEvent } from "../src/domain/court.ts";
-import { appendEvent, createCase, finishCase } from "../src/store.ts";
+import type { RecordedEvent } from "../src/domain/court.ts";
+import { createCase, finishCase, recordEvents } from "../src/store.ts";
 
-if (!process.env.GROKEADO_DATA?.includes("fixture")) throw new Error("set GROKEADO_DATA to a fixture folder; this never writes to the real database");
+if (!process.env.DATABASE_URL?.includes("fixture")) throw new Error("point DATABASE_URL at a throwaway database whose URL contains 'fixture'; this never writes to the real database");
 
 const id = "fixture1";
-createCase(id, { kind: "text", text: "[Fixture visual] El dulce de leche se inventó en la Argentina y la birome es un invento argentino." });
-const events: CourtEvent[] = [
+await createCase(id, { kind: "text", text: "[Fixture visual] El dulce de leche se inventó en la Argentina y la birome es un invento argentino." });
+const events = [
   { type: "session_opened", judgeModel: "grok-4.7", counselModels: { grok: "grok-4.7", gemini: "gemini-4-argon", claude: "claude-opus-5-5" } },
   { type: "claims_entered", claims: [
     { id: "A1", quote: "El dulce de leche se inventó en la Argentina", text: "El dulce de leche se inventó en la Argentina." },
@@ -27,6 +27,7 @@ const events: CourtEvent[] = [
   { type: "judgment", claimId: "A2", verdict: "verdadero", method: "consensus", reasoning: "" },
   { type: "session_closed" },
 ];
-for (const e of events) appendEvent(id, e);
-finishCase(id, "resolved");
+const at = new Date().toISOString();
+await recordEvents(id, events.map((e, i): RecordedEvent => ({ ...e, seq: i + 1, at }) as RecordedEvent));
+await finishCase(id, "resolved");
 console.log(id);

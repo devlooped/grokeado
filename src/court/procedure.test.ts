@@ -1,25 +1,37 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { project, type Counsel, type CourtEvent, type RecordedEvent } from "../domain/court.ts";
-import { holdSession, type Court } from "./procedure.ts";
-import { toSdkTools, type Seat, type Toolset } from "./seat.ts";
+import { holdSession, type Bench } from "./procedure.ts";
+import { conductTurn, type Converse, type Docket, type SeatId } from "./turns.ts";
+import { toSdkTools } from "./toolset.ts";
 
 type Call = [tool: string, args: Record<string, unknown>];
 type Script = (prompt: string, tools: string[]) => Call[];
+type Result = { tool: string; isError: boolean; text: string };
 
-function scriptedSeat(script: Script, results: { tool: string; isError: boolean; text: string }[], sends: string[]): Seat {
-  return {
-    async send(prompt: string, tools: Toolset) {
-      sends.push(prompt);
-      const sdk = toSdkTools(tools);
-      for (const [name, args] of script(prompt, Object.keys(tools))) {
-        const out = (await sdk[name].execute(args as never, {})) as { isError?: boolean; content?: { text: string }[] } | string;
-        const isError = typeof out === "object" && out.isError === true;
-        results.push({ tool: name, isError, text: typeof out === "string" ? out : out.content?.[0]?.text ?? "" });
-      }
-    },
-    async dispose() {},
+const MODELS = { judge: "grok-4.7", counsel: { grok: "grok-4.7", gemini: "gemini-4-argon", claude: "claude-opus-5-5" } };
+const DOCKET: Docket = { submission: { kind: "text", text: "CABA tiene más habitantes que Córdoba y la inflación de 2025 fue de un dígito." }, today: "27 de octubre de 2026" };
+
+function makeBench(scripts: Record<SeatId, Script>, docket: Docket = DOCKET) {
+  const results: Result[] = [];
+  const prompts: Record<SeatId, string[]> = { judge: [], grok: [], gemini: [], claude: [] };
+  const events: RecordedEvent[] = [];
+  const converse: Converse = async ({ seat, prompt, tools }) => {
+    prompts[seat].push(prompt);
+    const sdk = toSdkTools(tools);
+    for (const [name, args] of scripts[seat](prompt, Object.keys(tools))) {
+      const out = (await sdk[name].execute(args as never, {})) as { isError?: boolean; content?: { text: string }[] } | string;
+      const isError = typeof out === "object" && out.isError === true;
+      results.push({ tool: name, isError, text: typeof out === "string" ? out : out.content?.[0]?.text ?? "" });
+    }
   };
+  const bench: Bench = {
+    submission: docket.submission,
+    models: MODELS,
+    play: (spec, record, attempt) => conductTurn(docket, spec, record, attempt, converse),
+    commit: async (batch) => void events.push(...batch),
+  };
+  return { bench, results, prompts, events };
 }
 
 const lastId = (prompt: string, prefix: string) => [...prompt.matchAll(new RegExp("\\[(" + prefix + "\\d+)\\]", "g"))].at(-1)?.[1];
@@ -58,32 +70,17 @@ const judgeScript: Script = (_prompt, tools) => {
 };
 
 test("a full session reaches consensus where 2 of 3 agree and sends a split to the judge", async () => {
-  const results: { tool: string; isError: boolean; text: string }[] = [];
-  const sends: Record<string, string[]> = { judge: [], grok: [], gemini: [], claude: [] };
-  const court: Court = {
-    judge: scriptedSeat(judgeScript, results, sends.judge),
-    counsel: {
-      grok: scriptedSeat(counsel("grok", { A1: "falso", A2: "verdadero" }), results, sends.grok),
-      gemini: scriptedSeat(counsel("gemini", { A1: "falso", A2: "falso" }), results, sends.gemini),
-      claude: scriptedSeat(counsel("claude", null), results, sends.claude),
-    },
-    judgeModel: "grok-4.7",
-    counselModels: { grok: "grok-4.7", gemini: "gemini-4-argon", claude: "claude-opus-5-5" },
-  };
-  const events: RecordedEvent[] = [];
-  await holdSession(court, {
-    submission: { kind: "text", text: "CABA tiene más habitantes que Córdoba y la inflación de 2025 fue de un dígito." },
-    images: [],
-    today: "27 de octubre de 2026",
-    record: (e: CourtEvent) => {
-      const r = { ...e, seq: events.length + 1, at: new Date().toISOString() };
-      events.push(r);
-      return r;
-    },
+  const { bench, results, prompts, events } = makeBench({
+    judge: judgeScript,
+    grok: counsel("grok", { A1: "falso", A2: "verdadero" }),
+    gemini: counsel("gemini", { A1: "falso", A2: "falso" }),
+    claude: counsel("claude", null),
   });
+  await holdSession(bench);
 
   assert.equal(events[0].type, "session_opened");
   assert.equal(events.at(-1)?.type, "session_closed");
+  assert.deepEqual(events.map((e) => e.seq), events.map((_, i) => i + 1), "seq is contiguous");
 
   const view = project(events);
   assert.deepEqual(view.claims.map((c) => [c.id, c.judgment?.verdict, c.judgment?.method]), [
@@ -95,49 +92,40 @@ test("a full session reaches consensus where 2 of 3 agree and sends a split to t
   const rejected = results.find((r) => r.isError && r.tool === "make_statement");
   assert.match(rejected?.text ?? "", /P99/, "citing evidence not in the record is rejected back to the model");
 
-  assert.equal(sends.claude.filter((p) => /tu conclusión/.test(p)).length, 2, "a missing vote gets one retry");
+  const evidenceIds = events.flatMap((e) => (e.type === "evidence_filed" ? [e.evidence.id] : []));
+  assert.deepEqual(evidenceIds.slice(0, 2), ["P1", "P2"], "evidence filed in parallel is numbered uniquely");
+  assert.equal(new Set(evidenceIds).size, evidenceIds.length);
+
+  assert.equal(prompts.claude.filter((p) => /tu conclusión/.test(p)).length, 2, "a missing vote gets one retry");
   assert.ok(events.some((e) => e.type === "absence" && e.by === "claude" && e.stage === "closing"), "a counsel that never votes is recorded as absent");
   assert.equal(events.filter((e) => e.type === "vote").length, 4);
 
-  assert.equal(sends.claude.filter((p) => /Etapa de investigación/.test(p)).length, 2, "a counsel who files no evidence gets one retry");
+  assert.equal(prompts.claude.filter((p) => /Etapa de investigación/.test(p)).length, 2, "a counsel who files no evidence gets one retry");
   assert.ok(events.some((e) => e.type === "absence" && e.by === "claude" && e.stage === "discovery"), "and is then recorded as absent from discovery");
 
-  assert.match(sends.grok[0], /Sos Grok, uno de los tres analistas/, "first turn carries the role brief");
-  assert.doesNotMatch(sends.grok[1], /Sos Grok, uno de los tres analistas/, "later turns carry only the news");
+  for (const p of prompts.grok) {
+    assert.match(p, /Sos Grok, uno de los tres analistas/, "every turn carries the role brief");
+    assert.match(p, /Registro del debate hasta ahora/, "and the record, since seats keep no memory");
+  }
+  assert.match(prompts.grok.at(-1)!, /\[I1\]/, "later turns see earlier statements");
 });
 
 test("a judge who never rules on an objection suspends the session instead of a ruling being invented", async () => {
   const silentJudge: Script = (prompt, tools) => (tools.includes("rule") ? [] : judgeScript(prompt, tools));
-  const sink = { results: [] as { tool: string; isError: boolean; text: string }[], sends: [] as string[] };
-  const seat = (s: Script) => scriptedSeat(s, sink.results, sink.sends);
-  const events: CourtEvent[] = [];
-  await assert.rejects(
-    holdSession(
-      {
-        judge: seat(silentJudge),
-        counsel: { grok: seat(counsel("grok", null)), gemini: seat(counsel("gemini", null)), claude: seat(counsel("claude", null)) },
-        judgeModel: "j",
-        counselModels: { grok: "a", gemini: "b", claude: "c" },
-      },
-      { submission: { kind: "text", text: "x".repeat(30) }, images: [], today: "hoy", record: (e) => (events.push(e), { ...e, seq: events.length, at: "" }) }
-    ),
-    /no resolvió la objeción O1/
-  );
+  const { bench, events } = makeBench({
+    judge: silentJudge,
+    grok: counsel("grok", null),
+    gemini: counsel("gemini", null),
+    claude: counsel("claude", null),
+  });
+  await assert.rejects(holdSession(bench), /no resolvió la objeción O1/);
   assert.ok(!events.some((e) => e.type === "ruling"), "no ruling is recorded in the judge's name");
 });
 
 test("the judge can dismiss a submission with no verifiable claims", async () => {
-  const noop: Seat = { send: async () => {}, dispose: async () => {} };
-  const judge: Seat = {
-    async send(_p, tools) {
-      await toSdkTools(tools).dismiss_case.execute({ reason: "Es una opinión, no una afirmación fáctica." }, {});
-    },
-    dispose: async () => {},
-  };
-  const events: CourtEvent[] = [];
-  await holdSession(
-    { judge, counsel: { grok: noop, gemini: noop, claude: noop }, judgeModel: "j", counselModels: { grok: "a", gemini: "b", claude: "c" } },
-    { submission: { kind: "text", text: "Messi es el mejor." }, images: [], today: "hoy", record: (e) => (events.push(e), { ...e, seq: events.length, at: "" }) }
-  );
+  const dismiss: Script = (_p, tools) => (tools.includes("dismiss_case") ? [["dismiss_case", { reason: "Es una opinión, no una afirmación fáctica." }]] : []);
+  const { bench, events } = makeBench({ judge: dismiss, grok: () => [], gemini: () => [], claude: () => [] });
+  await holdSession(bench);
   assert.deepEqual(events.map((e) => e.type), ["session_opened", "dismissed", "session_closed"]);
 });
+

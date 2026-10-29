@@ -20,7 +20,7 @@ export type CaseStatus = "queued" | "in_session" | "resolved" | "failed";
 export type Submission =
   | { kind: "text"; text: string }
   | { kind: "link"; url: string; note?: string }
-  | { kind: "image"; file: string; mimeType: string; note?: string };
+  | { kind: "image"; mimeType: string; note?: string };
 
 export interface Claim {
   id: string;

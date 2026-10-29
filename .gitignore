@@ -5,3 +5,7 @@ next-env.d.ts
 data/
 test-results/
 .env*
+!.env.example
+.workflow-data/
+.vercel/
+/.swc

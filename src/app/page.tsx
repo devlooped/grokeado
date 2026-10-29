@@ -12,8 +12,8 @@ const STEPS = [
   { n: "III", title: "Resultado", body: "Votan verdadero, falso o no verificable. Si dos coinciden, hay mayoría. Si no, desempata el moderador con la evidencia del registro." },
 ];
 
-function CaseRow({ c }: { c: CaseRecord }) {
-  const view = c.status === "resolved" ? project(getEvents(c.id)) : undefined;
+async function CaseRow({ c }: { c: CaseRecord }) {
+  const view = c.status === "resolved" ? project(await getEvents(c.id)) : undefined;
   return (
     <li>
       <Link href={"/caso/" + c.id} className="group grid grid-cols-[auto_1fr_auto] items-center gap-4 border-b border-rule py-4 transition hover:bg-paper-deep/60">
@@ -46,7 +46,7 @@ function CaseRow({ c }: { c: CaseRecord }) {
 
 export default async function Home() {
   await connection();
-  const cases = listCases(20);
+  const cases = await listCases(20);
   return (
     <>
       <section className="grid gap-10 pt-10 md:grid-cols-[1.1fr_1fr] md:items-start">

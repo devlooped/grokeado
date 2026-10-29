@@ -1,11 +1,11 @@
 "use server";
 
-import { mkdirSync, writeFileSync } from "node:fs";
-import path from "node:path";
 import { redirect } from "next/navigation";
+import { start } from "workflow/api";
 import { z } from "zod";
 import type { Submission } from "@/domain/court.ts";
-import { createCase, getCase, newCaseId, requeueCase, UPLOADS_DIR } from "@/store.ts";
+import { createCase, finishCase, newCaseId, requeueCase } from "@/store.ts";
+import { courtSession } from "@/workflows/court-session.ts";
 
 const IMAGE_TYPES = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif" } as const;
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
@@ -42,20 +42,32 @@ export async function requestFactCheck(_prev: RequestState, formData: FormData):
 
   const id = newCaseId();
   let submission: Submission;
+  let image: Buffer | undefined;
   const input = parsed.data;
   if (input.kind === "image") {
-    const file = id + "." + IMAGE_TYPES[input.image.type as keyof typeof IMAGE_TYPES];
-    mkdirSync(UPLOADS_DIR, { recursive: true });
-    writeFileSync(path.join(/*turbopackIgnore: true*/ UPLOADS_DIR, file), Buffer.from(await input.image.arrayBuffer()));
-    submission = { kind: "image", file, mimeType: input.image.type, note: input.note };
+    image = Buffer.from(await input.image.arrayBuffer());
+    submission = { kind: "image", mimeType: input.image.type, note: input.note };
   } else {
     submission = input;
   }
-  createCase(id, submission);
+  await createCase(id, submission, image);
+  try {
+    await start(courtSession, [id]);
+  } catch (err) {
+    console.error("could not start court session:", err);
+    await finishCase(id, "failed", "No se pudo iniciar la sesión.");
+  }
   redirect("/caso/" + id);
 }
 
 export async function retryCase(id: string): Promise<void> {
-  if (getCase(id)?.status === "failed") requeueCase(id);
+  if (await requeueCase(id)) {
+    try {
+      await start(courtSession, [id]);
+    } catch (err) {
+      console.error("could not start court session:", err);
+      await finishCase(id, "failed", "No se pudo iniciar la sesión.");
+    }
+  }
   redirect("/caso/" + id);
 }

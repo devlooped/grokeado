@@ -15,7 +15,7 @@
     "jsx": "react-jsx",
     "incremental": true,
     "types": ["node", "react", "react-dom"],
-    "plugins": [{ "name": "next" }],
+    "plugins": [{ "name": "next" }, { "name": "workflow" }],
     "paths": { "@/*": ["./src/*"] }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts", ".next/dev/types/**/*.ts"],
