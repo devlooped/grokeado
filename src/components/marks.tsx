@@ -67,7 +67,7 @@ export function VerdictGlyph({ verdict, className = "size-3" }: { verdict: Verdi
 export function VoteChip({ model, verdict }: { model: Counsel; verdict?: Verdict }) {
   const label = MODEL_NAME[model] + ": " + (verdict ? VERDICT_LABEL[verdict] : "no votó");
   return (
-    <span title={label} aria-label={label} className="relative inline-grid size-10 place-items-center rounded-full border border-rule bg-white/70 shadow-sm">
+    <span title={label} aria-label={label} className="relative inline-grid size-10 place-items-center rounded-full border border-rule bg-paper/70 shadow-sm">
       <ModelMark model={model} className="size-5" />
       <span
         className={
@@ -94,7 +94,7 @@ export function GavelIcon({ className = "size-5" }: { className?: string }) {
 }
 
 export function JudgeSeal({ verdict, model, size = "md" }: { verdict: Verdict; model: Counsel; size?: "md" | "lg" }) {
-  const label = "Fallo del juez (" + MODEL_NAME[model] + "): " + VERDICT_LABEL[verdict];
+  const label = "Desempate del moderador (" + MODEL_NAME[model] + "): " + VERDICT_LABEL[verdict];
   const dims = size === "lg" ? "size-24" : "size-14";
   return (
     <span title={label} aria-label={label} className={"relative inline-grid shrink-0 -rotate-6 place-items-center text-seal " + dims}>
@@ -104,7 +104,7 @@ export function JudgeSeal({ verdict, model, size = "md" }: { verdict: Verdict; m
         <path id="arc" d="M18 50a32 32 0 0 1 64 0" fill="none" />
         <text fontSize="11" letterSpacing="2" fill="currentColor" fontWeight="700">
           <textPath href="#arc" startOffset="50%" textAnchor="middle">
-            FALLO
+            DESEMPATE
           </textPath>
         </text>
       </svg>

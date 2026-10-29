@@ -53,6 +53,7 @@ export async function openSdkSeat(options: {
   model: ModelSelection;
   cwd: string;
   builtinTools: ToolName[];
+  extraTools?: Record<string, SDKCustomTool>;
 }): Promise<Seat> {
   mkdirSync(options.cwd, { recursive: true });
   const agent = await Agent.create({
@@ -63,7 +64,7 @@ export async function openSdkSeat(options: {
   });
   return {
     async send(prompt, tools, images) {
-      const run = await agent.send({ text: prompt, images }, { local: { customTools: toSdkTools(tools) } });
+      const run = await agent.send({ text: prompt, images }, { local: { customTools: { ...options.extraTools, ...toSdkTools(tools) } } });
       const result = await run.wait();
       if (result.status === "error") throw new Error(options.name + " run " + run.id + " failed");
     },

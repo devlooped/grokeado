@@ -54,8 +54,8 @@ async function trial(name, model) {
     },
   });
   const run = await agent.send(
-    "Sos abogado ante un tribunal de chequeo de datos. Investigá en la web esta afirmación: \"" + claim + "\". " +
-      "Presentá al menos una prueba con la herramienta file_evidence (servidor custom-user-tools) y después votá con cast_vote. " +
+    "Sos analista en un panel de chequeo de datos. Investigá en la web esta afirmación: \"" + claim + "\". " +
+      "Presentá al menos una evidencia con la herramienta file_evidence (servidor custom-user-tools) y después votá con cast_vote. " +
       "Respondé en español rioplatense con un resumen de una oración."
   );
   const toolNames = [];

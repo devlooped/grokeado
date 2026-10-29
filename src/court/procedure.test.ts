@@ -26,22 +26,22 @@ const lastId = (prompt: string, prefix: string) => [...prompt.matchAll(new RegEx
 
 function counsel(name: Counsel, votes: Record<string, string> | null): Script {
   return (prompt, tools) => {
-    if (tools.includes("object")) return name === "claude" && /intervención S1 de/.test(prompt) ? [["object", { grounds: "La cifra citada no aparece en la fuente." }]] : [["pass", {}]];
+    if (tools.includes("object")) return name === "claude" && /intervención I1 de/.test(prompt) ? [["object", { grounds: "La cifra citada no aparece en la fuente." }]] : [["pass", {}]];
     if (tools.includes("reply_objection")) return [["reply_objection", { text: "La cifra está en la tabla 3 del informe." }]];
     if (tools.includes("cast_votes")) {
-      const statement: Call = ["address_court", { text: "Mantengo mi evaluación según la prueba.", evidenceIds: [] }];
+      const statement: Call = ["make_statement", { text: "Mantengo mi evaluación según la evidencia.", evidenceIds: [] }];
       if (!votes) return [statement];
-      return [statement, ["cast_votes", { votes: Object.entries(votes).map(([claimId, verdict]) => ({ claimId, verdict, rationale: "Según la prueba del acta." })) }]];
+      return [statement, ["cast_votes", { votes: Object.entries(votes).map(([claimId, verdict]) => ({ claimId, verdict, rationale: "Según la evidencia del registro." })) }]];
     }
-    if (tools.includes("address_court")) {
+    if (tools.includes("make_statement")) {
       const p = lastId(prompt, "P") ?? "P1";
-      if (name === "gemini" && /apertura/.test(prompt)) {
+      if (name === "gemini" && /tu exposición inicial/.test(prompt)) {
         return [
-          ["address_court", { text: "Cito una prueba que no existe en el acta.", evidenceIds: ["P99"] }],
-          ["address_court", { text: "Cito la prueba correcta del acta.", evidenceIds: [p] }],
+          ["make_statement", { text: "Cito una evidencia que no está en el registro.", evidenceIds: ["P99"] }],
+          ["make_statement", { text: "Cito la evidencia correcta del registro.", evidenceIds: [p] }],
         ];
       }
-      return [["address_court", { text: "Mi evaluación de las afirmaciones.", evidenceIds: [p] }]];
+      return [["make_statement", { text: "Mi evaluación de las afirmaciones.", evidenceIds: [p] }]];
     }
     if (tools.includes("file_evidence") && name !== "claude")
       return [["file_evidence", { claimId: "A1", title: "INDEC, Censo 2022", url: "https://www.indec.gob.ar/", excerpt: "Córdoba: 3.840.905 habitantes." }]];
@@ -52,8 +52,8 @@ function counsel(name: Counsel, votes: Record<string, string> | null): Script {
 const judgeScript: Script = (_prompt, tools) => {
   if (tools.includes("enter_claims"))
     return [["enter_claims", { claims: [{ quote: "CABA tiene más habitantes", text: "La CABA tiene más habitantes que Córdoba." }, { quote: "", text: "La inflación de 2025 fue de un dígito." }] }]];
-  if (tools.includes("rule")) return [["rule", { sustained: true, reason: "La prueba no contiene la cifra." }]];
-  if (tools.includes("decide")) return [["decide", { decisions: [{ claimId: "A2", verdict: "verdadero", reasoning: "La prueba P2 del acta es la más directa." }] }]];
+  if (tools.includes("rule")) return [["rule", { sustained: true, reason: "La evidencia no contiene la cifra." }]];
+  if (tools.includes("decide")) return [["decide", { decisions: [{ claimId: "A2", verdict: "verdadero", reasoning: "La evidencia P2 del registro es la más directa." }] }]];
   return [];
 };
 
@@ -90,20 +90,20 @@ test("a full session reaches consensus where 2 of 3 agree and sends a split to t
     ["A1", "falso", "consensus"],
     ["A2", "verdadero", "judge"],
   ]);
-  assert.ok(view.struck.has("S1"), "sustained objection strikes the objected statement");
+  assert.ok(view.struck.has("I1"), "sustained objection strikes the objected statement");
 
-  const rejected = results.find((r) => r.isError && r.tool === "address_court");
+  const rejected = results.find((r) => r.isError && r.tool === "make_statement");
   assert.match(rejected?.text ?? "", /P99/, "citing evidence not in the record is rejected back to the model");
 
-  assert.equal(sends.claude.filter((p) => /alegato final/.test(p)).length, 2, "a missing vote gets one retry");
+  assert.equal(sends.claude.filter((p) => /tu conclusión/.test(p)).length, 2, "a missing vote gets one retry");
   assert.ok(events.some((e) => e.type === "absence" && e.by === "claude" && e.stage === "closing"), "a counsel that never votes is recorded as absent");
   assert.equal(events.filter((e) => e.type === "vote").length, 4);
 
-  assert.equal(sends.claude.filter((p) => /Etapa de instrucción/.test(p)).length, 2, "a counsel who files no evidence gets one retry");
+  assert.equal(sends.claude.filter((p) => /Etapa de investigación/.test(p)).length, 2, "a counsel who files no evidence gets one retry");
   assert.ok(events.some((e) => e.type === "absence" && e.by === "claude" && e.stage === "discovery"), "and is then recorded as absent from discovery");
 
-  assert.match(sends.grok[0], /Sos Grok, uno de los tres letrados/, "first turn carries the role brief");
-  assert.doesNotMatch(sends.grok[1], /Sos Grok, uno de los tres letrados/, "later turns carry only the news");
+  assert.match(sends.grok[0], /Sos Grok, uno de los tres analistas/, "first turn carries the role brief");
+  assert.doesNotMatch(sends.grok[1], /Sos Grok, uno de los tres analistas/, "later turns carry only the news");
 });
 
 test("a judge who never rules on an objection suspends the session instead of a ruling being invented", async () => {

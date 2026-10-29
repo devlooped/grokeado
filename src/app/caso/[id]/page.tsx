@@ -13,7 +13,7 @@ import { getCase, getEvents } from "@/store.ts";
 export async function generateMetadata(props: PageProps<"/caso/[id]">): Promise<Metadata> {
   const { id } = await props.params;
   const c = getCase(id);
-  return { title: c ? "Causa Nº " + id + " · Grokeado" : "Grokeado" };
+  return { title: c ? "Caso Nº " + id + " · Grokeado" : "Grokeado" };
 }
 
 const date = (at: string) => new Date(at).toLocaleString("es-AR", { dateStyle: "long", timeStyle: "short", timeZone: "America/Argentina/Buenos_Aires" });
@@ -43,8 +43,8 @@ function Highlighted({ text, claims }: { text: string; claims: ClaimView[] }) {
 function Original({ c, claims }: { c: CaseRecord; claims: ClaimView[] }) {
   const s = c.submission;
   return (
-    <figure className="rounded-sm border border-rule bg-white/60 p-5">
-      <figcaption className="mb-2 font-mono text-[11px] uppercase tracking-widest text-ink-soft">Material denunciado</figcaption>
+    <figure className="rounded-sm border border-rule bg-paper/60 p-5">
+      <figcaption className="mb-2 font-mono text-[11px] uppercase tracking-widest text-ink-soft">Material enviado</figcaption>
       {s.kind === "text" && (
         <blockquote className="whitespace-pre-line font-display text-xl leading-relaxed">
           <Highlighted text={s.text} claims={claims} />
@@ -57,7 +57,7 @@ function Original({ c, claims }: { c: CaseRecord; claims: ClaimView[] }) {
       )}
       {s.kind === "image" && (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={"/caso/" + c.id + "/imagen"} alt="Imagen denunciada" className="max-h-[28rem] rounded-sm border border-rule" />
+        <img src={"/caso/" + c.id + "/imagen"} alt="Imagen enviada" className="max-h-[28rem] rounded-sm border border-rule" />
       )}
       {s.kind !== "text" && s.note && <p className="mt-3 text-sm text-ink-soft">Comentario: {s.note}</p>}
     </figure>
@@ -91,14 +91,14 @@ function ClaimCard({ claim }: { claim: ClaimView }) {
             ))}
             {j?.method === "judge" && (
               <li className="border-l-2 border-seal pl-3">
-                <span className="font-semibold text-seal">Juez ({MODEL_NAME[JUDGE]}):</span> <span className="text-ink-soft">{j.reasoning}</span>
+                <span className="font-semibold text-seal">Moderador ({MODEL_NAME[JUDGE]}):</span> <span className="text-ink-soft">{j.reasoning}</span>
               </li>
             )}
           </ul>
         </details>
       </div>
       <div className="flex items-center gap-4 sm:flex-col sm:items-end">
-        <div className="flex gap-2" aria-label="Votos de los letrados">
+        <div className="flex gap-2" aria-label="Votos de los analistas">
           {COUNSEL.map((c) => (
             <VoteChip key={c} model={c} verdict={claim.votes[c]?.verdict} />
           ))}
@@ -107,7 +107,7 @@ function ClaimCard({ claim }: { claim: ClaimView }) {
           <div className="flex items-center gap-3">
             <div className="text-right">
               <p className={"font-display text-2xl leading-none " + VERDICT_TEXT[j.verdict]}>{VERDICT_LABEL[j.verdict]}</p>
-              <p className="mt-1 text-[11px] uppercase tracking-wider text-seal">Sin mayoría · decidió el juez</p>
+              <p className="mt-1 text-[11px] uppercase tracking-wider text-seal">Sin mayoría · desempató el moderador</p>
             </div>
             <JudgeSeal verdict={j.verdict} model={JUDGE} size="lg" />
           </div>
@@ -127,17 +127,17 @@ function InSession({ c }: { c: CaseRecord }) {
     <section className="mx-auto max-w-2xl py-16 text-center">
       <AutoRefresh everyMs={5000} />
       <div className="inline-flex items-center gap-2 rounded-full border border-seal/40 px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.25em] text-seal">
-        <span className="session-light size-2.5 rounded-full bg-seal" /> En sesión
+        <span className="session-light size-2.5 rounded-full bg-seal" /> En curso
       </div>
-      <div className="mx-auto mt-8 grid size-28 place-items-center rounded-full border-2 border-ink bg-white/60">
+      <div className="mx-auto mt-8 grid size-28 place-items-center rounded-full border-2 border-ink bg-paper/60">
         <GavelIcon className="gavel size-14 text-ink" />
       </div>
-      <h1 className="mt-8 font-display text-5xl sm:text-6xl">La corte está en sesión</h1>
+      <h1 className="mt-8 font-display text-5xl sm:text-6xl">El panel está analizando</h1>
       <p className="mx-auto mt-4 max-w-md text-ink-soft">
-        Grok, Gemini y Claude están investigando y debatiendo tu denuncia. Cuando se levante la sesión vas a ver el fallo y el acta completa. Esta página se actualiza sola.
+        Grok, Gemini y Claude están investigando y debatiendo tu consulta. Cuando terminen vas a ver el resultado y el registro completo. Esta página se actualiza sola.
       </p>
       <p className="mx-auto mt-8 line-clamp-3 max-w-lg font-display text-lg italic text-ink-soft">«{submissionExcerpt(c.submission)}»</p>
-      <p className="mt-6 font-mono text-xs text-ink-soft">Causa Nº {c.id}</p>
+      <p className="mt-6 font-mono text-xs text-ink-soft">Caso Nº {c.id}</p>
     </section>
   );
 }
@@ -145,11 +145,11 @@ function InSession({ c }: { c: CaseRecord }) {
 function Suspended({ c }: { c: CaseRecord }) {
   return (
     <section className="mx-auto max-w-2xl py-16 text-center">
-      <h1 className="font-display text-5xl">La sesión se suspendió</h1>
-      <p className="mx-auto mt-4 max-w-md text-ink-soft">El tribunal no pudo completar la sesión. Podés volver a presentarla.</p>
+      <h1 className="font-display text-5xl">El análisis se interrumpió</h1>
+      <p className="mx-auto mt-4 max-w-md text-ink-soft">El panel no pudo completar el análisis. Podés volver a intentarlo.</p>
       {c.error && <p className="mx-auto mt-3 max-w-md font-mono text-xs text-ink-soft">{c.error}</p>}
       <form action={retryCase.bind(null, c.id)} className="mt-6">
-        <button className="rounded-sm bg-ink px-6 py-3 font-medium text-paper hover:bg-celeste-deep">Volver a presentar</button>
+        <button className="rounded-sm bg-ink px-6 py-3 font-medium text-paper hover:bg-celeste-deep">Reintentar</button>
       </form>
     </section>
   );
@@ -171,13 +171,13 @@ export default async function CasePage(props: PageProps<"/caso/[id]">) {
     <>
       <header className="reveal flex flex-wrap items-end justify-between gap-4 pt-8">
         <div>
-          <p className="font-mono text-xs uppercase tracking-widest text-ink-soft">Causa Nº {c.id} · {date(c.createdAt)}</p>
-          <h1 className="mt-2 font-display text-5xl">{view.dismissal ? "Denuncia desestimada" : "Fallo"}</h1>
+          <p className="font-mono text-xs uppercase tracking-widest text-ink-soft">Caso Nº {c.id} · {date(c.createdAt)}</p>
+          <h1 className="mt-2 font-display text-5xl">{view.dismissal ? "Caso descartado" : "Resultado"}</h1>
         </div>
         {!view.dismissal && (
           <p className="max-w-xs text-right text-sm text-ink-soft">
             {view.claims.length} {view.claims.length === 1 ? "afirmación examinada" : "afirmaciones examinadas"}
-            {byJudge > 0 ? ", " + byJudge + " " + (byJudge === 1 ? "decidida" : "decididas") + " por el juez" : ", todas por mayoría"}.
+            {byJudge > 0 ? ", " + byJudge + " " + (byJudge === 1 ? "desempatada" : "desempatadas") + " por el moderador" : ", todas por mayoría"}.
           </p>
         )}
       </header>
@@ -197,19 +197,19 @@ export default async function CasePage(props: PageProps<"/caso/[id]">) {
             <ClaimCard key={claim.id} claim={claim} />
           ))}
           <p className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-ink-soft">
-            <span>Cada círculo es el voto de un letrado.</span>
+            <span>Cada círculo es el voto de un analista.</span>
             <span className="inline-flex items-center gap-1"><span className="size-2.5 rounded-full bg-verdadero" /> Verdadero</span>
             <span className="inline-flex items-center gap-1"><span className="size-2.5 rounded-full bg-falso" /> Falso</span>
             <span className="inline-flex items-center gap-1"><span className="size-2.5 rounded-full bg-dudoso" /> No verificable</span>
-            <span className="inline-flex items-center gap-1 text-seal"><GavelIcon className="size-3.5" /> Sello: decidió el juez</span>
+            <span className="inline-flex items-center gap-1 text-seal"><GavelIcon className="size-3.5" /> Sello: desempate del moderador</span>
           </p>
         </section>
       )}
 
       <section className="mt-16">
         <div className="rule-double pt-4">
-          <h2 className="font-display text-4xl">Acta de la sesión</h2>
-          <p className="mt-1 text-sm text-ink-soft">Registro completo, en orden, de todo lo que ocurrió en la sala.</p>
+          <h2 className="font-display text-4xl">Registro del debate</h2>
+          <p className="mt-1 text-sm text-ink-soft">Todo lo que pasó en el debate, completo y en orden.</p>
         </div>
         <div className="mt-8">
           <Acta events={events} view={view} />

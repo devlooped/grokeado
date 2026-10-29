@@ -6,6 +6,7 @@ import { COUNSEL, type CaseRecord, type Counsel } from "../domain/court.ts";
 import { appendEvent, claimNextCase, DATA_DIR, finishCase, requeueInterruptedCases, UPLOADS_DIR } from "../store.ts";
 import { holdSession, type Court } from "./procedure.ts";
 import { openSdkSeat } from "./seat.ts";
+import { openXTools } from "./x.ts";
 
 const JUDGE_MODEL: ModelSelection = { id: "grok-4.7", params: [{ id: "reasoning_effort", value: "high" }] };
 const COUNSEL_MODELS: Record<Counsel, ModelSelection> = {
@@ -17,12 +18,17 @@ const COUNSEL_MODELS: Record<Counsel, ModelSelection> = {
 const CONCURRENCY = Number(process.env.COURT_CONCURRENCY ?? 1);
 const POLL_MS = 3000;
 
+const xTools = await openXTools().catch((err: unknown) => {
+  console.error("Sin búsqueda en X: " + (err instanceof Error ? err.message : String(err)));
+  return {};
+});
+
 async function openCourt(caseId: string): Promise<Court> {
-  const chambers = path.join(DATA_DIR, "chambers", caseId);
+  const workspaces = path.join(DATA_DIR, "workspaces", caseId);
   const [judge, ...counsel] = await Promise.all([
-    openSdkSeat({ name: "juez-" + caseId, model: JUDGE_MODEL, cwd: path.join(chambers, "juez"), builtinTools: ["webFetch"] }),
+    openSdkSeat({ name: "moderador-" + caseId, model: JUDGE_MODEL, cwd: path.join(workspaces, "moderador"), builtinTools: ["webFetch"] }),
     ...COUNSEL.map((c) =>
-      openSdkSeat({ name: c + "-" + caseId, model: COUNSEL_MODELS[c], cwd: path.join(chambers, c), builtinTools: ["webSearch", "webFetch"] })
+      openSdkSeat({ name: c + "-" + caseId, model: COUNSEL_MODELS[c], cwd: path.join(workspaces, c), builtinTools: ["webSearch", "webFetch"], extraTools: xTools })
     ),
   ]);
   return {
@@ -40,7 +46,7 @@ function imagesFor(c: CaseRecord): SDKImage[] {
 }
 
 async function runCase(c: CaseRecord): Promise<void> {
-  console.log("[" + c.id + "] se abre la sesión");
+  console.log("[" + c.id + "] empieza el debate");
   let court: Court | undefined;
   try {
     court = await openCourt(c.id);
@@ -55,19 +61,19 @@ async function runCase(c: CaseRecord): Promise<void> {
       },
     });
     finishCase(c.id, "resolved");
-    console.log("[" + c.id + "] causa resuelta");
+    console.log("[" + c.id + "] caso resuelto");
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     finishCase(c.id, "failed", message);
-    console.error("[" + c.id + "] la sesión se suspendió: " + message);
+    console.error("[" + c.id + "] el análisis se interrumpió: " + message);
   } finally {
     if (court) await Promise.allSettled([court.judge, ...Object.values(court.counsel)].map((s) => s.dispose()));
   }
 }
 
 const requeued = requeueInterruptedCases();
-if (requeued) console.log(requeued + " causa(s) interrumpida(s) vuelven a la cola");
-console.log("La corte espera causas (concurrencia " + CONCURRENCY + ")");
+if (requeued) console.log(requeued + " caso(s) interrumpido(s) vuelven a la cola");
+console.log("El panel espera casos (concurrencia " + CONCURRENCY + ")");
 
 let active = 0;
 for (;;) {

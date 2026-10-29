@@ -22,7 +22,7 @@ if (mode === "submit") {
   await page.getByRole("button", { name: "Pedir el chequeo" }).click();
   await page.waitForURL(/\/caso\//);
   const heading = await page.getByRole("heading", { level: 1 }).textContent();
-  assert(heading === "La corte está en sesión", "after submitting, the case page shows only 'La corte está en sesión'");
+  assert(heading === "El panel está analizando", "after submitting, the case page shows only 'El panel está analizando'");
   assert((await page.locator("article").count()) === 0, "no claims or votes are shown while in session");
   await page.screenshot({ path: out + "/in-session.png", fullPage: true });
   console.log("case " + page.url().split("/").at(-1));
@@ -34,14 +34,14 @@ if (mode === "case") {
   const heading = await page.getByRole("heading", { level: 1 }).textContent();
   console.log("heading: " + heading);
   const claims = await page.locator("article").count();
-  const chips = await page.locator("[aria-label='Votos de los letrados'] > span").count();
-  const seals = await page.locator("span[aria-label^='Fallo del juez']").count();
+  const chips = await page.locator("[aria-label='Votos de los analistas'] > span").count();
+  const seals = await page.locator("span[aria-label^='Desempate del moderador']").count();
   console.log("claims=" + claims + " voteChips=" + chips + " judgeSeals=" + seals + " actaEntries=" + (await page.locator("section ol > li").count()));
-  for (const label of await page.locator("[aria-label='Votos de los letrados'] > span").evaluateAll((els) => els.map((e) => e.getAttribute("aria-label")))) console.log("  " + label);
+  for (const label of await page.locator("[aria-label='Votos de los analistas'] > span").evaluateAll((els) => els.map((e) => e.getAttribute("aria-label")))) console.log("  " + label);
   assert(claims > 0 && chips === claims * 3, "every claim shows exactly three AI vote icons");
   await page.screenshot({ path: out + "/case-" + arg + ".png", fullPage: true });
   await page.screenshot({ path: out + "/case-" + arg + "-top.png" });
-  await page.getByRole("heading", { name: "Acta de la sesión" }).scrollIntoViewIfNeeded();
+  await page.getByRole("heading", { name: "Registro del debate" }).scrollIntoViewIfNeeded();
   await page.screenshot({ path: out + "/case-" + arg + "-acta.png" });
   await page.locator("[id^=S]").first().scrollIntoViewIfNeeded();
   await page.screenshot({ path: out + "/case-" + arg + "-debate.png" });
