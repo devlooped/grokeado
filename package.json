@@ -11,6 +11,7 @@
     "test": "node --import tsx --test \"src/**/*.test.ts\""
   },
   "dependencies": {
+    "@auth0/nextjs-auth0": "^4.33.0",
     "@cursor/sdk": "^1.1.0",
     "@vercel/functions": "^3.10.5",
     "next": "^16.4.3",

@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { start } from "workflow/api";
 import { z } from "zod";
 import type { Submission } from "@/domain/court.ts";
+import { auth0 } from "@/lib/auth0.ts";
 import { createCase, finishCase, newCaseId, requeueCase } from "@/store.ts";
 import { courtSession } from "@/workflows/court-session.ts";
 
@@ -37,6 +38,7 @@ const RequestForm = z.discriminatedUnion("kind", [
 export type RequestState = { error?: string };
 
 export async function requestFactCheck(_prev: RequestState, formData: FormData): Promise<RequestState> {
+  if (!(await auth0.getSession())) return { error: "Iniciá sesión para pedir un chequeo." };
   const parsed = RequestForm.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Revisá los datos." };
 

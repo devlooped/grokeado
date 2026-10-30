@@ -3,6 +3,7 @@ import { connection } from "next/server";
 import { submissionExcerpt } from "@/domain/acta.ts";
 import { COUNSEL, JUDGE, project, type CaseRecord } from "@/domain/court.ts";
 import { JudgeSeal, ModelMark, VERDICT_TEXT, VerdictGlyph } from "@/components/marks.tsx";
+import { auth0 } from "@/lib/auth0.ts";
 import { RequestForm } from "@/components/request-form.tsx";
 import { getEvents, listCases } from "@/store.ts";
 
@@ -46,7 +47,7 @@ async function CaseRow({ c }: { c: CaseRecord }) {
 
 export default async function Home() {
   await connection();
-  const cases = await listCases(20);
+  const [cases, session] = await Promise.all([listCases(20), auth0.getSession()]);
   return (
     <>
       <section className="grid gap-10 pt-10 md:grid-cols-[1.1fr_1fr] md:items-start">
@@ -67,7 +68,7 @@ export default async function Home() {
           </div>
         </div>
         <div className="reveal [animation-delay:120ms]">
-          <RequestForm />
+          <RequestForm signedIn={!!session} />
         </div>
       </section>
 

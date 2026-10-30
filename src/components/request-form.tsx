@@ -13,7 +13,7 @@ type Kind = (typeof KINDS)[number]["id"];
 
 const field = "w-full rounded-sm border border-rule bg-paper/80 px-4 py-3 text-base outline-none transition focus:border-celeste-deep focus:ring-2 focus:ring-celeste/30";
 
-export function RequestForm() {
+export function RequestForm({ signedIn }: { signedIn: boolean }) {
   const [kind, setKind] = useState<Kind>("text");
   const [state, action, pending] = useActionState<RequestState, FormData>(requestFactCheck, {});
 
@@ -82,13 +82,22 @@ export function RequestForm() {
 
       <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
         <p className="max-w-sm text-xs text-ink-soft">El análisis tarda unos minutos. Vas a poder seguir el estado en la página de tu caso.</p>
-        <button
-          type="submit"
-          disabled={pending}
-          className="rounded-sm bg-celeste-deep px-6 py-3 font-medium text-white shadow-[3px_3px_0_0_var(--color-ink)] transition hover:-translate-y-0.5 hover:bg-ink disabled:opacity-60"
-        >
-          {pending ? "Enviando…" : "Pedir el chequeo"}
-        </button>
+        {signedIn ? (
+          <button
+            type="submit"
+            disabled={pending}
+            className="rounded-sm bg-celeste-deep px-6 py-3 font-medium text-white shadow-[3px_3px_0_0_var(--color-ink)] transition hover:-translate-y-0.5 hover:bg-ink disabled:opacity-60"
+          >
+            {pending ? "Enviando…" : "Pedir el chequeo"}
+          </button>
+        ) : (
+          <a
+            href="/auth/login?returnTo=/"
+            className="rounded-sm bg-celeste-deep px-6 py-3 font-medium text-white shadow-[3px_3px_0_0_var(--color-ink)] transition hover:-translate-y-0.5 hover:bg-ink"
+          >
+            Iniciá sesión para pedir el chequeo
+          </a>
+        )}
       </div>
     </form>
   );
