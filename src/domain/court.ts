@@ -1,4 +1,4 @@
-export const COUNSEL = ["grok", "gemini", "claude", "openai"] as const;
+export const COUNSEL = ["grok", "gemini", "claude", "chatgpt"] as const;
 export type Counsel = (typeof COUNSEL)[number];
 
 export const JUDGE = "grok" satisfies Counsel;
@@ -7,7 +7,7 @@ export const MODEL_NAME: Record<Counsel, string> = {
   grok: "Grok",
   gemini: "Gemini",
   claude: "Claude",
-  openai: "ChatGPT",
+  chatgpt: "ChatGPT",
 };
 
 export const COUNSEL_NAMES = new Intl.ListFormat("es-AR", { style: "long", type: "conjunction" }).format(COUNSEL.map((c) => MODEL_NAME[c]));
@@ -88,6 +88,7 @@ export type CaseRecord = {
   createdAt: string;
   status: CaseStatus;
   submission: Submission;
+  ownerId?: string;
   error?: string;
 };
 

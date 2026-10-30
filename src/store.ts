@@ -20,6 +20,13 @@ function connect(): Pool {
   return pool;
 }
 
+function migrateLegacySeat(value: unknown, field?: string): unknown {
+  if (typeof value === "string") return value === "openai" && (field === "by" || field === "to") ? "chatgpt" : value;
+  if (Array.isArray(value)) return value.map((child) => migrateLegacySeat(child));
+  if (typeof value !== "object" || value === null) return value;
+  return Object.fromEntries(Object.entries(value).map(([key, child]) => [key === "openai" ? "chatgpt" : key, migrateLegacySeat(child, key)]));
+}
+
 async function db(): Promise<Pool> {
   const p = connect();
   schema ??= p
@@ -29,8 +36,10 @@ async function db(): Promise<Pool> {
          created_at TEXT NOT NULL,
          status TEXT NOT NULL,
          submission JSONB NOT NULL,
+         owner_id TEXT,
          error TEXT
        );
+       ALTER TABLE cases ADD COLUMN IF NOT EXISTS owner_id TEXT;
        CREATE TABLE IF NOT EXISTS events (
          case_id TEXT NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
          seq INTEGER NOT NULL,
@@ -44,7 +53,14 @@ async function db(): Promise<Pool> {
          bytes BYTEA NOT NULL
        );`
     )
-    .then(() => undefined)
+    .then(async () => {
+      const { rows } = await p.query<{ case_id: string; seq: number; body: unknown }>(
+        `SELECT case_id, seq, body FROM events WHERE body::text LIKE '%"openai"%'`
+      );
+      for (const row of rows) {
+        await p.query("UPDATE events SET body = $1 WHERE case_id = $2 AND seq = $3", [JSON.stringify(migrateLegacySeat(row.body)), row.case_id, row.seq]);
+      }
+    })
     .catch((err: unknown) => {
       schema = undefined;
       throw err;
@@ -53,21 +69,21 @@ async function db(): Promise<Pool> {
   return p;
 }
 
-type CaseRow = { id: string; created_at: string; status: CaseStatus; submission: Submission; error: string | null };
+type CaseRow = { id: string; created_at: string; status: CaseStatus; submission: Submission; owner_id: string | null; error: string | null };
 
 function toRecord(row: CaseRow): CaseRecord {
-  return { id: row.id, createdAt: row.created_at, status: row.status, submission: row.submission, error: row.error ?? undefined };
+  return { id: row.id, createdAt: row.created_at, status: row.status, submission: row.submission, ownerId: row.owner_id ?? undefined, error: row.error ?? undefined };
 }
 
 export function newCaseId(): string {
   return randomBytes(6).toString("base64url");
 }
 
-export async function createCase(id: string, submission: Submission, image?: Buffer): Promise<void> {
+export async function createCase(id: string, submission: Submission, image?: Buffer, ownerId?: string): Promise<void> {
   const client = await (await db()).connect();
   try {
     await client.query("BEGIN");
-    await client.query("INSERT INTO cases (id, created_at, status, submission) VALUES ($1, $2, 'queued', $3)", [id, new Date().toISOString(), JSON.stringify(submission)]);
+    await client.query("INSERT INTO cases (id, created_at, status, submission, owner_id) VALUES ($1, $2, 'queued', $3, $4)", [id, new Date().toISOString(), JSON.stringify(submission), ownerId ?? null]);
     if (image && submission.kind === "image") await client.query("INSERT INTO images (case_id, mime_type, bytes) VALUES ($1, $2, $3)", [id, submission.mimeType, image]);
     await client.query("COMMIT");
   } catch (err) {

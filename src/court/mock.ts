@@ -66,7 +66,7 @@ function responses({ spec, record, submission }: MockTurn): Call[][] {
     }
     case "source_review":
       return [[call("review_sources", { votes: [...view.sources.values()].map((s) => {
-        const veto = s.url.endsWith("/unreliable") && spec.counsel !== "openai";
+        const veto = s.url.endsWith("/unreliable") && spec.counsel !== "chatgpt";
         return { sourceId: s.id, veto, reason: prefix + (veto ? "La fuente ficticia no identifica autores ni metodología." : "No veto esta fuente en el escenario de prueba.") };
       }) })]];
     case "statement":

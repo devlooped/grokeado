@@ -5,6 +5,12 @@ import { GavelIcon, JudgeSeal, ModelMark, VERDICT_TEXT, VerdictGlyph } from "./m
 const time = (at: string) =>
   new Date(at).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit", second: "2-digit", timeZone: "America/Argentina/Buenos_Aires" });
 
+function evidenceHref(caseId: string, citation: string): string {
+  const [path, anchor] = citation.slice("/evidence/".length).split("#", 2);
+  const encodedPath = path!.split("/").map(encodeURIComponent).join("/");
+  return `/caso/${encodeURIComponent(caseId)}/evidencia/${encodedPath}${anchor ? `#${encodeURIComponent(anchor)}` : ""}`;
+}
+
 function Speaker({ by }: { by: Counsel }) {
   return (
     <span className="grid size-9 shrink-0 place-items-center rounded-full border border-rule bg-paper/80">
@@ -54,7 +60,7 @@ function Source({ source }: { source: SourceView }) {
   );
 }
 
-function Entry({ e, view }: { e: RecordedEvent; view: CaseView }) {
+function Entry({ e, view, caseId }: { e: RecordedEvent; view: CaseView; caseId: string }) {
   switch (e.type) {
     case "session_opened":
       return <Clerk>{e.simulated && "Simulación local · fuentes y respuestas ficticias · "}Empieza el debate · modera {MODEL_NAME[JUDGE]} · {time(e.at)}</Clerk>;
@@ -138,7 +144,12 @@ function Entry({ e, view }: { e: RecordedEvent; view: CaseView }) {
                 {e.evidenceIds.map((id, i) => (
                   <span key={id}>
                     {i > 0 && ", "}
-                    <a href={"#" + id} className="font-mono text-celeste-deep hover:underline">{id}</a>
+                    <a
+                      href={id.startsWith("/evidence/")
+                        ? evidenceHref(caseId, id)
+                        : "#" + id}
+                      className="font-mono text-celeste-deep hover:underline"
+                    >{id}</a>
                   </span>
                 ))}
               </p>
@@ -203,12 +214,12 @@ function Entry({ e, view }: { e: RecordedEvent; view: CaseView }) {
   }
 }
 
-export function Acta({ events, view }: { events: RecordedEvent[]; view: CaseView }) {
+export function Acta({ events, view, caseId }: { events: RecordedEvent[]; view: CaseView; caseId: string }) {
   return (
     <ol className="space-y-4">
       {events.map((e) => (
         <li key={e.seq}>
-          <Entry e={e} view={view} />
+          <Entry e={e} view={view} caseId={caseId} />
         </li>
       ))}
     </ol>

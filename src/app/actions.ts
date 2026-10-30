@@ -38,7 +38,8 @@ const RequestForm = z.discriminatedUnion("kind", [
 export type RequestState = { error?: string };
 
 export async function requestFactCheck(_prev: RequestState, formData: FormData): Promise<RequestState> {
-  if (!(await auth0.getSession())) return { error: "Iniciá sesión para pedir un chequeo." };
+  const session = await auth0.getSession();
+  if (!session?.user.sub) return { error: "Iniciá sesión para pedir un chequeo." };
   const parsed = RequestForm.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Revisá los datos." };
 
@@ -52,7 +53,7 @@ export async function requestFactCheck(_prev: RequestState, formData: FormData):
   } else {
     submission = input;
   }
-  await createCase(id, submission, image);
+  await createCase(id, submission, image, session.user.sub);
   try {
     await start(courtSession, [id]);
   } catch (err) {

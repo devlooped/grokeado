@@ -9,12 +9,12 @@ type Call = [tool: string, args: Record<string, unknown>];
 type Script = (prompt: string, tools: string[]) => Call[];
 type Result = { tool: string; isError: boolean; text: string };
 
-const MODELS = { judge: "grok-4.7", counsel: { grok: "grok-4.7", gemini: "gemini-4-argon", claude: "claude-opus-5-5", openai: "gpt-5.5" } };
+const MODELS = { judge: "grok-4.7", counsel: { grok: "grok-4.7", gemini: "gemini-4-argon", claude: "claude-opus-5-5", chatgpt: "gpt-5.5" } };
 const DOCKET: Docket = { submission: { kind: "text", text: "CABA tiene más habitantes que Córdoba y la inflación de 2025 fue de un dígito." }, today: "27 de octubre de 2026" };
 
 function makeBench(scripts: Record<SeatId, Script>, docket: Docket = DOCKET) {
   const results: Result[] = [];
-  const prompts: Record<SeatId, string[]> = { judge: [], grok: [], gemini: [], claude: [], openai: [] };
+  const prompts: Record<SeatId, string[]> = { judge: [], grok: [], gemini: [], claude: [], chatgpt: [] };
   const events: RecordedEvent[] = [];
   const converse: Converse = async ({ seat, prompt, tools }) => {
     prompts[seat].push(prompt);
@@ -83,7 +83,7 @@ test("a full session reaches consensus where 3 of 4 agree and sends a split to t
     grok: counsel("grok", { A1: "falso", A2: "verdadero" }),
     gemini: counsel("gemini", { A1: "falso", A2: "falso" }),
     claude: counsel("claude", null),
-    openai: counsel("openai", { A1: "falso", A2: "no_verificable" }),
+    chatgpt: counsel("chatgpt", { A1: "falso", A2: "no_verificable" }),
   });
   await holdSession(bench);
 
@@ -126,7 +126,7 @@ test("a judge who never rules on an objection suspends the session instead of a 
     grok: counsel("grok", null),
     gemini: counsel("gemini", null),
     claude: counsel("claude", null),
-    openai: counsel("openai", null),
+    chatgpt: counsel("chatgpt", null),
   });
   await assert.rejects(holdSession(bench), /no resolvió la objeción O1/);
   assert.ok(!events.some((e) => e.type === "ruling"), "no ruling is recorded in the judge's name");
@@ -134,7 +134,7 @@ test("a judge who never rules on an objection suspends the session instead of a 
 
 test("the judge can dismiss a submission with no verifiable claims", async () => {
   const dismiss: Script = (_p, tools) => (tools.includes("dismiss_case") ? [["dismiss_case", { reason: "Es una opinión, no una afirmación fáctica." }]] : []);
-  const { bench, events } = makeBench({ judge: dismiss, grok: () => [], gemini: () => [], claude: () => [], openai: () => [] });
+  const { bench, events } = makeBench({ judge: dismiss, grok: () => [], gemini: () => [], claude: () => [], chatgpt: () => [] });
   await holdSession(bench);
   assert.deepEqual(events.map((e) => e.type), ["session_opened", "dismissed", "session_closed"]);
 });
@@ -144,11 +144,11 @@ test("instruction finishes before opening and only an absolute majority can annu
     [4, false, true], [3, false, true], [2, false, false], [1, false, false], [0, false, false], [2, true, false],
   ] as const) {
     await t.test(`${vetoCount} vetoes, absent=${absent}`, async () => {
-      const names = ["grok", "gemini", "claude", "openai"] as const;
+      const names = ["grok", "gemini", "claude", "chatgpt"] as const;
       const scripts = Object.fromEntries(names.map((name, i) => {
         const base = counsel(name === "claude" ? "grok" : name, { A1: "falso", A2: "falso" });
         const script: Script = (prompt, tools) => {
-          if (tools.includes("review_sources")) return absent && name === "openai" ? [] : [["review_sources", { votes: [{ sourceId: "S1", veto: i < vetoCount, reason: "Evalué la autoría y la metodología de esta fuente." }] }]];
+          if (tools.includes("review_sources")) return absent && name === "chatgpt" ? [] : [["review_sources", { votes: [{ sourceId: "S1", veto: i < vetoCount, reason: "Evalué la autoría y la metodología de esta fuente." }] }]];
           if (tools.includes("make_statement")) return base(prompt, tools).map(([tool, input]) => tool === "make_statement" ? [tool, { ...input, evidenceIds: [] }] : [tool, input]);
           return base(prompt, tools);
         };
@@ -172,8 +172,8 @@ test("instruction finishes before opening and only an absolute majority can annu
         for (const author of ["Grok", "Gemini", "Claude", "ChatGPT"]) assert.ok(prompt.includes("Aporte de " + author));
       }
       if (absent) {
-        assert.equal(prompts.openai.filter((p) => /Turno de crítica de fuentes\./.test(p)).length, 2);
-        assert.ok(events.some((e) => e.type === "absence" && e.by === "openai" && e.stage === "source_review"));
+        assert.equal(prompts.chatgpt.filter((p) => /Turno de crítica de fuentes\./.test(p)).length, 2);
+        assert.ok(events.some((e) => e.type === "absence" && e.by === "chatgpt" && e.stage === "source_review"));
       }
     });
   }
@@ -181,7 +181,7 @@ test("instruction finishes before opening and only an absolute majority can annu
 
 test("an unfinished moderator unification blocks exposures rather than silently inventing a shared record", async () => {
   const silent: Script = (prompt, tools) => tools.includes("unify_evidence") ? [] : judgeScript(prompt, tools);
-  const { bench, events, prompts } = makeBench({ judge: silent, grok: counsel("grok", null), gemini: counsel("gemini", null), claude: counsel("claude", null), openai: counsel("openai", null) });
+  const { bench, events, prompts } = makeBench({ judge: silent, grok: counsel("grok", null), gemini: counsel("gemini", null), claude: counsel("claude", null), chatgpt: counsel("chatgpt", null) });
   await assert.rejects(holdSession(bench), /no unificó las pruebas/);
   assert.equal(prompts.judge.filter((p) => /Unificá las pruebas de la instrucción con/.test(p)).length, 2);
   assert.ok(!events.some((e) => e.type === "floor_granted"));
@@ -198,7 +198,7 @@ test("instruction with no evidence records unsuccessful searches and shares an e
     if (tools.includes("make_statement")) return [["make_statement", { text: "No contamos con evidencia verificable sobre las afirmaciones.", evidenceIds: [] }]];
     return [];
   };
-  const { bench, events, prompts } = makeBench({ judge: judgeScript, grok: script, gemini: script, claude: script, openai: script });
+  const { bench, events, prompts } = makeBench({ judge: judgeScript, grok: script, gemini: script, claude: script, chatgpt: script });
   await holdSession(bench);
   assert.equal(project(events).sources.size, 0);
   assert.equal(events.filter((e) => e.type === "instruction_completed").length, 4);
@@ -206,4 +206,3 @@ test("instruction with no evidence records unsuccessful searches and shares an e
   assert.ok(project(events).claims.every((c) => c.judgment?.verdict === "no_verificable"));
   assert.ok(prompts.grok.some((p) => p.includes("Sin fuentes. No inventes evidencia")));
 });
-

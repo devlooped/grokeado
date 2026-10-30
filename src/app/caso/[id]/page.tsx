@@ -3,11 +3,14 @@ import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { retryCase } from "@/app/actions.ts";
 import { Acta } from "@/components/acta.tsx";
+import { EvidencePanel, toEvidencePanelItems, type EvidencePanelItem } from "@/components/evidence-panel.tsx";
 import { AutoRefresh } from "@/components/auto-refresh.tsx";
 import { GavelIcon, JudgeSeal, VERDICT_TEXT, VoteChip } from "@/components/marks.tsx";
 import { submissionExcerpt, VERDICT_LABEL } from "@/domain/acta.ts";
 import { COUNSEL, COUNSEL_NAMES, JUDGE, MODEL_NAME, type CaseRecord, type ClaimView } from "@/domain/court.ts";
 import { project } from "@/domain/court.ts";
+import { auth0 } from "@/lib/auth0.ts";
+import { readEvidenceTree } from "@/evidence/blob.ts";
 import { getCase, getEvents } from "@/store.ts";
 
 export async function generateMetadata(props: PageProps<"/caso/[id]">): Promise<Metadata> {
@@ -164,6 +167,11 @@ export default async function CasePage(props: PageProps<"/caso/[id]">) {
   if (c.status === "failed") return <Suspended c={c} />;
 
   const events = await getEvents(id);
+  const session = await auth0.getSession();
+  let evidenceItems: EvidencePanelItem[] = [];
+  if (process.env.BLOB_READ_WRITE_TOKEN && c.ownerId && session?.user.sub === c.ownerId) {
+    evidenceItems = toEvidencePanelItems(await readEvidenceTree(id));
+  }
   const simulated = events.some((e) => e.type === "session_opened" && e.simulated);
   const view = project(events);
   const byJudge = view.claims.filter((cl) => cl.judgment?.method === "judge").length;
@@ -188,6 +196,7 @@ export default async function CasePage(props: PageProps<"/caso/[id]">) {
       <div className="mt-6">
         <Original c={c} claims={view.claims} />
       </div>
+      <EvidencePanel caseId={id} items={evidenceItems} />
 
       {view.dismissal ? (
         <p className="mt-6 flex items-start gap-3 rounded-sm border border-seal/40 bg-seal/5 p-5">
@@ -215,7 +224,7 @@ export default async function CasePage(props: PageProps<"/caso/[id]">) {
           <p className="mt-1 text-sm text-ink-soft">Todo lo que pasó en el debate, completo y en orden.</p>
         </div>
         <div className="mt-8">
-          <Acta events={events} view={view} />
+          <Acta events={events} view={view} caseId={id} />
         </div>
       </section>
     </>

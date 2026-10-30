@@ -13,6 +13,7 @@
     "test:gateway": "node --import tsx scripts/test-gateway.ts",
     "test:court": "node --import tsx scripts/test-court.ts",
     "test:evals": "node --import tsx --test \"evals/tiers/*.test.ts\"",
+    "evidence:snapshot": "node --import tsx scripts/evidence-snapshot.ts",
     "eval:tiers": "node --import tsx scripts/eval-tiers.ts",
     "models": "node scripts/models.mjs"
   },
@@ -20,13 +21,16 @@
     "@ai-sdk/xai": "^5.0.33",
     "@auth0/nextjs-auth0": "^4.33.0",
     "@next/env": "^16.4.3",
+    "@vercel/blob": "^2.8.2",
     "@vercel/functions": "^3.10.5",
+    "@vercel/sandbox": "^3.9.1",
     "ai": "^7.0.157",
     "next": "^16.4.3",
     "pg": "^8.23.1",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "workflow": "^5.2.3",
+    "yaml": "^2.9.1",
     "zod": "^4.6.7"
   },
   "devDependencies": {

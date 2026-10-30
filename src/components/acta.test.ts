@@ -7,7 +7,7 @@ import { Acta } from "./acta.tsx";
 
 function render(events: CourtEvent[]) {
   const recorded: RecordedEvent[] = events.map((e, i) => ({ ...e, seq: i + 1, at: "2026-10-30T14:00:00.000Z" }));
-  return renderToStaticMarkup(createElement(Acta, { events: recorded, view: project(recorded) }));
+  return renderToStaticMarkup(createElement(Acta, { events: recorded, view: project(recorded), caseId: "fixture" }));
 }
 
 test("the acta displays shared attribution, bilateral searches, all reliability votes and the exclusion warning", () => {
@@ -43,7 +43,14 @@ test("historical evidence without instruction or stance remains visible and keep
 });
 
 test("the stored simulation flag labels the acta independently of the current AI mode", () => {
-  const html = render([{ type: "session_opened", simulated: true, judgeModel: "fixture", counselModels: { grok: "fixture", gemini: "fixture", claude: "fixture", openai: "fixture" } }]);
+  const html = render([{ type: "session_opened", simulated: true, judgeModel: "fixture", counselModels: { grok: "fixture", gemini: "fixture", claude: "fixture", chatgpt: "fixture" } }]);
   assert.ok(html.includes("Simulación local"));
   assert.ok(html.includes("fuentes y respuestas ficticias"));
+});
+
+test("the acta links OKF page citations to the private case evidence route", () => {
+  const html = render([
+    { type: "statement", id: "I1", by: "grok", stage: "opening", text: "La evidencia disponible permite contrastar la afirmación.", evidenceIds: ["/evidence/grok/passage.md#p3"] },
+  ]);
+  assert.ok(html.includes('href="/caso/fixture/evidencia/grok/passage.md#p3"'));
 });

@@ -12,6 +12,6 @@ export const JUDGE_MODEL: CourtModel = { id: "spacexai/grok-4.7", providerOption
 export const COUNSEL_MODELS: Record<Counsel, CourtModel> = {
   grok: JUDGE_MODEL,
   gemini: { id: "google/gemini-4-argon", providerOptions: { google: { thinkingConfig: { thinkingLevel: "high" } } } },
-  openai: { id: "openai/gpt-5.5" },
+  chatgpt: { id: "openai/gpt-5.5" },
   claude: { id: "anthropic/claude-opus-5.5", providerOptions: { anthropic: { effort: "high" } } },
 };

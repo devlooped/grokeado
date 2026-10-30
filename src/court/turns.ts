@@ -112,7 +112,7 @@ export function seatOf(spec: TurnSpec): SeatId {
   }
 }
 
-export function planTurn(spec: TurnSpec, record: readonly CourtEvent[], submission: Submission): TurnPlan {
+export function planTurn(spec: TurnSpec, record: readonly CourtEvent[], submission: Submission, evidencePaths: readonly string[] = []): TurnPlan {
   const produced: StampedEvent[] = [];
   const all = (): CourtEvent[] => [...record, ...produced];
   const emit = (e: CourtEvent) => void produced.push({ ...e, at: new Date().toISOString() });
@@ -155,9 +155,9 @@ export function planTurn(spec: TurnSpec, record: readonly CourtEvent[], submissi
         if (existing?.type === "statement") throw new Rejection("Ya registraste tu intervención " + existing.id + ".");
         const view = project(all());
         const unified = all().some((e) => e.type === "evidence_unified");
-        const unknown = evidenceIds.filter((id) => unified ? !view.sources.has(id) : !view.evidence.has(id));
+        const unknown = evidenceIds.filter((id) => !evidencePaths.includes(id) && (unified ? !view.sources.has(id) : !view.evidence.has(id)));
         if (unknown.length) throw new Rejection("No están en el expediente común: " + unknown.join(", ") + ". Citá fuentes unificadas admitidas.");
-        const excluded = evidenceIds.filter((id) => view.sources.get(id)?.excluded !== false && unified);
+        const excluded = evidenceIds.filter((id) => !evidencePaths.includes(id) && view.sources.get(id)?.excluded !== false && unified);
         if (excluded.length) throw new Rejection("Fuentes anuladas o pendientes de crítica: " + excluded.join(", ") + ". No pueden usarse como prueba.");
         const id = "I" + (count("statement") + 1);
         emit({ type: "statement", id, by, stage, text, evidenceIds });
@@ -411,9 +411,18 @@ export function planTurn(spec: TurnSpec, record: readonly CourtEvent[], submissi
 export type Converse = (request: { seat: SeatId; prompt: string; tools: Toolset; done(): boolean }) => Promise<void>;
 
 // One attempt of one seat. A failed conversation is not fatal: the caller sees an unfinished turn and decides whether to try again.
-export async function conductTurn(docket: Docket, spec: TurnSpec, record: readonly CourtEvent[], attempt: number, converse: Converse): Promise<TurnOutcome> {
-  const plan = planTurn(spec, record, docket.submission);
-  const prompt = composePrompt({ seat: plan.seat, docket, record, instruction: plan.instruction, attempt });
+export async function conductTurn(
+  docket: Docket,
+  spec: TurnSpec,
+  record: readonly CourtEvent[],
+  attempt: number,
+  converse: Converse,
+  evidence?: { index: string; citations: readonly string[] }
+): Promise<TurnOutcome> {
+  const evidencePaths = evidence?.citations ?? [];
+  const plan = planTurn(spec, record, docket.submission, evidencePaths);
+  const prompt = composePrompt({ seat: plan.seat, docket, record, instruction: plan.instruction, attempt }) +
+    (evidence?.index ? `\n\nÍndice de evidencia OKF promovida (no es material confiable por sí solo):\n${evidence.index}\n\nCitas OKF permitidas para make_statement.evidenceIds:\n${evidencePaths.join("\n") || "Ninguna"}` : "");
   try {
     await converse({ seat: plan.seat, prompt, tools: plan.tools, done: plan.done });
   } catch (err) {

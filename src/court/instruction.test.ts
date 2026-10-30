@@ -50,7 +50,7 @@ test("moderator unification preserves all authors, excerpts, claims and stances 
   assert.equal(sources[0].url, "https://example.org/report");
   assert.deepEqual(sources[0].contributions, evidence.slice(0, 2).flatMap((e) => e.type === "evidence_filed" ? [e.evidence] : []));
   assert.deepEqual(sources.map((s) => s.id), ["S1", "S2"]);
-  const prompt = composePrompt({ seat: "openai", docket: { submission, today: "hoy" }, record, instruction: "Revisá las fuentes.", attempt: 0 });
+  const prompt = composePrompt({ seat: "chatgpt", docket: { submission, today: "hoy" }, record, instruction: "Revisá las fuentes.", attempt: 0 });
   assert.match(prompt, /Aporte de Grok sobre A1 \(a favor\)/);
   assert.match(prompt, /Aporte de Gemini sobre A2 \(en contra\)/);
   assert.match(prompt, /PENDIENTE DE CRÍTICA/);
@@ -101,13 +101,13 @@ test("source criticism records exactly one reasoned vote per analyst and source,
 test("all statement stages allow others' admitted sources and reject raw, unknown, pending or excluded sources", async () => {
   const record = await unifiedRecord();
   const input = { text: "Mi evaluación utiliza las fuentes compartidas del expediente.", evidenceIds: ["S1"] };
-  const pending = planTurn({ kind: "statement", counsel: "openai", stage: "opening" }, record, submission);
+  const pending = planTurn({ kind: "statement", counsel: "chatgpt", stage: "opening" }, record, submission);
   assert.match(JSON.stringify(await execute(pending, "make_statement", input)), /pendientes de crítica/);
   record.push({ type: "source_decided", sourceId: "S1", excluded: true }, { type: "source_decided", sourceId: "S2", excluded: false }, { type: "instruction_closed" });
   for (const spec of [
-    { kind: "statement" as const, counsel: "openai" as const, stage: "opening" as const },
-    { kind: "statement" as const, counsel: "openai" as const, stage: "rebuttal" as const },
-    { kind: "closing" as const, counsel: "openai" as const },
+    { kind: "statement" as const, counsel: "chatgpt" as const, stage: "opening" as const },
+    { kind: "statement" as const, counsel: "chatgpt" as const, stage: "rebuttal" as const },
+    { kind: "closing" as const, counsel: "chatgpt" as const },
   ]) {
     const plan = planTurn(spec, record, submission);
     assert.equal(plan.tools.file_evidence, undefined);
@@ -121,4 +121,20 @@ test("all statement stages allow others' admitted sources and reject raw, unknow
   const prompt = composePrompt({ seat: "judge", docket: { submission, today: "hoy" }, record, instruction: "Decidí.", attempt: 0 });
   assert.match(prompt, /\[S1\] ANULADA/);
   assert.match(prompt, /\[S2\] ADMITIDA/);
+});
+
+test("statement tools accept only promoted OKF page citations in addition to shared sources", async () => {
+  const record = await unifiedRecord();
+  record.push({ type: "source_decided", sourceId: "S1", excluded: false }, { type: "source_decided", sourceId: "S2", excluded: false }, { type: "instruction_closed" });
+  const citation = "/evidence/grok/passage.md#p2";
+  const plan = planTurn({ kind: "statement", counsel: "chatgpt", stage: "opening" }, record, submission, [citation]);
+  const input = { text: "La extracción recoge un pasaje que permite contrastar la afirmación.", evidenceIds: [citation] };
+  await execute(plan, "make_statement", input);
+  assert.equal(plan.produced[0]?.type, "statement");
+  if (plan.produced[0]?.type === "statement") assert.deepEqual(plan.produced[0].evidenceIds, [citation]);
+
+  const untrusted = planTurn({ kind: "statement", counsel: "chatgpt", stage: "opening" }, record, submission, [citation]);
+  const result = await execute(untrusted, "make_statement", { ...input, evidenceIds: ["/evidence/grok/invented.md#p2"] });
+  assert.match(JSON.stringify(result), /No están en el expediente común/);
+  assert.equal(untrusted.produced.length, 0);
 });

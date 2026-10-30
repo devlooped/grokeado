@@ -12,7 +12,14 @@ async function imagesFor(caseId: string, docket: Docket): Promise<SeatImage[]> {
 }
 
 // Workflow step body: one attempt of one seat, using AI Gateway for every model.
-export async function playTurn(caseId: string, docket: Docket, spec: TurnSpec, record: readonly CourtEvent[], attempt: number): Promise<TurnOutcome> {
+export async function playTurn(
+  caseId: string,
+  docket: Docket,
+  spec: TurnSpec,
+  record: readonly CourtEvent[],
+  attempt: number,
+  evidence?: { index: string; citations: string[] }
+): Promise<TurnOutcome> {
   const images = await imagesFor(caseId, docket);
   return conductTurn(docket, spec, record, attempt, async ({ seat, prompt, tools, done }) => {
     await runSeat({
@@ -24,5 +31,5 @@ export async function playTurn(caseId: string, docket: Docket, spec: TurnSpec, r
       images,
       mock: docket.simulated ? { spec, record, submission: docket.submission } : undefined,
     });
-  });
+  }, evidence);
 }
