@@ -1,9 +1,10 @@
-import { COUNSEL, majority, type Claim, type Counsel, type CourtEvent, type RecordedEvent, type Submission } from "../domain/court.ts";
+import { COUNSEL, majority, project, type Claim, type Counsel, type CourtEvent, type RecordedEvent, type Submission } from "../domain/court.ts";
 import type { StampedEvent, TurnOutcome, TurnSpec } from "./turns.ts";
 
 export interface Bench {
   submission: Submission;
   models: { judge: string; counsel: Record<Counsel, string> };
+  simulated?: boolean;
   // One attempt of one seat, given everything on the record so far.
   play(spec: TurnSpec, record: readonly CourtEvent[], attempt: number): Promise<TurnOutcome>;
   // Persists newly recorded events; must be idempotent by seq.
@@ -91,7 +92,7 @@ export async function holdSession(bench: Bench): Promise<void> {
     }
   }
 
-  note({ type: "session_opened", judgeModel: bench.models.judge, counselModels: bench.models.counsel });
+  note({ type: "session_opened", judgeModel: bench.models.judge, counselModels: bench.models.counsel, ...(bench.simulated ? { simulated: true } : {}) });
   await flush();
 
   if (!(await solo({ kind: "intake" }))) throw new Error("El moderador no fijó las afirmaciones.");
@@ -101,8 +102,24 @@ export async function holdSession(bench: Bench): Promise<void> {
     return;
   }
 
-  const discovered = await round(COUNSEL.map((counsel) => ({ kind: "discovery", counsel })));
-  for (const [i, ok] of discovered.entries()) if (!ok) await absent(COUNSEL[i]!, "discovery");
+  note({ type: "instruction_opened" });
+  await flush();
+  const instructed = await round(COUNSEL.map((counsel) => ({ kind: "instruction", counsel })));
+  for (const [i, ok] of instructed.entries()) if (!ok) await absent(COUNSEL[i]!, "instruction");
+
+  if (!(await solo({ kind: "unification" }))) throw new Error("El moderador no unificó las pruebas de la instrucción.");
+  const sources = [...project(log).sources.values()];
+  if (sources.length) {
+    const reviewed = await round(COUNSEL.map((counsel) => ({ kind: "source_review", counsel })));
+    for (const [i, ok] of reviewed.entries()) if (!ok) await absent(COUNSEL[i]!, "source_review");
+    const view = project(log);
+    for (const source of view.sources.values()) {
+      const vetoes = COUNSEL.filter((c) => source.votes[c]?.veto).length;
+      note({ type: "source_decided", sourceId: source.id, excluded: vetoes > COUNSEL.length / 2 });
+    }
+  }
+  note({ type: "instruction_closed" });
+  await flush();
 
   for (const stage of ["opening", "rebuttal"] as const) {
     for (const counsel of COUNSEL) {

@@ -1,16 +1,17 @@
 import Link from "next/link";
 import { connection } from "next/server";
 import { submissionExcerpt } from "@/domain/acta.ts";
-import { COUNSEL, JUDGE, project, type CaseRecord } from "@/domain/court.ts";
+import { COUNSEL, COUNSEL_NAMES, JUDGE, project, type CaseRecord } from "@/domain/court.ts";
 import { JudgeSeal, ModelMark, VERDICT_TEXT, VerdictGlyph } from "@/components/marks.tsx";
 import { auth0 } from "@/lib/auth0.ts";
 import { RequestForm } from "@/components/request-form.tsx";
 import { getEvents, listCases } from "@/store.ts";
 
 const STEPS = [
-  { n: "I", title: "Investigación", body: "El moderador fija las afirmaciones verificables. Grok, Gemini y Claude investigan por separado y presentan evidencia con fuente." },
-  { n: "II", title: "Debate", body: "Cada analista expone, responde y puede objetar a sus colegas. El moderador resuelve las objeciones y anula lo que no se sostiene." },
-  { n: "III", title: "Resultado", body: "Votan verdadero, falso o no verificable. Si dos coinciden, hay mayoría. Si no, desempata el moderador con la evidencia del registro." },
+  { n: "I", title: "Instrucción", body: "El moderador fija las afirmaciones. " + COUNSEL_NAMES + " buscan pruebas a favor y en contra. El moderador unifica las fuentes y conserva los aportes de cada analista." },
+  { n: "II", title: "Crítica de fuentes", body: "Cada analista revisa la confiabilidad de las fuentes. Tres de los cuatro votos anulan una fuente; todos los votos y sus motivos quedan registrados." },
+  { n: "III", title: "Debate", body: "Con las fuentes admitidas conocidas por todos, cada analista expone, responde y puede objetar a sus colegas. El moderador resuelve las objeciones." },
+  { n: "IV", title: "Resultado", body: "Votan verdadero, falso o no verificable. Si tres coinciden, hay mayoría. Si no, desempata el moderador con la evidencia del registro." },
 ];
 
 async function CaseRow({ c }: { c: CaseRecord }) {
@@ -56,7 +57,7 @@ export default async function Home() {
             ¿Es cierto lo que leíste? <em className="text-celeste-deep">Que lo chequeen.</em>
           </h1>
           <p className="mt-5 max-w-md text-lg leading-relaxed text-ink-soft">
-            Presentá un texto, un enlace o una imagen. Tres inteligencias artificiales lo investigan en equipo: reúnen evidencia, lo debaten y votan. Nadie edita, nadie opina, todo queda en el registro público.
+            Presentá un texto, un enlace o una imagen. Las inteligencias artificiales del panel lo investigan en equipo: reúnen evidencia, lo debaten y votan. Nadie edita, nadie opina, todo queda en el registro público.
           </p>
           <div className="mt-6 flex items-center gap-3">
             {COUNSEL.map((c) => (
@@ -72,7 +73,7 @@ export default async function Home() {
         </div>
       </section>
 
-      <section className="mt-16 grid gap-6 border-y border-rule py-8 sm:grid-cols-3">
+      <section className="mt-16 grid gap-6 border-y border-rule py-8 sm:grid-cols-2 lg:grid-cols-4">
         {STEPS.map((s, i) => (
           <div key={s.n} className="reveal" style={{ animationDelay: 200 + i * 90 + "ms" }}>
             <span className="font-display text-3xl italic text-celeste-deep">{s.n}.</span>

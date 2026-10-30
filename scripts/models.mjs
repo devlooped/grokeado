@@ -1,7 +1,7 @@
-import { Cursor } from "@cursor/sdk";
-
-const models = await Cursor.models.list();
-for (const m of models) {
-  if (!/grok|gemini|claude|opus|sonnet/i.test(m.id + m.displayName)) continue;
-  console.log(m.id + " | " + m.displayName + " | params: " + JSON.stringify(m.parameters?.map((p) => [p.id, p.values.map((v) => v.value)])));
+// The public catalog needs no credential; AI SDK's discovery method does.
+const response = await fetch("https://ai-gateway.vercel.sh/v1/models", { signal: AbortSignal.timeout(30_000) });
+if (!response.ok) throw new Error("Gateway model catalog failed: " + response.status);
+const { data } = await response.json();
+for (const model of data) {
+  if (/^(spacexai|google|anthropic|openai)\//.test(model.id)) console.log(model.id + " | " + model.name);
 }

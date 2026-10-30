@@ -1,4 +1,3 @@
-import type { SDKCustomTool } from "@cursor/sdk";
 import { z } from "zod";
 
 export class Rejection extends Error {}
@@ -15,29 +14,18 @@ export function tool<T>(description: string, schema: z.ZodType<T>, handle: (inpu
   return { description, schema, handle } as unknown as Tool<never>;
 }
 
-function errorResult(text: string) {
-  return { content: [{ type: "text" as const, text }], isError: true };
-}
-
-export function toSdkTools(tools: Toolset): Record<string, SDKCustomTool> {
-  return Object.fromEntries(
-    Object.entries(tools).map(([name, t]) => {
-      const schema = t.schema as z.ZodType;
-      const sdkTool: SDKCustomTool = {
-        description: t.description,
-        inputSchema: z.toJSONSchema(schema) as SDKCustomTool["inputSchema"],
-        execute: (args) => {
-          const parsed = schema.safeParse(args);
-          if (!parsed.success) return errorResult("Argumentos inválidos:\n" + z.prettifyError(parsed.error));
-          try {
-            return (t.handle as (input: unknown) => string)(parsed.data);
-          } catch (err) {
-            if (err instanceof Rejection) return errorResult(err.message);
-            throw err;
-          }
-        },
-      };
-      return [name, sdkTool];
-    })
-  );
+export function toAiTools(tools: Toolset) {
+  return Object.fromEntries(Object.entries(tools).map(([name, t]) => [name, {
+    description: t.description,
+    inputSchema: t.schema as z.ZodType,
+    execute: async (args: unknown) => {
+      try {
+        return (t.handle as (input: unknown) => string)(args);
+      } catch (err) {
+        // A rejected court action is feedback for the model to correct, not a failed step.
+        if (err instanceof Rejection) return { error: err.message };
+        throw err;
+      }
+    },
+  }]));
 }

@@ -1,5 +1,5 @@
-import { STAGE_LABEL, VERDICT_LABEL } from "@/domain/acta.ts";
-import { JUDGE, MODEL_NAME, type CaseView, type Counsel, type RecordedEvent } from "@/domain/court.ts";
+import { ABSENCE_LABEL, EVIDENCE_STANCE_LABEL, STAGE_LABEL, VERDICT_LABEL } from "@/domain/acta.ts";
+import { COUNSEL, JUDGE, MODEL_NAME, type CaseView, type Counsel, type RecordedEvent, type SourceView } from "@/domain/court.ts";
 import { GavelIcon, JudgeSeal, ModelMark, VERDICT_TEXT, VerdictGlyph } from "./marks.tsx";
 
 const time = (at: string) =>
@@ -17,10 +17,47 @@ function Clerk({ children }: { children: React.ReactNode }) {
   return <p className="py-1 text-center font-mono text-[11px] uppercase tracking-[0.18em] text-ink-soft">{children}</p>;
 }
 
+function Source({ source }: { source: SourceView }) {
+  const contributors = COUNSEL.filter((c) => source.contributions.some((e) => e.by === c));
+  const vetoes = COUNSEL.filter((c) => source.votes[c]?.veto).length;
+  return (
+    <article id={source.id} className="scroll-mt-24 rounded-sm border border-rule bg-paper/60 px-4 py-3 target:ring-2 target:ring-celeste">
+      <p className="text-xs text-ink-soft">
+        <span className="font-mono font-medium text-ink">{source.id}</span>{" · "}
+        <span className={source.excluded ? "font-semibold text-seal" : "font-semibold"}>
+          {source.excluded ? "Anulada" : source.excluded === false ? "Admitida" : "Pendiente de crítica"}
+        </span>
+        {source.excluded !== undefined && " · " + vetoes + "/4 votos por anular"}
+      </p>
+      <a href={source.url} target="_blank" rel="noreferrer noopener" className="mt-1 block font-medium text-celeste-deep underline underline-offset-2">{source.title}</a>
+      <p className="mt-1 text-xs text-ink-soft">Aportada por {contributors.map((c) => MODEL_NAME[c]).join(", ")}</p>
+      <ul className="mt-2 space-y-2 text-sm">
+        {source.contributions.map((e) => (
+          <li key={e.id} className={source.excluded ? "struck text-ink-soft" : "text-ink-soft"}>
+            <span className="font-semibold">{MODEL_NAME[e.by]} · {e.claimId} · {EVIDENCE_STANCE_LABEL[e.stance ?? "context"]}:</span> {e.excerpt}
+          </li>
+        ))}
+      </ul>
+      {source.excluded && <p className="mt-2 text-sm font-semibold text-seal">No puede usarse como prueba en las exposiciones ni en el resultado.</p>}
+      <details className="mt-3 text-sm">
+        <summary className="cursor-pointer text-celeste-deep">Votos y fundamentos sobre la confiabilidad</summary>
+        <ul className="mt-2 space-y-1">
+          {COUNSEL.map((c) => (
+            <li key={c}>
+              <span className="font-semibold">{MODEL_NAME[c]}:</span>{" "}
+              {source.votes[c] ? <>{source.votes[c].veto ? "Vetar" : "No vetar"}. {source.votes[c].reason}</> : "No votó."}
+            </li>
+          ))}
+        </ul>
+      </details>
+    </article>
+  );
+}
+
 function Entry({ e, view }: { e: RecordedEvent; view: CaseView }) {
   switch (e.type) {
     case "session_opened":
-      return <Clerk>Empieza el debate · modera {MODEL_NAME[JUDGE]} · {time(e.at)}</Clerk>;
+      return <Clerk>{e.simulated && "Simulación local · fuentes y respuestas ficticias · "}Empieza el debate · modera {MODEL_NAME[JUDGE]} · {time(e.at)}</Clerk>;
     case "claims_entered":
       return (
         <div className="flex gap-3">
@@ -46,7 +83,7 @@ function Entry({ e, view }: { e: RecordedEvent; view: CaseView }) {
           <div className="flex items-center gap-2 text-xs text-ink-soft">
             <span className="font-mono font-medium text-ink">{e.evidence.id}</span>
             <ModelMark model={e.evidence.by} className="size-3.5" />
-            <span>Evidencia de {MODEL_NAME[e.evidence.by]} sobre {e.evidence.claimId}</span>
+            <span>Aporte de {MODEL_NAME[e.evidence.by]} sobre {e.evidence.claimId}{e.evidence.stance && " · " + EVIDENCE_STANCE_LABEL[e.evidence.stance]}</span>
           </div>
           <a href={e.evidence.url} target="_blank" rel="noreferrer noopener" className="mt-1 block font-medium text-celeste-deep underline decoration-celeste/40 underline-offset-2 hover:decoration-celeste-deep">
             {e.evidence.title}
@@ -54,6 +91,32 @@ function Entry({ e, view }: { e: RecordedEvent; view: CaseView }) {
           <p className="mt-1 text-sm text-ink-soft">{e.evidence.excerpt}</p>
         </div>
       );
+    case "instruction_opened":
+      return <Clerk>Instrucción · aporte de pruebas a favor y en contra</Clerk>;
+    case "instruction_completed":
+      return (
+        <details className="ml-12 text-sm text-ink-soft">
+          <summary className="cursor-pointer">{MODEL_NAME[e.by]} cierra sus aportes · búsquedas en ambos sentidos</summary>
+          <ul className="mt-2 space-y-2">
+            {e.searches.map((s) => <li key={s.claimId}><span className="font-mono">{s.claimId}</span><p>A favor: {s.supporting}</p><p>En contra: {s.opposing}</p></li>)}
+          </ul>
+        </details>
+      );
+    case "evidence_unified":
+      return (
+        <div className="ml-12 space-y-3">
+          <p className="font-semibold">El moderador unifica las pruebas · expediente común</p>
+          <p className="text-sm text-ink-soft">Cada fuente conserva los aportes de todos los analistas. A continuación se vota su confiabilidad.</p>
+          {e.sources.map((s) => <Source key={s.id} source={view.sources.get(s.id)!} />)}
+          {!e.sources.length && <p className="text-sm text-ink-soft">No se aportaron pruebas.</p>}
+        </div>
+      );
+    case "source_review_vote":
+      return <p className="ml-12 text-sm"><span className="font-semibold">{MODEL_NAME[e.by]}</span> vota {e.veto ? "vetar" : "no vetar"} <a href={"#" + e.sourceId} className="font-mono text-celeste-deep hover:underline">{e.sourceId}</a>: <span className="text-ink-soft">{e.reason}</span></p>;
+    case "source_decided":
+      return <p className={"ml-12 text-sm " + (e.excluded ? "text-seal" : "text-ink-soft")}><a href={"#" + e.sourceId} className="font-mono hover:underline">{e.sourceId}</a>: {e.excluded ? "anulada por mayoría (al menos 3 de 4 votos)." : "admitida; no hubo mayoría para anularla."}</p>;
+    case "instruction_closed":
+      return <Clerk>Termina la instrucción · fuentes fijadas para las exposiciones</Clerk>;
     case "floor_granted":
       return <Clerk>El moderador da la palabra a {MODEL_NAME[e.to]} · {STAGE_LABEL[e.stage]}</Clerk>;
     case "statement": {
@@ -134,7 +197,7 @@ function Entry({ e, view }: { e: RecordedEvent; view: CaseView }) {
         </p>
       );
     case "absence":
-      return <Clerk>{MODEL_NAME[e.by]} no se pronunció</Clerk>;
+      return <Clerk>{MODEL_NAME[e.by]} no se pronunció en la {ABSENCE_LABEL[e.stage]}</Clerk>;
     case "session_closed":
       return <Clerk>Termina el debate · {time(e.at)}</Clerk>;
   }

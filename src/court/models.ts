@@ -1,10 +1,17 @@
-import type { ModelSelection } from "@cursor/sdk";
+import type { generateText } from "ai";
 import type { Counsel } from "../domain/court.ts";
 
-export const JUDGE_MODEL: ModelSelection = { id: "grok-4.7", params: [{ id: "reasoning_effort", value: "high" }] };
+export interface CourtModel {
+  id: string;
+  providerOptions?: Parameters<typeof generateText>[0]["providerOptions"];
+}
 
-export const COUNSEL_MODELS: Record<Counsel, ModelSelection> = {
-  grok: { id: "grok-4.7", params: [{ id: "reasoning_effort", value: "high" }] },
-  gemini: { id: "gemini-4-argon", params: [{ id: "reasoning_effort", value: "high" }] },
-  claude: { id: "claude-opus-5-5", params: [{ id: "effort", value: "high" }] },
+// AI Gateway catalog IDs, shared by execution and the recorded acta.
+export const JUDGE_MODEL: CourtModel = { id: "spacexai/grok-4.7", providerOptions: { xai: { reasoningEffort: "high" } } };
+
+export const COUNSEL_MODELS: Record<Counsel, CourtModel> = {
+  grok: JUDGE_MODEL,
+  gemini: { id: "google/gemini-4-argon", providerOptions: { google: { thinkingConfig: { thinkingLevel: "high" } } } },
+  openai: { id: "openai/gpt-5.5" },
+  claude: { id: "anthropic/claude-opus-5.5", providerOptions: { anthropic: { effort: "high" } } },
 };

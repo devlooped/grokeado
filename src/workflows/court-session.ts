@@ -17,14 +17,15 @@ function describeError(err: unknown): string {
 
 export async function courtSession(caseId: string): Promise<void> {
   "use workflow";
-  const { submission, today } = await openCase(caseId);
-  const docket: Docket = { submission, today };
+  const { submission, today, simulated } = await openCase(caseId);
+  const docket: Docket = { submission, today, simulated };
   try {
     await holdSession({
       submission,
+      simulated,
       models: {
         judge: JUDGE_MODEL.id,
-        counsel: { grok: COUNSEL_MODELS.grok.id, gemini: COUNSEL_MODELS.gemini.id, claude: COUNSEL_MODELS.claude.id },
+        counsel: { grok: COUNSEL_MODELS.grok.id, gemini: COUNSEL_MODELS.gemini.id, claude: COUNSEL_MODELS.claude.id, openai: COUNSEL_MODELS.openai.id },
       },
       play: (spec, record, attempt) => play(caseId, docket, spec, record, attempt),
       commit: (events: readonly RecordedEvent[]) => saveEvents(caseId, [...events]),

@@ -1,48 +1,45 @@
-import { Agent, tempFs, type ModelSelection, type SDKCustomTool, type SDKImage, type ToolName } from "@cursor/sdk";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import path from "node:path";
-import { toSdkTools, type Toolset } from "./toolset.ts";
+import { gateway, generateText, stepCountIs, type LanguageModel } from "ai";
+import type { CourtModel } from "./models.ts";
+import { createMockSeat, type MockTurn } from "./mock.ts";
+import { researchTools } from "./research.ts";
+import { toAiTools, type Toolset } from "./toolset.ts";
 
-const TURN_TIMEOUT_MS = Number(process.env.COURT_TURN_TIMEOUT_MS ?? 270_000);
-
-export interface SeatRun {
-  name: string;
-  model: ModelSelection;
-  builtinTools: ToolName[];
-  extraTools?: Record<string, SDKCustomTool>;
-  prompt: string;
-  tools: Toolset;
-  images?: SDKImage[];
+export interface SeatImage {
+  data: Uint8Array;
+  mimeType: string;
 }
 
-// A seat is a throwaway agent: it works on an in-memory file system and is disposed when the turn ends.
-export async function runSeat(run: SeatRun): Promise<void> {
-  const cwd = await mkdtemp(path.join(tmpdir(), "grokeado-"));
-  try {
-    const agent = await Agent.create({
-      name: run.name,
-      model: run.model,
-      apiKey: process.env.CURSOR_API_KEY || undefined,
-      tools: [...run.builtinTools, "mcp"],
-      local: { cwd, fs: tempFs(), settingSources: [] },
-    });
-    try {
-      const sent = await agent.send(
-        { text: run.prompt, images: run.images },
-        { local: { customTools: { ...run.extraTools, ...toSdkTools(run.tools) } } }
-      );
-      const timer = setTimeout(() => void sent.cancel().catch(() => undefined), TURN_TIMEOUT_MS);
-      try {
-        const result = await sent.wait();
-        if (result.status === "error") throw new Error(run.name + " run " + sent.id + " failed");
-      } finally {
-        clearTimeout(timer);
-      }
-    } finally {
-      await agent[Symbol.asyncDispose]();
-    }
-  } finally {
-    await rm(cwd, { recursive: true, force: true }).catch(() => undefined);
-  }
+export interface SeatRun {
+  model: CourtModel;
+  research: boolean;
+  prompt: string;
+  tools: Toolset;
+  done?(): boolean;
+  images?: SeatImage[];
+  mock?: MockTurn;
+}
+
+// One stateless conversation per durable workflow step. Court tools only mutate
+// this turn's in-memory events; the workflow commits them after the step returns.
+export async function runSeat(run: SeatRun, model?: LanguageModel): Promise<void> {
+  const mock = run.mock ? createMockSeat(run.mock, run.research) : undefined;
+  await generateText({
+    model: model ?? mock?.model ?? gateway(run.model.id),
+    providerOptions: run.model.providerOptions,
+    messages: [{
+      role: "user",
+      content: [
+        { type: "text", text: run.prompt },
+        ...(run.images ?? []).map((image) => ({ type: "file" as const, data: image.data, mediaType: image.mimeType })),
+      ],
+    }],
+    tools: { ...(mock?.research ?? researchTools(run.research)), ...toAiTools(run.tools) },
+    // Decision turns must call a court tool; a prose answer never enters the
+    // record. Instruction ends only after the analyst explicitly closes it.
+    toolChoice: run.done ? "required" : "auto",
+    stopWhen: [stepCountIs(20), () => run.done?.() ?? false],
+    // Keep a turn below the function duration; the court can retry unfinished turns.
+    abortSignal: AbortSignal.timeout(Number(process.env.COURT_TURN_TIMEOUT_MS ?? 270_000)),
+    maxRetries: 2,
+  });
 }

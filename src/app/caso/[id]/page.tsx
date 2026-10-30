@@ -6,7 +6,7 @@ import { Acta } from "@/components/acta.tsx";
 import { AutoRefresh } from "@/components/auto-refresh.tsx";
 import { GavelIcon, JudgeSeal, VERDICT_TEXT, VoteChip } from "@/components/marks.tsx";
 import { submissionExcerpt, VERDICT_LABEL } from "@/domain/acta.ts";
-import { COUNSEL, JUDGE, MODEL_NAME, type CaseRecord, type ClaimView } from "@/domain/court.ts";
+import { COUNSEL, COUNSEL_NAMES, JUDGE, MODEL_NAME, type CaseRecord, type ClaimView } from "@/domain/court.ts";
 import { project } from "@/domain/court.ts";
 import { getCase, getEvents } from "@/store.ts";
 
@@ -114,7 +114,7 @@ function ClaimCard({ claim }: { claim: ClaimView }) {
         ) : j ? (
           <div className="text-right">
             <p className={"font-display text-3xl leading-none " + VERDICT_TEXT[j.verdict]}>{VERDICT_LABEL[j.verdict]}</p>
-            <p className="mt-1 text-[11px] uppercase tracking-wider text-ink-soft">Mayoría {agreeing} de 3</p>
+            <p className="mt-1 text-[11px] uppercase tracking-wider text-ink-soft">Mayoría {agreeing}</p>
           </div>
         ) : null}
       </div>
@@ -134,7 +134,7 @@ function InSession({ c }: { c: CaseRecord }) {
       </div>
       <h1 className="mt-8 font-display text-5xl sm:text-6xl">El panel está analizando</h1>
       <p className="mx-auto mt-4 max-w-md text-ink-soft">
-        Grok, Gemini y Claude están investigando y debatiendo tu consulta. Cuando terminen vas a ver el resultado y el registro completo. Esta página se actualiza sola.
+        {COUNSEL_NAMES} están investigando y debatiendo tu consulta. Cuando terminen vas a ver el resultado y el registro completo. Esta página se actualiza sola.
       </p>
       <p className="mx-auto mt-8 line-clamp-3 max-w-lg font-display text-lg italic text-ink-soft">«{submissionExcerpt(c.submission)}»</p>
       <p className="mt-6 font-mono text-xs text-ink-soft">Caso Nº {c.id}</p>
@@ -164,6 +164,7 @@ export default async function CasePage(props: PageProps<"/caso/[id]">) {
   if (c.status === "failed") return <Suspended c={c} />;
 
   const events = await getEvents(id);
+  const simulated = events.some((e) => e.type === "session_opened" && e.simulated);
   const view = project(events);
   const byJudge = view.claims.filter((cl) => cl.judgment?.method === "judge").length;
 
@@ -181,6 +182,8 @@ export default async function CasePage(props: PageProps<"/caso/[id]">) {
           </p>
         )}
       </header>
+
+      {simulated && <p role="status" className="mt-4 rounded-sm border border-seal/40 bg-seal/5 p-4 text-sm text-seal">Simulación local: las fuentes, respuestas y el resultado son ficticios y solo sirven para probar el flujo.</p>}
 
       <div className="mt-6">
         <Original c={c} claims={view.claims} />
