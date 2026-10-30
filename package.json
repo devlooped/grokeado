@@ -12,6 +12,8 @@
     "test": "node --import tsx --test \"src/**/*.test.ts\"",
     "test:gateway": "node --import tsx scripts/test-gateway.ts",
     "test:court": "node --import tsx scripts/test-court.ts",
+    "test:evals": "node --import tsx --test \"evals/tiers/*.test.ts\"",
+    "eval:tiers": "node --import tsx scripts/eval-tiers.ts",
     "models": "node scripts/models.mjs"
   },
   "dependencies": {

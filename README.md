@@ -138,6 +138,12 @@ record as it stands, including any historical absences. If overriding
 `WORKFLOW_LOCAL_DATA_DIR`, use the same value for the server and test command.
 
 Offline checks: `npm test`, `npm run typecheck`, and `npm run build`.
+The separate [verification tier pilot](evals/tiers/README.md) runs three curated
+cases through real Gateway research, medium moderation with substantive escalation,
+bounded follow-up research and all four evaluators. It separates task complexity
+from evidence sufficiency, with English identifiers and Spanish reports.
+Use `npm run test:evals` for offline checks and `npm run eval:tiers`
+for the paid experiment. It does not change production court behavior.
 Each seat attempt has a 20-generation limit and a 270-second timeout (override
 with `COURT_TURN_TIMEOUT_MS`). The court retries unfinished turns once; the
 Workflow runtime also retries infrastructure failures. A running workflow can
