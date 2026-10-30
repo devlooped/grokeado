@@ -62,6 +62,11 @@ export const assessmentSchema = z.object({
   criteria: z.array(z.object({ criterion: z.string(), assessment: z.string(), sourceIds: z.array(z.string()) })),
   limitations: z.array(z.string()),
 });
+export const gapRulingSchema = z.object({
+  rulings: z.array(z.object({
+    gap: z.number().int().min(0), material: z.boolean(), reason: z.string().min(20),
+  })),
+});
 export const gradingSchema = z.object({
   grades: z.array(z.object({
     candidate: z.string(),
@@ -135,7 +140,7 @@ export function modelFor(by: Counsel, tier: Tier, effort: "medium" | "high" = ti
     case "grok": return { id: "spacexai/grok-4.7", providerOptions: { xai: { reasoningEffort: effort } } };
     case "gemini": return { id: tier === "assessment" ? "google/gemini-4-argon" : "google/gemini-3.8-flash", providerOptions: { google: { thinkingConfig: { thinkingLevel: effort } } } };
     case "claude": return { id: tier === "fact" ? "anthropic/claude-haiku-5.5" : tier === "comparison" ? "anthropic/claude-sonnet-5.5" : "anthropic/claude-opus-5.5", providerOptions: { anthropic: { effort } } };
-    case "openai": return { id: tier === "fact" ? "openai/gpt-6-luna" : tier === "comparison" ? "openai/gpt-6.1-terra" : "openai/gpt-6.1-sol", providerOptions: { openai: { reasoningEffort: effort } } };
+    case "chatgpt": return { id: tier === "fact" ? "openai/gpt-6-luna" : tier === "comparison" ? "openai/gpt-6.1-terra" : "openai/gpt-6.1-sol", providerOptions: { openai: { reasoningEffort: effort } } };
   }
 }
 

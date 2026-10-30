@@ -6,7 +6,7 @@ import { EXPERIMENT_VERSION, validateResume } from "./experiment.ts";
 import { moderatorPrompt, researchPrompt } from "./prompts.ts";
 import { renderReport, type CaseReport } from "./report.ts";
 import { evaluateSufficiency, SUFFICIENCY_CASES } from "./sufficiency-cases.ts";
-import { BudgetExceededError, resolveAssessment, runResearchLoop, type Dossier, type ResearchBatch, type ResearchOutcome } from "./workflow.ts";
+import { adjudicateChallenges, BudgetExceededError, challengedGaps, resolveAssessment, runResearchLoop, type Dossier, type ResearchBatch, type ResearchOutcome } from "./workflow.ts";
 
 const complete = SUFFICIENCY_CASES.find((c) => c.id === "complete-fact")!.dossier;
 const missing = SUFFICIENCY_CASES.find((c) => c.id === "missing-primary")!.dossier;
@@ -145,6 +145,37 @@ test("an evaluator can challenge accepted sufficiency; unsafe raw verdicts remai
   const invalid = assessment();
   invalid.evidence.checks.support.sourceIds = ["S99"];
   assert.equal(resolveAssessment(invalid, acceptedOutcome()).effectiveVerdict, "unverifiable");
+});
+
+test("a moderator can dismiss a challenged gap without research; material gaps trigger one shared research round", async () => {
+  const accepted = acceptedOutcome();
+  const gaps = challengedGaps([{ by: "grok", result: { ...assessment(), evidence: evidence("insufficient") } }, { by: "gemini", result: assessment() }], accepted);
+  assert.equal(gaps.length, 1);
+  assert.equal(gaps[0].by, "grok");
+  const reason = "El extracto oficial ya trae el dato explícito y su período.";
+  let researched = 0;
+  const base = { outcome: accepted, gaps, maxResearchRounds: 1,
+    research: async () => { researched++; return batch(complete); }, moderate: async () => route() };
+  const dismissed = await adjudicateChallenges({ ...base, rule: async () => [{ gap: 0, material: false, reason }] });
+  assert.equal(researched, 0);
+  assert.equal(dismissed.outcome, accepted);
+  const material = await adjudicateChallenges({ ...base, rule: async () => [{ gap: 0, material: true, reason }] });
+  assert.equal(researched, 1);
+  assert.equal(material.adjudication.researched, true);
+  assert.equal(material.outcome.researchRounds, 1);
+  assert.equal(material.outcome.stopReason, "sufficient");
+  const unresolved = await adjudicateChallenges({ ...base, rule: async () => [{ gap: 0, material: true, reason }], moderate: async () => route("insufficient") });
+  assert.equal(unresolved.outcome.stopReason, "iteration_limit");
+  assert.equal(resolveAssessment(assessment(), unresolved.outcome).effectiveVerdict, "unverifiable");
+  const exhausted = await adjudicateChallenges({ ...base, maxResearchRounds: 0, rule: async () => [{ gap: 0, material: true, reason }] });
+  assert.equal(exhausted.adjudication.researched, false);
+  await assert.rejects(adjudicateChallenges({ ...base, rule: async () => [] }), /exactly once/);
+});
+
+test("challenges are only collected against an accepted sufficiency", () => {
+  const challenger = { by: "claude" as const, result: { ...assessment(), evidence: evidence("insufficient") } };
+  assert.equal(challengedGaps([challenger], { ...acceptedOutcome(), stopReason: "iteration_limit" }).length, 0);
+  assert.equal(challengedGaps([challenger], acceptedOutcome()).length, 1);
 });
 
 test("an empty dossier can be researched but cannot be accepted as sufficient", async () => {

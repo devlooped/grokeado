@@ -1,12 +1,14 @@
 import type { z } from "zod";
 import { CHECKS, type assessmentSchema, type Tier } from "./core.ts";
 import { actionLabels, checkLabels, checkStatusLabels, effortLabels, evidenceLabels, stopLabels, tierLabels, verdictLabels } from "./presentation.ts";
-import type { ResearchCheck, ResearchOutcome, RoutingTurn, resolveAssessment } from "./workflow.ts";
+import type { Adjudication, ResearchCheck, ResearchOutcome, RoutingTurn, resolveAssessment } from "./workflow.ts";
 import type { SufficiencyReport } from "./sufficiency-cases.ts";
 
 export interface AssessmentReport extends ReturnType<typeof resolveAssessment> {
   candidate: string; by: string; tier: Tier; result: z.infer<typeof assessmentSchema>;
   verdictCorrect: boolean | null;
+  // Present when the moderator's gap ruling led this evaluator to re-assess.
+  initialVerdict?: z.infer<typeof assessmentSchema>["verdict"]; initialEvidenceStatus?: z.infer<typeof assessmentSchema>["evidence"]["status"];
 }
 export interface CaseReport {
   claim: string; expectedTier: Tier; expectedVerdict: z.infer<typeof assessmentSchema>["verdict"] | null;
@@ -18,6 +20,7 @@ export interface CaseReport {
   grades: { candidate: string; groundedFacts: boolean; comparableOrApplicableCriteria: boolean;
     correctReasoning: boolean; calibratedConclusion: boolean; explanation: string }[];
   evaluationBudgetExhausted: boolean;
+  adjudication?: Adjudication;
 }
 
 export function renderReport(cases: Record<string, CaseReport>, metadata: { asOf: string; started: string; deltaUsd: number; failures: string[] }) {
@@ -49,6 +52,13 @@ export function renderReport(cases: Record<string, CaseReport>, metadata: { asOf
       if (check.filed > check.grounded) lines.push(`- Citas rechazadas: ${check.filed - check.grounded} de ${check.filed}, ${check.by}, ronda ${check.round}.`);
     }
     lines.push("", "### Evaluaciones");
+    if (c.adjudication) {
+      lines.push("", `Resolución del moderador sobre vacíos cuestionados${c.adjudication.researched ? " (con una ronda de investigación adicional)" : ""}:`);
+      c.adjudication.gaps.forEach((gap, i) => {
+        const ruling = c.adjudication!.rulings.find((r) => r.gap === i);
+        lines.push(`- ${gap.by}: ${gap.aspect} → ${ruling?.material ? "material" : "no material"}. ${ruling?.reason ?? ""}`);
+      });
+    }
     if (c.evaluationBudgetExhausted) lines.push("", "Evaluación o rúbrica incompleta por el límite de gasto.");
     for (const a of c.assessments) {
       const grade = c.grades.find((g) => g.candidate === a.candidate);
@@ -56,6 +66,7 @@ export function renderReport(cases: Record<string, CaseReport>, metadata: { asOf
         "  " + a.result.rationale);
       if (a.abstentionRequired) lines.push("  Se requiere abstención: expediente no habilitado, suficiencia cuestionada o citas inválidas.");
       if (a.sufficiencyChallenged) lines.push("  El evaluador cuestionó la suficiencia aceptada por el moderador.");
+      if (a.initialVerdict) lines.push(`  Reevaluó tras la resolución del moderador; respuesta inicial: ${verdictLabels[a.initialVerdict]}.`);
       for (const gap of a.result.evidence.gaps) lines.push(`  Vacío señalado: ${gap.aspect}. ${gap.whyItMatters} Investigación pendiente: ${gap.researchAction}`);
       for (const limitation of a.result.limitations) lines.push("  Limitación: " + limitation);
     }

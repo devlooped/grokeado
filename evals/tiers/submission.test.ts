@@ -12,7 +12,7 @@ test("Gateway research exposes fetch and submit in the first provider step, with
     usage: { inputTokens: { total: 10, noCache: 10, cacheRead: 0, cacheWrite: 0 }, outputTokens: { total: 10, text: 10, reasoning: 0 } },
     warnings: [],
   } });
-  const { output } = await generateSubmission({ model: modelFor("openai", "fact"), prompt: "Research and submit.",
+  const { output } = await generateSubmission({ model: modelFor("chatgpt", "fact"), prompt: "Research and submit.",
     schema: z.object({ answer: z.string() }), research: true }, model);
   assert.deepEqual(output, { answer: "Recorded" });
   assert.deepEqual(model.doGenerateCalls[0].tools?.map((t) => t.name).sort(), ["submit", "web_fetch", "web_search"]);

@@ -29,9 +29,20 @@ Citá solo identificadores S existentes. Expediente unificado:
 ${JSON.stringify(dossierForPrompt(dossier))}`;
 }
 
-export function assessmentPrompt(dossier: Dossier) {
+export function gapRulingPrompt(dossier: Dossier, gaps: { by: string; aspect: string; whyItMatters: string; researchAction: string }[]) {
+  return `${dataBoundary}
+Sos el moderador. Ya aceptaste la suficiencia de este expediente; algunos evaluadores la cuestionaron con los vacíos numerados abajo. Resolvé cada vacío de forma independiente, sin votar ni contar cuántos evaluadores lo plantean.
+Un vacío es material (material: true) solo si, sin ese dato, el veredicto sobre esta afirmación concreta no puede alcanzarse con fiabilidad: falta una parte de la afirmación, hay incompatibilidad de período, unidad o alcance, una contradicción sin resolver, o un documento decisivo que no está en el expediente y cuyo contenido podría cambiar la conclusión. No es material pedir el documento completo cuando los extractos oficiales ya traen el dato explícito, su rótulo y su período; tampoco pedir cotejo de revisiones hipotéticas sin indicio concreto, ni verificar lo ya satisfecho. Justificá cada resolución con referencia al expediente.
+Respondé con un ruling por vacío: gap (índice), material, reason.
+Vacíos: ${JSON.stringify(gaps.map((gap, index) => ({ gap: index, ...gap })))}
+Expediente: ${JSON.stringify(dossierForPrompt(dossier))}`;
+}
+
+export interface GapReview { gaps: { aspect: string; material: boolean; reason: string }[]; researched: boolean }
+
+export function assessmentPrompt(dossier: Dossier, review?: GapReview) {
   return `${dataBoundary}
 Evaluá exclusivamente el expediente compartido. No tenés herramientas de búsqueda en esta etapa. Determiná verdict true, false o unverifiable según lo que realmente permite la evidencia. Explicá cálculos con unidades, criterios aplicados, contradicciones y limitaciones. Una fuente secundaria o un extracto de búsqueda no sustituye un texto normativo decisivo. Citá únicamente identificadores S del expediente. Si falta evidencia, no suplas el vacío con conocimiento de memoria.
-Evaluá independientemente la suficiencia en evidence con los seis checks coverage, fit, support, authority, contradictions y access. Todos requieren status satisfied/missing/uncertain, reason y sourceIds. evidence.status sufficient exige todos satisfechos y gaps vacío; de lo contrario usá insufficient o uncertain y detallá gaps (aspect, whyItMatters, researchAction). Registrá covered. Podés cuestionar la suficiencia del expediente aunque el moderador lo haya aceptado. Si no es suficiente, abstente con unverifiable. Verificá que verdict coincida con tu explicación.
-${JSON.stringify(dossierForPrompt(dossier))}`;
+Evaluá independientemente la suficiencia en evidence con los seis checks coverage, fit, support, authority, contradictions y access. Todos requieren status satisfied/missing/uncertain, reason y sourceIds. evidence.status sufficient exige todos satisfechos y gaps vacío; de lo contrario usá insufficient o uncertain y detallá gaps (aspect, whyItMatters, researchAction). Registrá covered. Podés cuestionar la suficiencia del expediente aunque el moderador la haya aceptado. Si no es suficiente, abstente con unverifiable. Verificá que verdict coincida con tu explicación.
+${review ? `Revisión: tus vacíos fueron resueltos por el moderador. ${review.researched ? "Los materiales se investigaron y el expediente de abajo ya incluye ese resultado." : "Ninguno requirió investigación adicional."} Resoluciones: ${JSON.stringify(review.gaps)}\nReevaluá. Un vacío no material no bloquea el veredicto: solo mantené tu objeción si indicás qué dato concreto sigue faltando y por qué cambiaría la conclusión; no repitas el mismo vacío descartado.\n` : ""}${JSON.stringify(dossierForPrompt(dossier))}`;
 }

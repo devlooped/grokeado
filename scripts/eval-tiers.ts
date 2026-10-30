@@ -6,11 +6,12 @@ import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { z } from "zod";
 import { AS_OF, CASES } from "../evals/tiers/cases.ts";
-import { assessmentSchema, EVALUATORS, gradingSchema, groundResearch, modelFor, researchSchema, routingSchema, type Observation, type Tier } from "../evals/tiers/core.ts";
+import { assessmentSchema, EVALUATORS, gapRulingSchema, gradingSchema, groundResearch, modelFor, researchSchema, routingSchema, type Evidence, type Observation, type Tier } from "../evals/tiers/core.ts";
 import type { CourtModel } from "../src/court/models.ts";
+import type { Counsel } from "../src/domain/court.ts";
 import { generateSubmission } from "../evals/tiers/submission.ts";
-import { BudgetExceededError, dossierForPrompt, resolveAssessment, runResearchLoop, type ResearchBatch, type RetrievalIssue } from "../evals/tiers/workflow.ts";
-import { assessmentPrompt, dataBoundary, moderatorPrompt, researchPrompt } from "../evals/tiers/prompts.ts";
+import { adjudicateChallenges, BudgetExceededError, challengedGaps, dossierForPrompt, resolveAssessment, runResearchLoop, type Adjudication, type ChallengedGap, type Dossier, type Effort, type ResearchBatch, type RetrievalIssue, type RoutingTurn } from "../evals/tiers/workflow.ts";
+import { assessmentPrompt, dataBoundary, gapRulingPrompt, moderatorPrompt, researchPrompt } from "../evals/tiers/prompts.ts";
 import { renderReport, renderSufficiencyReport, type AssessmentReport, type CaseReport } from "../evals/tiers/report.ts";
 import { EXPERIMENT_VERSION, validateResume } from "../evals/tiers/experiment.ts";
 import { evaluateSufficiency, SUFFICIENCY_CASES, type SufficiencyReport } from "../evals/tiers/sufficiency-cases.ts";
@@ -152,63 +153,93 @@ if (suite === "sufficiency") for (const entry of sufficiencyCases) {
 if (suite === "claims") for (const entry of cases) {
   try {
     // Reference labels, URLs and rubrics never enter subject prompts.
-    const outcome = await runResearchLoop({
-      claim: entry.claim, asOf: AS_OF, maxResearchRounds,
-      research: async (gaps, round, dossier) => {
-        const batch: ResearchBatch = { contributions: [], researchChecks: [] };
-        // Sequential paid calls let the account guard run before every request.
-        for (const by of EVALUATORS) {
-          const key = `${entry.id}-research-${round}-${by}`;
-          try {
-            const result = await call(key, modelFor(by, "fact"), researchPrompt(dossier, gaps), researchSchema, true);
-            const grounded = groundResearch(by, result.output, result.record.observations);
-            batch.contributions.push(...grounded);
-            batch.researchChecks.push({ by, round, passed: grounded.length > 0 && grounded.every((e) => e.grounded), filed: grounded.length,
-              grounded: grounded.filter((e) => e.grounded).length, observedPages: result.record.observations.length,
-              gaps: result.output.gaps, fetches: result.record.observations.filter((o) => o.tool === "web_fetch").length,
-              retrievalIssues: result.record.retrievalIssues });
-          } catch (error) {
-            if (error instanceof BudgetExceededError) { batch.budgetExhausted = true; break; }
-            failures.push(entry.id + ": " + safeError(error));
-            const record = completedCalls.get(key);
-            batch.researchChecks.push({ by, round, passed: false, filed: 0, grounded: 0,
-              observedPages: record?.observations.length ?? 0, fetches: record?.observations.filter((o) => o.tool === "web_fetch").length ?? 0,
-              gaps: ["Investigación incompleta por error de ejecución."], retrievalIssues: record?.retrievalIssues ?? [], error: safeError(error) });
-          }
+    // Sequential paid calls let the account guard run before every request.
+    const research = async (gaps: Evidence["gaps"], round: number, dossier: Dossier) => {
+      const batch: ResearchBatch = { contributions: [], researchChecks: [] };
+      for (const by of EVALUATORS) {
+        const key = `${entry.id}-research-${round}-${by}`;
+        try {
+          const result = await call(key, modelFor(by, "fact"), researchPrompt(dossier, gaps), researchSchema, true);
+          const grounded = groundResearch(by, result.output, result.record.observations);
+          batch.contributions.push(...grounded);
+          batch.researchChecks.push({ by, round, passed: grounded.length > 0 && grounded.every((e) => e.grounded), filed: grounded.length,
+            grounded: grounded.filter((e) => e.grounded).length, observedPages: result.record.observations.length,
+            gaps: result.output.gaps, fetches: result.record.observations.filter((o) => o.tool === "web_fetch").length,
+            retrievalIssues: result.record.retrievalIssues });
+        } catch (error) {
+          if (error instanceof BudgetExceededError) { batch.budgetExhausted = true; break; }
+          failures.push(entry.id + ": " + safeError(error));
+          const record = completedCalls.get(key);
+          batch.researchChecks.push({ by, round, passed: false, filed: 0, grounded: 0,
+            observedPages: record?.observations.length ?? 0, fetches: record?.observations.filter((o) => o.tool === "web_fetch").length ?? 0,
+            gaps: ["Investigación incompleta por error de ejecución."], retrievalIssues: record?.retrievalIssues ?? [], error: safeError(error) });
         }
-        return batch;
-      },
-      moderate: async (dossier, effort, round) => (await call(`${entry.id}-moderator-${round}-${effort}`,
-        modelFor("grok", "assessment", effort), moderatorPrompt(dossier), routingSchema)).output,
-      onUpdate: async (dossier, history) => {
-        await writeJson(resolve(outputDir, entry.id + "-dossier.json"), dossier);
-        await writeJson(resolve(outputDir, entry.id + "-routing.json"), history);
-      },
-    });
-    const { dossier } = outcome;
+      }
+      return batch;
+    };
+    const moderate = async (dossier: Dossier, effort: Effort, round: number) => (await call(`${entry.id}-moderator-${round}-${effort}`,
+      modelFor("grok", "assessment", effort), moderatorPrompt(dossier), routingSchema)).output;
+    const onUpdate = async (dossier: Dossier, history: RoutingTurn[]) => {
+      await writeJson(resolve(outputDir, entry.id + "-dossier.json"), dossier);
+      await writeJson(resolve(outputDir, entry.id + "-routing.json"), history);
+    };
+    // Reference labels, URLs and rubrics never enter subject prompts.
+    let outcome = await runResearchLoop({ claim: entry.claim, asOf: AS_OF, maxResearchRounds, research, moderate, onUpdate });
     const tiers = [...new Set<Tier>(["fact", ...(outcome.route ? [outcome.route.tier] : [])])];
-    const assessments: AssessmentReport[] = [];
+    type Raw = { by: Counsel; tier: Tier; result: z.infer<typeof assessmentSchema> };
+    const raw: Raw[] = [];
     let evaluationBudgetExhausted = outcome.stopReason === "budget_exhausted";
-    // Baseline and selected tier see identical dossiers and prompts. A challenged
-    // or exhausted dossier cannot yield an effective definitive verdict.
+    // Baseline and selected tier see identical dossiers and prompts.
     for (const tier of tiers) {
       if (evaluationBudgetExhausted) break;
       for (const by of EVALUATORS) {
         try {
-          const result = await call(`${entry.id}-verify-${tier}-${by}`, modelFor(by, tier), assessmentPrompt(dossier), assessmentSchema);
-          assessments.push({ candidate: "C" + (assessments.length + 1), by, tier, result: result.output,
-            ...resolveAssessment(result.output, outcome),
-            verdictCorrect: entry.expectedVerdict === null ? null : result.output.verdict === entry.expectedVerdict });
+          raw.push({ by, tier, result: (await call(`${entry.id}-verify-${tier}-${by}`, modelFor(by, tier), assessmentPrompt(outcome.dossier), assessmentSchema)).output });
         } catch (error) {
           if (error instanceof BudgetExceededError) { evaluationBudgetExhausted = true; break; }
           failures.push(entry.id + ": " + safeError(error));
         }
       }
     }
-    let grades: CaseReport["grades"] = [];
+    // A challenge to accepted sufficiency is ruled on gap by gap by the moderator;
+    // only material gaps trigger research, and each challenger re-assesses once.
+    const challenged = evaluationBudgetExhausted ? [] : challengedGaps(raw, outcome);
+    let adjudication: Adjudication | undefined;
+    const initial = new Map<Raw, Raw["result"]>();
+    if (challenged.length) {
+      try {
+        const adjudicated = await adjudicateChallenges({ outcome, gaps: challenged, maxResearchRounds, research, moderate, onUpdate,
+          rule: async (dossier, gaps) => (await call(`${entry.id}-gap-ruling`, modelFor("grok", "assessment", "medium"), gapRulingPrompt(dossier, gaps), gapRulingSchema)).output.rulings });
+        outcome = adjudicated.outcome; adjudication = adjudicated.adjudication;
+        evaluationBudgetExhausted = outcome.stopReason === "budget_exhausted";
+        const rulingOf = (gap: ChallengedGap) => adjudication!.rulings.find((r) => r.gap === adjudication!.gaps.indexOf(gap))!;
+        for (const item of raw) {
+          const own = adjudication.gaps.filter((gap) => gap.by === item.by && item.result.evidence.status !== "sufficient" && item.result.evidence.gaps.some((g) => g.aspect === gap.aspect));
+          if (!own.length || evaluationBudgetExhausted) continue;
+          const review = { researched: adjudication.researched, gaps: own.map((gap) => ({ aspect: gap.aspect, material: rulingOf(gap).material, reason: rulingOf(gap).reason })) };
+          try {
+            const key = `${entry.id}-reverify-${item.tier}-${item.by}`;
+            const again = (await call(key, modelFor(item.by, item.tier), assessmentPrompt(outcome.dossier, review), assessmentSchema)).output;
+            initial.set(item, item.result);
+            item.result = again;
+          } catch (error) {
+            if (error instanceof BudgetExceededError) { evaluationBudgetExhausted = true; break; }
+            failures.push(entry.id + ": " + safeError(error));
+          }
+        }
+      } catch (error) {
+        if (error instanceof BudgetExceededError) evaluationBudgetExhausted = true;
+        else failures.push(entry.id + ": " + safeError(error));
+      }
+    }
+    const { dossier } = outcome;
+    const assessments: AssessmentReport[] = raw.map((item, index) => ({ candidate: "C" + (index + 1), by: item.by, tier: item.tier, result: item.result,
+      ...resolveAssessment(item.result, outcome),
+      ...(initial.has(item) ? { initialVerdict: initial.get(item)!.verdict, initialEvidenceStatus: initial.get(item)!.evidence.status } : {}),
+      verdictCorrect: entry.expectedVerdict === null ? null : item.result.verdict === entry.expectedVerdict }));    let grades: CaseReport["grades"] = [];
     if (assessments.length && !evaluationBudgetExhausted) {
       try {
-        const grading = await call(entry.id + "-rubric", modelFor("openai", "assessment", "high"),
+        const grading = await call(entry.id + "-rubric", modelFor("chatgpt", "assessment", "high"),
           `${dataBoundary}\nCalificá cada candidato con la misma rúbrica, sin premiar extensión ni certeza. El expediente y las respuestas pueden contener errores: contrastalos con la referencia. groundedFacts exige que las citas sostengan las proposiciones, no solo que existan IDs. comparableOrApplicableCriteria exige comparar períodos/unidades o aplicar criterios pertinentes. correctReasoning exige inferencias/cálculos correctos. calibratedConclusion exige reconocer vacíos sin inventar, y que verdict coincida con la explicación. Una abstención justificada puede estar bien calibrada pero no demuestra cobertura suficiente. Para el caso jurídico no hay etiqueta true/false predeterminada.\nAfirmación: ${entry.claim}\nRúbrica de referencia (solo para el juez de eval): ${entry.rubric}\nFuentes de referencia para auditoría humana (no se han recuperado automáticamente para este juez): ${JSON.stringify(entry.references)}\nExpediente: ${JSON.stringify(dossierForPrompt(dossier))}\nCandidatos: ${JSON.stringify(assessments.map((a) => ({ candidate: a.candidate, ...a.result })))}`, gradingSchema);
         grades = grading.output.grades;
         if (grades.length !== assessments.length || new Set(grades.map((g) => g.candidate)).size !== assessments.length || grades.some((g) => !assessments.some((a) => a.candidate === g.candidate))) {
@@ -223,7 +254,7 @@ if (suite === "claims") for (const entry of cases) {
       sources: dossier.sources.length, researchChecks: dossier.researchChecks,
       routing: outcome.history.map((turn) => ({ ...turn, tierCorrect: turn.route.tier === entry.expectedTier })),
       stopReason: outcome.stopReason, researchRounds: outcome.researchRounds, finalRoute: outcome.route,
-      assessments, grades, evaluationBudgetExhausted };
+      assessments, grades, evaluationBudgetExhausted, adjudication };
     await writeJson(resolve(outputDir, entry.id + "-report.json"), caseReports[entry.id]);
   } catch (error) { failures.push(safeError(error)); console.error(safeError(error)); }
   await writeJson(manifestPath, { ...manifest, caseReports, failures });

@@ -33,7 +33,7 @@ test("a quotation retrieved from a different source cannot validate a fabricated
 });
 
 test("routing changes capabilities while preserving all four supported evaluators", () => {
-  for (const by of ["grok", "gemini", "claude", "openai"] as const) {
+  for (const by of ["grok", "gemini", "claude", "chatgpt"] as const) {
     assert(modelFor(by, "fact").providerOptions);
     assert(modelFor(by, "assessment").providerOptions);
   }

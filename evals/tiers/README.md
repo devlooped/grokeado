@@ -3,8 +3,12 @@
 Experimento aislado con modelos reales por **Vercel AI Gateway**. No cambia la
 UI, el procedimiento judicial, la base de datos ni los modelos de producción.
 Los [resultados históricos del 30/10/2026](results-2026-10-30.md) corresponden
-a la versión 1, anterior al loop. La versión actual es **2** y aún no tiene
-mediciones pagadas. Los tests offline no prueban la calidad de juicio del modelo.
+a la versión 1, anterior al loop. La versión **2** tiene una
+[medición real del 30/10/2026](results-2026-10-30-v2.md) que obtuvo 7/7 decisiones
+correctas de suficiencia controlada, con un desvío de tier y errores de ejecución
+en la suite de afirmaciones. La versión actual es **3**: agrega la resolución de
+vacíos cuestionados por el moderador y aún no tiene medición pagada.
+Los tests offline no prueban la calidad de juicio del modelo.
 
 ## Contrato y responsables
 
@@ -51,6 +55,12 @@ pertinencia, autoridad y respaldo semántico. Una cita válida no prueba suficie
    Otra solicitud de escalamiento en el mismo dossier detiene el loop.
 5. Las evaluaciones comparan baseline económico y tier final con idéntico prompt
    y dossier. Cada evaluador puede cuestionar la suficiencia independientemente.
+6. Si una suficiencia aceptada es cuestionada, el moderador resuelve cada vacío
+   por separado como material o no (sin votos ni conteos). Solo los materiales
+   disparan una ronda de investigación adicional, que comparte el límite de rondas.
+   Cada evaluador que cuestionó reevalúa una vez con esa resolución; si mantiene
+   la objeción o la suficiencia ya no se acepta, el veredicto efectivo es
+   `unverifiable`. La respuesta inicial queda en el informe.
 
 Por defecto hay **dos rondas adicionales**, configurables entre 0 y 5.
 El guard predeterminado es USD 8 de consumo de la cuenta; se comprueba antes
@@ -61,8 +71,8 @@ Los cierres internos son `sufficient`, `iteration_limit`, `budget_exhausted` y
 `unresolved_judgment`. Al alcanzar límites se conservan vacíos y pruebas parciales.
 Sin habilitación del moderador, con suficiencia cuestionada por el evaluador o
 con citas inválidas, `effectiveVerdict` es `unverifiable`. La respuesta original
-se conserva para auditar errores. Un desafío del evaluador queda en el informe;
-no inicia automáticamente otro loop.
+se conserva para auditar errores. Un desafío del evaluador se resuelve una sola
+vez como se describe en el paso 6, sin votaciones.
 
 ## Ejecutar
 
