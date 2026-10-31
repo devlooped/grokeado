@@ -9,7 +9,7 @@ Leyenda: **Completado** = implementado y cubierto por checks locales; **Parcial*
 | Fase | Estado | Entregado / brecha principal |
 |---|---|---|
 | 0. Preliminares | **Completado** | Seats renombrados a `chatgpt`; formato documentado en `docs/evidence.md`. |
-| 1. Módulo OKF | **Completado** | Schema, parser/serializer, validación, Blob privado con hashes y tests. |
+| 1. Módulo OKF | **Completado** | Schema, parser/serializer, validación, Blob público de lectura con hashes y tests. |
 | 2. Colector | **Completado** | Descarga con límites, PDF digital/escaneado, OCR inyectable, CSV, HTML, timeline y entities. El OCR real usa tesseract si está instalado. |
 | 3. Sandbox/harness | **Parcial** | El workspace se filtra por etapa y la clave dedicada queda fuera de `env`. Falta el smoke en Vercel. |
 | 4. Procedimiento | **Completado** | El step usa el workspace de la etapa. Tests cubren que un par no se ve en exposición y sí se puede citar después. |
@@ -77,7 +77,7 @@ Ids = ruta; links `/evidence/{seat}/x.md#pN`. Las citas del acta usan estas ruta
 ## Fase 3 — Sandbox y mini-harness (3–4 días)
 
 ### 3.1 Imagen
-Snapshot con python, node, tesseract (`spa`), poppler, pymupdf, imagemagick y el harness preinstalado. Arranque rápido; la red abierta cubre lo extra.
+Snapshot de la imagen Ubuntu `vercel/sandbox/universal` (Node 24 y `apt-get`) con python, tesseract (`spa`), poppler, pymupdf, imagemagick y el harness preinstalado. El runtime legado `node24` es Amazon Linux y no tiene `apt-get`. Arranque rápido; la red abierta cubre lo extra.
 
 ### 3.2 Mini-harness (`sandbox/harness/`, ~100–150 líneas, TS)
 - Loop `generateText` con `gateway(model)` y tools `bash`, `read_file` (devuelve imágenes como contenido visual), `write_file`.
@@ -147,7 +147,7 @@ Cada etapa = step de evidencia + step de decisión (`runSeat`).
 ## Fase 5 — UI (2 días, solapable con la 4)
 
 - Panel de evidencia en `caso/[id]` (índice, documento, fragmento), citas del acta con enlace.
-- Ruta para servir raw/assets desde Blob (similar a `imagen/route.ts`), con control de acceso del caso.
+- Ruta para servir raw/assets desde Blob (similar a `imagen/route.ts`). El store es de lectura pública; la ruta exige que el caso exista.
 - Mostrar autor y, si es reproceso, comparación contra la extracción base.
 
 ## Fase 6 — Pruebas y evaluación (2 días)
@@ -193,7 +193,7 @@ Por ahora se usa solo Blob (fuente de verdad) más `writeFiles` para armar el wo
 
 ### Sigue afuera de los checks locales
 
-4. **Validar despliegue Vercel.** Configurar Blob privado, snapshot, Sandbox y clave AI Gateway dedicada con cuota/expiración; correr `npm run evidence:snapshot`; desplegar y probar lectura/escritura privada, broker, streaming, timeout, parada del sandbox y rotación de clave. No habilitar producción hasta completar el smoke test. La lista está en `docs/evidence.md`.
+4. **Validar despliegue Vercel.** Configurar un Blob público de lectura, snapshot, Sandbox y clave AI Gateway dedicada con cuota/expiración; correr `npm run evidence:snapshot`; desplegar y probar lectura pública, escritura con OIDC o token, broker, streaming, timeout, parada del sandbox y rotación de clave. No habilitar producción hasta completar el smoke test. La lista está en `docs/evidence.md`.
 5. **Costo en vivo.** La inyección en un PDF queda como texto y el broker de tests deja la clave solo en el header. Falta registrar costo/tokens por turno y la tasa de citas válidas en un smoke, y decidir entonces si hace falta una clave efímera por turno.
 6. **Revisión opcional del harness.** No bloquea el hito local.
 

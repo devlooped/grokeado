@@ -48,7 +48,7 @@ test("the stored simulation flag labels the acta independently of the current AI
   assert.ok(html.includes("fuentes y respuestas ficticias"));
 });
 
-test("the acta links OKF page citations to the private case evidence route", () => {
+test("the acta links OKF page citations to the case evidence route", () => {
   const html = render([
     { type: "statement", id: "I1", by: "grok", stage: "opening", text: "La evidencia disponible permite contrastar la afirmación.", evidenceIds: ["/evidence/grok/passage.md#p3"] },
   ]);

@@ -1,6 +1,6 @@
 # Evidence bundle format
 
-Cases store an OKF-style tree in private Vercel Blob storage at
+Cases store an OKF-style tree in public-read Vercel Blob storage at
 `cases/{caseId}/evidence/`. `evidence/base/` is collector-owned and read-only.
 Each assistant writes only under `evidence/{seat}/`, where the seat is `grok`,
 `gemini`, `claude`, or `chatgpt`. Reprocessing adds a new fragment; it never
@@ -33,7 +33,9 @@ the evidence tree. The validator rejects malformed YAML, unknown fields or
 types, unresolved sources and links, author/namespace mismatches, writes
 outside the author's namespace, and changes to `evidence/base/`.
 
-Private Blob storage is the canonical source. Sandbox workspaces are rebuilt
+Public Blob storage is the canonical source. Objects are written with
+`access: "public"` and stable pathnames, so anyone with the URL can read them.
+Sandbox workspaces are rebuilt
 from Blob for each attempt; the sandbox never receives Blob credentials.
 The base collector preserves text and uploaded images, and downloads http(s)
 links into `base/raw/` using a two-tier pipeline: a fast Chrome TLS/HTTP2
@@ -54,15 +56,21 @@ never replaces `base/`. Extracted link/image text is also passed into the
 court docket so intake and debate seats start with concrete material even when
 Blob persistence is disabled.
 
-To enable cloud processing, connect a **private** Vercel Blob store and set
-`BLOB_READ_WRITE_TOKEN`. Optionally set `BROWSERBASE_API_KEY` (and
+To enable cloud processing, connect a **public** Vercel Blob store. Deployed
+environments use `BLOB_READ_WRITE_TOKEN`. Local checks use a Vercel OIDC token
+(`VERCEL_OIDC_TOKEN`) together with `BLOB_STORE_ID`. That token is
+development-scoped, so the store's project connection must include
+Development. Reads fetch the public
+blob URL; one of those credentials is required to list and write. An overwrite
+can stay on the CDN for up to 60 seconds, so server reads add the current etag
+as a query parameter. Optionally set `BROWSERBASE_API_KEY` (and
 `BROWSERBASE_PROJECT_ID` / `BROWSERBASE_PROXIES`) for stealth browser fallback
 during link collection. Create a separate AI Gateway key named for evidence
 processing, set a monthly quota and short expiration, then configure it as
 `EVIDENCE_AI_GATEWAY_API_KEY`; never reuse `AI_GATEWAY_API_KEY`. Run
 `npm run evidence:snapshot`, set its output as
 `EVIDENCE_SANDBOX_SNAPSHOT_ID`, and deploy on a Vercel plan that supports
-network-policy header transforms. Without the Blob token, the evidence bundle
+network-policy header transforms. Without blob credentials, the evidence bundle
 is extracted in memory for court turns and not persisted. Without the snapshot or dedicated key, workflow evidence
 steps return `partial` and the existing decision workflow continues.
 
@@ -83,12 +91,17 @@ to `evidence/{seat}/` and `scratch/`.
 
 ## Vercel smoke and security
 
-These checks need a private Blob store, a snapshot, and a dedicated gateway
+These checks need a public-read Blob store, a snapshot, and a dedicated gateway
 key. They are not part of `npm test`. Do not enable production evidence until
 each one has passed:
 
-1. Private Blob reads and writes succeed with `BLOB_READ_WRITE_TOKEN`. An
-   unauthenticated `GET` of `/caso/{id}/evidencia/...` returns 404.
+1. Public Blob reads and writes succeed. Locally, `npm run evidence:smoke`
+   mints a Vercel OIDC token and uses `BLOB_STORE_ID`. The store connection
+   must include Development, because the CLI issues a development token. A
+   deployed environment may use `BLOB_READ_WRITE_TOKEN` instead. `put` uses
+   `access: "public"`.
+   Reads fetch the public blob URL with no token. An unauthenticated `GET` of
+   `/caso/{id}/evidencia/...` returns the file when the case exists.
 2. `npm run evidence:snapshot` prints a snapshot id. Set it as
    `EVIDENCE_SANDBOX_SNAPSHOT_ID`.
 3. `EVIDENCE_AI_GATEWAY_API_KEY` is a different key from `AI_GATEWAY_API_KEY`,

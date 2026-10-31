@@ -2,8 +2,10 @@ import { Sandbox } from "@vercel/sandbox";
 import { readFile } from "node:fs/promises";
 
 const timeoutMs = 15 * 60_000;
+// The legacy `runtime: "node24"` image is Amazon Linux and has no apt-get.
+// universal is Ubuntu, with Node 24, so tesseract-ocr-spa and poppler install.
 const sandbox = await Sandbox.create({
-  runtime: "node24",
+  image: "vercel/sandbox/universal",
   timeout: timeoutMs,
   networkPolicy: "allow-all",
   resources: { vcpus: 2 },
@@ -11,16 +13,18 @@ const sandbox = await Sandbox.create({
 });
 let snapshotted = false;
 
-async function run(command: string, args: string[], sudo = false): Promise<void> {
+async function run(command: string, args: string[], sudo = false, env?: Record<string, string>): Promise<void> {
   const result = await sandbox.runCommand({
     cmd: command,
     args,
     sudo,
+    env,
     timeoutMs: 10 * 60_000,
     signal: AbortSignal.timeout(10 * 60_000),
   });
   if (result.exitCode !== 0) {
-    throw new Error([await result.stdout(), await result.stderr()].filter(Boolean).join("\n").slice(-5000));
+    const output = [await result.stdout(), await result.stderr()].filter(Boolean).join("\n").slice(-5000);
+    throw new Error(`${command} ${args.join(" ")} failed:\n${output}`);
   }
 }
 
@@ -29,15 +33,16 @@ try {
     readFile("sandbox/harness/package.json", "utf8"),
     readFile("sandbox/harness/agent.ts", "utf8"),
   ]);
-  await sandbox.mkDir("/opt/evidence-harness");
+  await run("bash", ["-lc", "mkdir -p /opt/evidence-harness && chown -R \"$(id -un):$(id -gn)\" /opt/evidence-harness"], true);
   await sandbox.writeFiles([
     { path: "/opt/evidence-harness/package.json", content: packageJson },
     { path: "/opt/evidence-harness/agent.ts", content: harness },
   ]);
-  await run("apt-get", ["update"], true);
-  await run("apt-get", ["install", "-y", "python3", "python3-pip", "tesseract-ocr", "tesseract-ocr-spa", "poppler-utils", "imagemagick"], true);
-  await run("python3", ["-m", "pip", "install", "--break-system-packages", "pymupdf"]);
-  await run("npm", ["install", "--prefix", "/opt/evidence-harness", "--omit=dev"], true);
+  await run("apt-get", ["update"], true, { DEBIAN_FRONTEND: "noninteractive" });
+  await run("apt-get", ["install", "-y", "python3", "python3-pip", "tesseract-ocr", "tesseract-ocr-spa", "poppler-utils", "imagemagick"], true, { DEBIAN_FRONTEND: "noninteractive" });
+  await run("python3", ["-m", "pip", "install", "--break-system-packages", "pymupdf"], true);
+  await run("npm", ["install", "--prefix", "/opt/evidence-harness", "--omit=dev"]);
+  await run("bash", ["-lc", "command -v pdftotext >/dev/null && command -v pdftoppm >/dev/null && command -v convert >/dev/null && tesseract --list-langs 2>&1 | grep -qx spa && python3 -c 'import fitz' && test -f /opt/evidence-harness/node_modules/tsx/dist/loader.mjs"]);
   const snapshot = await sandbox.snapshot({ expiration: 30 * 24 * 60 * 60 * 1000 });
   snapshotted = true;
   console.log("Evidence snapshot: " + snapshot.snapshotId);

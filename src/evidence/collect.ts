@@ -1,6 +1,6 @@
 import { getImage } from "../store.ts";
 import type { Submission, SubmissionContext } from "../domain/court.ts";
-import { readEvidenceTree, writeEvidenceTree } from "./blob.ts";
+import { blobConfigured, readEvidenceTree, writeEvidenceTree } from "./blob.ts";
 import { downloadUrl, sniffExtension, type DownloadResult } from "./download.ts";
 import { defaultRecognize, extractEntities, extractHtml, extractPdf, extractTimeline, renderMarkedPages, type Recognize } from "./extract.ts";
 import { baseExcerptFor, createEvidenceIndex, parseEvidenceDocument, serializeEvidenceDocument } from "./okf.ts";
@@ -262,7 +262,7 @@ export async function collectEvidenceBase(
   submission: Submission,
   simulated = false
 ): Promise<SubmissionContext | undefined> {
-  const hasBlob = Boolean(process.env.BLOB_READ_WRITE_TOKEN);
+  const hasBlob = blobConfigured();
 
   if (hasBlob) {
     const existing = await readEvidenceTree(caseId);
@@ -270,7 +270,7 @@ export async function collectEvidenceBase(
       return submissionContextFromBundle(existing, submission, submission.kind === "link" ? submission.url : undefined);
     }
   } else if (simulated || submission.kind === "text") {
-    console.warn("Evidence collection skipped: BLOB_READ_WRITE_TOKEN is not configured.");
+    console.warn("Evidence collection skipped: blob credentials are not configured.");
     return undefined;
   }
 
@@ -292,7 +292,7 @@ export async function collectEvidenceBase(
   if (hasBlob) {
     await writeEvidenceTree(caseId, files);
   } else {
-    console.warn("Evidence bundle extracted in memory; BLOB_READ_WRITE_TOKEN is not configured so raw artifacts were not persisted.");
+    console.warn("Evidence bundle extracted in memory; blob credentials are not configured so raw artifacts were not persisted.");
   }
   return submissionContextFromBundle(files, submission, download?.ok ? download.finalUrl : undefined);
 }

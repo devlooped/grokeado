@@ -5,7 +5,7 @@ import { evidenceSandboxLaunch, evidenceTaskDocument } from "./broker.ts";
 import { parseEvidenceDocument, createEvidenceIndex } from "./okf.ts";
 import { createMockEvidencePromotion } from "./mock.ts";
 import type { EvidenceSeat, EvidenceStage } from "./schema.ts";
-import { readEvidenceTree, writeEvidenceTree } from "./blob.ts";
+import { blobConfigured, readEvidenceTree, writeEvidenceTree } from "./blob.ts";
 import { validateEvidenceTree, validatePromotedFiles } from "./validate.ts";
 import { assembleWorkspace, citationAuthors, citationsFor, readOnlyHashesFor, workspaceIndex } from "./workspace.ts";
 
@@ -51,7 +51,7 @@ export async function runEvidenceStep(
 ): Promise<EvidenceStepResult> {
   "use step";
   const empty: EvidenceStepResult = { status: "partial", index: "", citations: [] };
-  if (!process.env.BLOB_READ_WRITE_TOKEN) return empty;
+  if (!blobConfigured()) return empty;
 
   const original = await readEvidenceTree(caseId);
   const initialErrors = validateEvidenceTree(original);
@@ -118,7 +118,7 @@ export async function runEvidenceStep(
     try {
       command = await sandbox.runCommand({
         cmd: "node",
-        args: ["--import", "tsx", "/opt/evidence-harness/agent.ts", `${WORKSPACE}/task.json`],
+        args: ["--import", "/opt/evidence-harness/node_modules/tsx/dist/loader.mjs", "/opt/evidence-harness/agent.ts", `${WORKSPACE}/task.json`],
         cwd: WORKSPACE,
         timeoutMs: 195_000,
         signal: commandSignal,

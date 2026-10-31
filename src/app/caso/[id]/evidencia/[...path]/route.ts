@@ -1,5 +1,4 @@
-import { auth0 } from "@/lib/auth0.ts";
-import { readEvidenceTree } from "@/evidence/blob.ts";
+import { blobConfigured, readEvidenceTree } from "@/evidence/blob.ts";
 import { renderEvidenceHtml } from "@/evidence/okf.ts";
 import { getCase } from "@/store.ts";
 
@@ -16,9 +15,8 @@ const TYPES: Record<string, string> = {
 
 export async function GET(_request: Request, context: { params: Promise<{ id: string; path: string[] }> }) {
   const { id, path } = await context.params;
-  const session = await auth0.getSession();
   const record = await getCase(id);
-  if (!session?.user.sub || !record?.ownerId || session.user.sub !== record.ownerId) return new Response("No encontrada", { status: 404 });
+  if (!record || !blobConfigured()) return new Response("No encontrada", { status: 404 });
   if (!path.length || path.some((part) => !part || part === "." || part === ".." || part.includes("\\") || part.includes("\0"))) {
     return new Response("No encontrada", { status: 404 });
   }
@@ -31,7 +29,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
   return new Response(markdown ? renderEvidenceHtml(new TextDecoder().decode(file)) : Buffer.from(file), {
     headers: {
       "content-type": markdown ? "text/html; charset=utf-8" : TYPES[extension] ?? "application/octet-stream",
-      "cache-control": "private, no-store",
+      "cache-control": "public, max-age=60",
       "x-content-type-options": "nosniff",
       "content-security-policy": "default-src 'none'; sandbox",
     },

@@ -14,6 +14,7 @@
     "test:court": "node --import tsx scripts/test-court.ts",
     "test:evals": "node --import tsx --test \"evals/tiers/*.test.ts\"",
     "evidence:snapshot": "node --import tsx scripts/evidence-snapshot.ts",
+    "evidence:smoke": "node --import tsx scripts/evidence-blob-smoke.ts",
     "eval:tiers": "node --import tsx scripts/eval-tiers.ts",
     "models": "node scripts/models.mjs"
   },

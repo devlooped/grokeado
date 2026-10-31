@@ -9,8 +9,7 @@ import { GavelIcon, JudgeSeal, VERDICT_TEXT, VoteChip } from "@/components/marks
 import { submissionExcerpt, VERDICT_LABEL } from "@/domain/acta.ts";
 import { COUNSEL, COUNSEL_NAMES, JUDGE, MODEL_NAME, type CaseRecord, type ClaimView } from "@/domain/court.ts";
 import { project } from "@/domain/court.ts";
-import { auth0 } from "@/lib/auth0.ts";
-import { readEvidenceTree } from "@/evidence/blob.ts";
+import { blobConfigured, readEvidenceTree } from "@/evidence/blob.ts";
 import { getCase, getEvents } from "@/store.ts";
 
 export async function generateMetadata(props: PageProps<"/caso/[id]">): Promise<Metadata> {
@@ -167,9 +166,8 @@ export default async function CasePage(props: PageProps<"/caso/[id]">) {
   if (c.status === "failed") return <Suspended c={c} />;
 
   const events = await getEvents(id);
-  const session = await auth0.getSession();
   let evidenceItems: EvidencePanelItem[] = [];
-  if (process.env.BLOB_READ_WRITE_TOKEN && c.ownerId && session?.user.sub === c.ownerId) {
+  if (blobConfigured()) {
     evidenceItems = toEvidencePanelItems(await readEvidenceTree(id));
   }
   const simulated = events.some((e) => e.type === "session_opened" && e.simulated);
