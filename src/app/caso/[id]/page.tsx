@@ -31,10 +31,16 @@ function Highlighted({ text, claims }: { text: string; claims: ClaimView[] }) {
   for (const m of marks) {
     parts.push(text.slice(at, m.start));
     parts.push(
-      <mark key={m.id} className="cita">
-        {text.slice(m.start, m.start + m.length)}
-        <sup className="ml-0.5 font-mono text-[10px] text-celeste-deep">{m.id}</sup>
-      </mark>
+      <span key={m.id}>
+        <mark className="cita">{text.slice(m.start, m.start + m.length)}</mark>
+        <a
+          href={"#" + m.id}
+          title={"Afirmación " + m.id}
+          className="ml-1.5 inline-block -translate-y-0.5 rounded-sm border border-celeste/40 bg-celeste/15 px-1 py-0.5 align-middle font-mono text-[10px] leading-none font-medium text-celeste-deep no-underline transition hover:border-celeste-deep hover:bg-celeste/25"
+        >
+          {m.id}
+        </a>
+      </span>
     );
     at = m.start + m.length;
   }
@@ -45,10 +51,12 @@ function Highlighted({ text, claims }: { text: string; claims: ClaimView[] }) {
 function Original({ c, claims }: { c: CaseRecord; claims: ClaimView[] }) {
   const s = c.submission;
   return (
-    <figure className="rounded-sm border border-rule bg-paper/60 p-5">
-      <figcaption className="mb-2 font-mono text-[11px] uppercase tracking-widest text-ink-soft">Material enviado</figcaption>
+    <figure className="rounded-sm border border-rule bg-paper-deep/40 px-5 py-4 sm:px-6 sm:py-5">
+      <figcaption className="mb-2.5 flex items-center gap-2 font-mono text-[11px] uppercase tracking-widest text-ink-soft">
+        <span>Contenido</span>
+      </figcaption>
       {s.kind === "text" && (
-        <blockquote className="whitespace-pre-line font-display text-xl leading-relaxed">
+        <blockquote className="whitespace-pre-line border-l-2 border-celeste/50 pl-4 font-display text-xl leading-relaxed sm:text-2xl">
           <Highlighted text={s.text} claims={claims} />
         </blockquote>
       )}
@@ -70,7 +78,7 @@ function ClaimCard({ claim }: { claim: ClaimView }) {
   const j = claim.judgment;
   const agreeing = j ? COUNSEL.filter((c) => claim.votes[c]?.verdict === j.verdict).length : 0;
   return (
-    <article className="reveal grid gap-4 border-b border-rule py-6 sm:grid-cols-[1fr_auto] sm:items-start">
+    <article id={claim.id} className="reveal scroll-mt-24 grid gap-4 border-b border-rule py-6 sm:grid-cols-[1fr_auto] sm:items-start">
       <div>
         <p className="font-mono text-xs text-ink-soft">{claim.id}</p>
         <h3 className="mt-1 font-display text-2xl leading-snug">{claim.text}</h3>
@@ -194,7 +202,6 @@ export default async function CasePage(props: PageProps<"/caso/[id]">) {
       <div className="mt-6">
         <Original c={c} claims={view.claims} />
       </div>
-      <EvidencePanel caseId={id} items={evidenceItems} />
 
       {view.dismissal ? (
         <p className="mt-6 flex items-start gap-3 rounded-sm border border-seal/40 bg-seal/5 p-5">
@@ -225,6 +232,8 @@ export default async function CasePage(props: PageProps<"/caso/[id]">) {
           <Acta events={events} view={view} caseId={id} />
         </div>
       </section>
+
+      <EvidencePanel caseId={id} items={evidenceItems} />
     </>
   );
 }

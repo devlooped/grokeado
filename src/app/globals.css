@@ -107,7 +107,14 @@ html[data-theme="dark"] .theme-icon-sun {
 }
 
 mark.cita {
-  background: linear-gradient(transparent 55%, rgb(91 159 214 / 0.35) 55%);
+  background: rgb(91 159 214 / 0.14);
   color: inherit;
-  padding: 0 1px;
+  padding: 0.08em 0.28em;
+  border-radius: 3px;
+  text-decoration: underline;
+  text-decoration-color: rgb(91 159 214 / 0.55);
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 4px;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
 }
