@@ -22,7 +22,7 @@ const RequestForm = z.discriminatedUnion("kind", [
     kind: z.literal("link"),
     url: z
       .url({ protocol: /^https?$/, error: "Ingresá un enlace válido (http o https)." })
-      .refine((u) => !PRIVATE_HOST.test(new URL(u).hostname), "Ingresá un enlace público."),
+      .refine((u) => URL.canParse(u) && !PRIVATE_HOST.test(new URL(u).hostname), "Ingresá un enlace público."),
     note,
   }),
   z.object({

@@ -28,3 +28,17 @@ test("case requests require the verified authorized account before validating in
   t.mock.method(auth0, "getSession", async () => ({ user: { sub: "daniel", email: "Daniel@Cazzulino.com", email_verified: true } }) as Awaited<ReturnType<typeof auth0.getSession>>);
   assert.deepEqual(await requestFactCheck({}, form), { error: "Pegá un texto de al menos 20 caracteres." });
 });
+
+test("malformed and private links return form errors instead of throwing", async (t) => {
+  t.mock.method(auth0, "getSession", async () => ({ user: { sub: "daniel", email: "daniel@cazzulino.com", email_verified: true } }) as Awaited<ReturnType<typeof auth0.getSession>>);
+
+  const malformed = new FormData();
+  malformed.set("kind", "link");
+  malformed.set("url", "example.com");
+  assert.deepEqual(await requestFactCheck({}, malformed), { error: "Ingresá un enlace válido (http o https)." });
+
+  const privateLink = new FormData();
+  privateLink.set("kind", "link");
+  privateLink.set("url", "http://localhost:3000/secret");
+  assert.deepEqual(await requestFactCheck({}, privateLink), { error: "Ingresá un enlace público." });
+});
