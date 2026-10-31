@@ -8,8 +8,10 @@ El piloto histórico terminó; no hay jobs pendientes. El código del piloto y
 este documento se versionan juntos; las trazas locales siguen ignoradas por Git.
 Se implementó luego la separación de complejidad y suficiencia
 y el loop acotado de investigación en el piloto, por pedido del usuario.
-Esta versión 2 aún no tiene mediciones pagadas: su política no está validada.
-Las secciones de resultados describen exclusivamente la corrida histórica.
+La versión 2 ya tiene una [medición pagada](../evals/tiers/results-2026-10-30-v2.md):
+7/7 decisiones de suficiencia controlada correctas, un desvío de tier y ocho
+errores de ejecución en afirmaciones. Su política no está validada en general.
+Las secciones históricas de resultados siguientes describen exclusivamente v1.
 
 ## Objetivo y alcance
 
@@ -306,10 +308,12 @@ evaluador la cuestiona o si cita IDs inválidos, `effectiveVerdict` es
 Los IDs actuales de casos son `caba-census`, `sme-exports`, `brazil-extension`.
 La suite `--suite sufficiency` contrasta decisiones reales del moderador sobre
 siete dossiers ficticios completos, incompletos, incompatibles o contradictorios.
-Las referencias se mantienen ocultas. **Pendiente:** medir esta versión con
-modelos reales, ampliar casos/repeticiones y revisión independiente, y decidir
-por separado cualquier integración de producción. No se ejecutaron nuevas
-llamadas pagadas al implementar la v2.
+Las referencias se mantienen ocultas. La [medición v2](../evals/tiers/results-2026-10-30-v2.md)
+ya ejecutó ambas suites: USD 3,1644 de delta observado y 48 min 40 s; artefactos
+en `test-results/tier-evals/2026-10-30-judgment-v2/`. No hay jobs pendientes.
+**Pendiente:** ampliar casos/repeticiones y revisión independiente, investigar
+las abstenciones excesivas y fallos de ejecución medidos, y decidir por separado
+cualquier integración de producción.
 
 Otras cuestiones propias de la continuación: contrastar etiqueta con explicación;
 distinguir procedencia, pertinencia e independencia de las fuentes; y ampliar
