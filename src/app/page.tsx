@@ -4,6 +4,8 @@ import { submissionExcerpt } from "@/domain/acta.ts";
 import { COUNSEL, COUNSEL_NAMES, JUDGE, project, type CaseRecord } from "@/domain/court.ts";
 import { JudgeSeal, ModelMark, VERDICT_TEXT, VerdictGlyph } from "@/components/marks.tsx";
 import { auth0 } from "@/lib/auth0.ts";
+import { canRequestCase } from "@/lib/case-access.ts";
+import { BetaNotice } from "@/components/beta-notice.tsx";
 import { RequestForm } from "@/components/request-form.tsx";
 import { getEvents, listCases } from "@/store.ts";
 
@@ -69,7 +71,7 @@ export default async function Home() {
           </div>
         </div>
         <div className="reveal [animation-delay:120ms]">
-          <RequestForm signedIn={!!session} />
+          {canRequestCase(session?.user) ? <RequestForm /> : <BetaNotice signedIn={!!session?.user.sub} />}
         </div>
       </section>
 
