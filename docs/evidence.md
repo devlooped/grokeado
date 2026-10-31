@@ -36,23 +36,34 @@ outside the author's namespace, and changes to `evidence/base/`.
 Private Blob storage is the canonical source. Sandbox workspaces are rebuilt
 from Blob for each attempt; the sandbox never receives Blob credentials.
 The base collector preserves text and uploaded images, and downloads http(s)
-links into `base/raw/`. Downloads reject credentials, non-public hosts,
-redirects to private addresses, empty bodies, and responses over 8 MiB. PDFs
-are extracted with `[p.N]` markers; a page that has an image and no text is
-transcribed, and pipe tables are also stored as CSV. HTML is reduced to text
-with scripts and styles removed. A failed download keeps the URL as a pointer
+links into `base/raw/` using a two-tier pipeline: a fast Chrome TLS/HTTP2
+impersonating fetch (`impit`) first, escalating automatically to a remote
+stealth Chromium session (`Browserbase` + `playwright-core`) when `BROWSERBASE_API_KEY`
+is configured and the direct fetch encounters anti-bot blocks, challenges, or
+unrendered SPA shells. Every redirect hop and browser request is checked
+against the public-address SSRF filter; downloads reject credentials,
+non-public hosts, redirects to private addresses, empty bodies, and responses
+over 8 MiB. PDFs are extracted with `[p.N]` markers; a page that has an image
+and no text is transcribed, and pipe tables are also stored as CSV. HTML is
+converted to clean Markdown with `defuddle` + `linkedom` (`useAsync: false`),
+preserving tables as CSV and any Browserbase viewport screenshot in `base/raw/`,
+with scripts and styles omitted. A failed download keeps the URL as a pointer
 with confidence 0. `timeline.md` and `entities.md` are neutral catalogs.
 Collection stops once `evidence/base/index.md` exists, and a later reprocess
-never replaces `base/`.
+never replaces `base/`. Extracted link/image text is also passed into the
+court docket so intake and debate seats start with concrete material even when
+Blob persistence is disabled.
 
 To enable cloud processing, connect a **private** Vercel Blob store and set
-`BLOB_READ_WRITE_TOKEN`. Create a separate AI Gateway key named for evidence
+`BLOB_READ_WRITE_TOKEN`. Optionally set `BROWSERBASE_API_KEY` (and
+`BROWSERBASE_PROJECT_ID` / `BROWSERBASE_PROXIES`) for stealth browser fallback
+during link collection. Create a separate AI Gateway key named for evidence
 processing, set a monthly quota and short expiration, then configure it as
 `EVIDENCE_AI_GATEWAY_API_KEY`; never reuse `AI_GATEWAY_API_KEY`. Run
 `npm run evidence:snapshot`, set its output as
 `EVIDENCE_SANDBOX_SNAPSHOT_ID`, and deploy on a Vercel plan that supports
 network-policy header transforms. Without the Blob token, the evidence bundle
-is not persisted. Without the snapshot or dedicated key, workflow evidence
+is extracted in memory for court turns and not persisted. Without the snapshot or dedicated key, workflow evidence
 steps return `partial` and the existing decision workflow continues.
 
 The credential broker and open-egress policy require a Vercel plan that

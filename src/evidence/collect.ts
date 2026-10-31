@@ -1,12 +1,15 @@
 import { getImage } from "../store.ts";
-import type { Submission } from "../domain/court.ts";
+import type { Submission, SubmissionContext } from "../domain/court.ts";
 import { readEvidenceTree, writeEvidenceTree } from "./blob.ts";
 import { downloadUrl, sniffExtension, type DownloadResult } from "./download.ts";
-import { defaultRecognize, extractEntities, extractPdf, extractTimeline, htmlToText, renderMarkedPages, type Recognize } from "./extract.ts";
-import { createEvidenceIndex, serializeEvidenceDocument } from "./okf.ts";
+import { defaultRecognize, extractEntities, extractHtml, extractPdf, extractTimeline, renderMarkedPages, type Recognize } from "./extract.ts";
+import { baseExcerptFor, createEvidenceIndex, parseEvidenceDocument, serializeEvidenceDocument } from "./okf.ts";
 import type { EvidenceDocument } from "./schema.ts";
 import { sha256, validateEvidenceTree } from "./validate.ts";
 
+export type { SubmissionContext };
+
+const MAX_CONTEXT_CHARS = 16_000;
 const tokens = (value: string) => value.trim().split(/\s+/).filter(Boolean).length;
 
 export function rawPathFor(files: Map<string, Uint8Array | string>, bytes: Uint8Array, extension: string): string {
@@ -169,15 +172,36 @@ export async function buildBaseBundle(input: {
       observed.push(extracted.pages.map((page) => page.text).join("\n"));
     }
   } else if (extension === "html" || extension === "htm") {
-    const text = htmlToText(new TextDecoder().decode(download.bytes));
-    title = "Downloaded HTML";
-    description = "Neutral text extraction of the downloaded HTML. Scripts were omitted from the extraction; the original bytes remain unchanged.";
-    body = `[p.1]\n\n${text}${note(submission.note)}`;
+    const extracted = await extractHtml(new TextDecoder().decode(download.bytes), download.finalUrl);
+    if (download.screenshot?.byteLength) {
+      sources.push(rawPathFor(files, download.screenshot, "png"));
+    }
+    const tables: string[] = [];
+    if (extracted.csv) {
+      const csvPath = `evidence/base/tables/${sha256(extracted.csv)}-p1.csv`;
+      files.set(csvPath, extracted.csv);
+      sources.push(csvPath);
+      tables.push(csvPath);
+    }
+    const meta = [
+      extracted.site ? `Site: ${extracted.site}` : "",
+      extracted.author ? `Author: ${extracted.author}` : "",
+      extracted.published ? `Published: ${extracted.published}` : "",
+    ].filter(Boolean);
+    const header = meta.length ? `${meta.join("\n")}\n\n` : "";
+    const tableFooter = tables.length ? `\n\nTables:\n${tables.map((item) => `- ${item}`).join("\n")}` : "";
+    title = extracted.title ? extracted.title.slice(0, 300) : "Downloaded HTML";
+    description = download.via === "browserbase"
+      ? "Neutral Markdown extraction of the browser-rendered HTML. Scripts were omitted from the extraction; the rendered HTML and screenshot remain in raw/."
+      : "Neutral Markdown extraction of the downloaded HTML. Scripts were omitted from the extraction; the original bytes remain unchanged.";
+    body = `[p.1]\n\n${header}${extracted.markdown}${tableFooter}${note(submission.note)}`;
     pages = [1];
-    tool = "html-text";
-    confidence = text ? 0.7 : 0;
-    tokenCount = tokens(text);
-    observed.push(text);
+    tool = download.via && download.via !== "fetch" ? `${extracted.tool}+${download.via}` : extracted.tool;
+    confidence = extracted.markdown
+      ? Math.min(1, extracted.confidence + (download.via === "browserbase" ? 0.05 : 0))
+      : 0;
+    tokenCount = tokens(extracted.markdown);
+    observed.push([meta.join("\n"), extracted.markdown].filter(Boolean).join("\n"));
   } else if (extension === "png" || extension === "jpg" || extension === "jpeg" || extension === "gif" || extension === "webp") {
     const mime = extension === "png" ? "image/png" : extension === "gif" ? "image/gif" : extension === "webp" ? "image/webp" : "image/jpeg";
     const transcript = await recognize(download.bytes, mime);
@@ -209,15 +233,46 @@ export async function buildBaseBundle(input: {
   return files;
 }
 
-export async function collectEvidenceBase(caseId: string, submission: Submission): Promise<void> {
-  "use step";
-  if (!process.env.BLOB_READ_WRITE_TOKEN) {
-    console.warn("Evidence collection skipped: BLOB_READ_WRITE_TOKEN is not configured.");
-    return;
-  }
+export function submissionContextFromBundle(
+  files: ReadonlyMap<string, Uint8Array | string>,
+  submission: Submission,
+  finalUrl?: string
+): SubmissionContext | undefined {
+  if (submission.kind === "text") return undefined;
+  const rawDoc = files.get("evidence/base/docs/submission.md");
+  if (!rawDoc) return undefined;
+  const source = typeof rawDoc === "string" ? rawDoc : new TextDecoder().decode(rawDoc);
+  const document = parseEvidenceDocument(source);
+  if (document.type !== "evidence" || document.tokens === 0) return undefined;
+  const body = baseExcerptFor(files, "evidence/base/docs/submission.md").trim();
+  if (!body) return undefined;
+  const excerpt = body.length > MAX_CONTEXT_CHARS
+    ? `${body.slice(0, MAX_CONTEXT_CHARS)}\n[… contenido truncado a ${MAX_CONTEXT_CHARS} caracteres …]`
+    : body;
+  return {
+    title: document.title,
+    ...(finalUrl ? { finalUrl } : {}),
+    tool: document.extraction.tool,
+    excerpt,
+  };
+}
 
-  const existing = await readEvidenceTree(caseId);
-  if (existing.has("evidence/base/index.md")) return;
+export async function collectEvidenceBase(
+  caseId: string,
+  submission: Submission,
+  simulated = false
+): Promise<SubmissionContext | undefined> {
+  const hasBlob = Boolean(process.env.BLOB_READ_WRITE_TOKEN);
+
+  if (hasBlob) {
+    const existing = await readEvidenceTree(caseId);
+    if (existing.has("evidence/base/index.md")) {
+      return submissionContextFromBundle(existing, submission, submission.kind === "link" ? submission.url : undefined);
+    }
+  } else if (simulated || submission.kind === "text") {
+    console.warn("Evidence collection skipped: BLOB_READ_WRITE_TOKEN is not configured.");
+    return undefined;
+  }
 
   let asset: Uint8Array | undefined;
   let assetMimeType: string | undefined;
@@ -227,12 +282,17 @@ export async function collectEvidenceBase(caseId: string, submission: Submission
     if (!image) throw new Error(`No original image found for evidence collection in case ${caseId}.`);
     asset = new Uint8Array(image.bytes);
     assetMimeType = image.mimeType;
-  } else if (submission.kind === "link") {
+  } else if (submission.kind === "link" && !simulated) {
     download = await downloadUrl(submission.url);
   }
 
   const files = await buildBaseBundle({ submission, asset, assetMimeType, download });
   const errors = validateEvidenceTree(files);
   if (errors.length) throw new Error("Collected evidence bundle is invalid: " + errors.join("; "));
-  await writeEvidenceTree(caseId, files);
+  if (hasBlob) {
+    await writeEvidenceTree(caseId, files);
+  } else {
+    console.warn("Evidence bundle extracted in memory; BLOB_READ_WRITE_TOKEN is not configured so raw artifacts were not persisted.");
+  }
+  return submissionContextFromBundle(files, submission, download?.ok ? download.finalUrl : undefined);
 }

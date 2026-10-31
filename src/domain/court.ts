@@ -25,6 +25,13 @@ export type Submission =
   | { kind: "link"; url: string; note?: string }
   | { kind: "image"; mimeType: string; note?: string };
 
+export interface SubmissionContext {
+  title: string;
+  finalUrl?: string;
+  tool: string;
+  excerpt: string;
+}
+
 export interface Claim {
   id: string;
   quote: string;

@@ -2,11 +2,16 @@ import { COUNSEL_MODELS, JUDGE_MODEL } from "../court/models.ts";
 import { playTurn } from "../court/play.ts";
 import { holdSession } from "../court/procedure.ts";
 import type { Docket, TurnSpec } from "../court/turns.ts";
-import type { CourtEvent, RecordedEvent } from "../domain/court.ts";
+import type { CourtEvent, RecordedEvent, Submission } from "../domain/court.ts";
 import { collectEvidenceBase } from "../evidence/collect.ts";
 import { runEvidenceStep, type EvidenceStepResult } from "../evidence/sandbox.ts";
 import type { EvidenceSeat, EvidenceStage } from "../evidence/schema.ts";
 import { closeCase, openCase, saveEvents } from "./steps.ts";
+
+async function collect(caseId: string, submission: Submission, simulated: boolean) {
+  "use step";
+  return collectEvidenceBase(caseId, submission, simulated);
+}
 
 async function play(
   caseId: string,
@@ -49,8 +54,8 @@ function describeError(err: unknown): string {
 export async function courtSession(caseId: string): Promise<void> {
   "use workflow";
   const { submission, today, simulated } = await openCase(caseId);
-  await collectEvidenceBase(caseId, submission);
-  const docket: Docket = { submission, today, simulated };
+  const submissionContext = await collect(caseId, submission, simulated);
+  const docket: Docket = { submission, today, simulated, ...(submissionContext ? { submissionContext } : {}) };
   try {
     await holdSession({
       submission,

@@ -3,7 +3,11 @@
   "type": "module",
   "dependencies": {
     "ai": "^7.0.157",
+    "defuddle": "^0.19.6",
+    "impit": "^0.14.8",
+    "linkedom": "^0.18.14",
     "tsx": "^4.23.15",
+    "turndown": "^7.2.4",
     "zod": "^4.6.7"
   }
 }

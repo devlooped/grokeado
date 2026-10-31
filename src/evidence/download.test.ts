@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { isIP } from "node:net";
-import { downloadUrl, isBlockedAddress, sniffExtension } from "./download.ts";
+import { downloadUrl, isBlockedAddress, shouldEscalateToBrowser, sniffExtension } from "./download.ts";
 
 const lookup = async (host: string) => (isIP(host) ? [host] : ["8.8.8.8"]);
 
@@ -118,4 +118,113 @@ test("sniffs file types from bytes before the declared type", () => {
   assert.equal(sniffExtension(new TextEncoder().encode("<html>"), "text/html", "page"), "html");
   assert.equal(sniffExtension(new TextEncoder().encode("a,b"), "text/csv", "table.csv"), "csv");
   assert.equal(sniffExtension(Uint8Array.of(1, 2, 3), "application/octet-stream", "notes.txt"), "txt");
+});
+
+test("default impit client still blocks non-public URLs before touching the network", async () => {
+  const result = await downloadUrl("http://127.0.0.1/secret", { escalate: false });
+  assert.equal(result.ok, false);
+  if (!result.ok) assert.match(result.error, /non-public/);
+});
+
+test("detects bot blocks, WAF challenges and JS SPA shells without escalating static pages or 404s", () => {
+  assert.equal(shouldEscalateToBrowser({ ok: false, error: "HTTP 403", status: 403 }), true);
+  assert.equal(shouldEscalateToBrowser({ ok: false, error: "HTTP 429", status: 429 }), true);
+  assert.equal(shouldEscalateToBrowser({ ok: false, error: "HTTP 503", status: 503 }), true);
+  assert.equal(shouldEscalateToBrowser({ ok: false, error: "Download timed out" }), true);
+  assert.equal(shouldEscalateToBrowser({ ok: false, error: "HTTP 404", status: 404 }), false);
+  assert.equal(shouldEscalateToBrowser({ ok: false, error: "URL resolves to a non-public address" }), false);
+  assert.equal(shouldEscalateToBrowser({ ok: false, error: "Response exceeds the size limit", status: 200 }), false);
+
+  const encode = (s: string) => new TextEncoder().encode(s);
+  assert.equal(
+    shouldEscalateToBrowser({
+      ok: true,
+      bytes: encode("<html><head><title>Just a moment...</title></head><body><script src='/cdn-cgi/challenge-platform/h/b/orchestrate/chl_page/v1'></script></body></html>"),
+      contentType: "text/html",
+      finalUrl: "https://portal.example.test/news",
+      redirects: 0,
+    }),
+    true
+  );
+  assert.equal(
+    shouldEscalateToBrowser({
+      ok: true,
+      bytes: encode("<!doctype html><html><body><div id='root'></div><script type='module' src='/assets/index.js'></script></body></html>"),
+      contentType: "text/html",
+      finalUrl: "https://spa.example.test/app",
+      redirects: 0,
+    }),
+    true
+  );
+  assert.equal(
+    shouldEscalateToBrowser({
+      ok: true,
+      bytes: encode("<!doctype html><html><body><article><h1>Informe oficial</h1><p>" + "palabra ".repeat(60) + "</p></article></body></html>"),
+      contentType: "text/html",
+      finalUrl: "https://portal.example.test/article",
+      redirects: 0,
+    }),
+    false
+  );
+  assert.equal(
+    shouldEscalateToBrowser({
+      ok: true,
+      bytes: Uint8Array.of(0x25, 0x50, 0x44, 0x46, 0x2d),
+      contentType: "application/pdf",
+      finalUrl: "https://portal.example.test/doc.pdf",
+      redirects: 0,
+    }),
+    false
+  );
+});
+
+test("escalates 403 and SPA shells to browserFetch while enforcing SSRF checks on browser redirects", async () => {
+  const screenshot = Uint8Array.of(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a);
+  let browserCalls = 0;
+
+  const escalated = await downloadUrl("https://protected.example.test/article", {
+    lookup,
+    fetchImpl: async () => response("Attention Required! | Cloudflare", 403, { "content-type": "text/html" }),
+    browserFetch: async (url, opts) => {
+      browserCalls += 1;
+      const allowed = await opts.assertPublic(url);
+      assert.equal(allowed.ok, true);
+      return {
+        ok: true,
+        bytes: new TextEncoder().encode("<!doctype html><html><body><article><p>Contenido renderizado tras challenge</p></article></body></html>"),
+        contentType: "text/html; charset=utf-8",
+        finalUrl: url,
+        redirects: 0,
+        via: "browserbase",
+        screenshot,
+      };
+    },
+  });
+  assert.equal(browserCalls, 1);
+  assert.equal(escalated.ok, true);
+  if (escalated.ok) {
+    assert.equal(escalated.via, "browserbase");
+    assert.deepEqual(escalated.screenshot, screenshot);
+    assert.match(new TextDecoder().decode(escalated.bytes), /Contenido renderizado/);
+  }
+
+  // Does not escalate on 404.
+  await downloadUrl("https://protected.example.test/missing", {
+    lookup,
+    fetchImpl: async () => response("Not found", 404),
+    browserFetch: async () => {
+      browserCalls += 1;
+      return { ok: false, error: "should not run" };
+    },
+  });
+  assert.equal(browserCalls, 1);
+
+  // Preserves SSRF block if the browser session navigates to a private IP.
+  const ssrfBlocked = await downloadUrl("https://protected.example.test/spa", {
+    lookup,
+    fetchImpl: async () => response("<html><body><div id='__next'></div><script src='/main.js'></script></body></html>", 200, { "content-type": "text/html" }),
+    browserFetch: async (_url, opts) => opts.assertPublic("http://127.0.0.1/admin") as Promise<never>,
+  });
+  assert.equal(ssrfBlocked.ok, false);
+  if (!ssrfBlocked.ok) assert.match(ssrfBlocked.error, /non-public/);
 });

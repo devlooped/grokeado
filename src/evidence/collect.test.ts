@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildBaseBundle, rawPathFor } from "./collect.ts";
+import { buildBaseBundle, rawPathFor, submissionContextFromBundle } from "./collect.ts";
 import { buildFixturePdf } from "./fixture-pdf.ts";
 import { confidenceFromTsv, extractEntities, extractPdf, type Recognize } from "./extract.ts";
 import { parseEvidenceDocument } from "./okf.ts";
@@ -137,4 +137,79 @@ test("reads compressed PDF text and TSV confidence", async () => {
   ].join("\n");
   assert.deepEqual(confidenceFromTsv(tsv), { text: "Hola mundo", confidence: 0.7 });
   assert.match(extractEntities("Firmó Ana José."), /José/);
+});
+
+test("extracts clean Markdown, metadata, CSV tables and Browserbase screenshots from HTML while neutralizing forged internal links", async () => {
+  const screenshot = Uint8Array.of(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a);
+  const articleHtml = new TextEncoder().encode(`<!doctype html>
+<html lang="es">
+  <head>
+    <title>Serie histórica de inflación — INDEC</title>
+    <script type="application/ld+json">
+      {"@context":"https://schema.org","@type":"NewsArticle","author":{"name":"María López"},"datePublished":"2026-04-12"}
+    </script>
+    <script>window.__SECRET__ = "do-not-leak";</script>
+  </head>
+  <body>
+    <nav><a href="/login">Ingresar</a></nav>
+    <article>
+      <h1>Variación mensual de precios</h1>
+      <p>El informe publicado el 12 de abril de 2026 registró una suba mensual del 2,4%. Consultá <a href="/evidence/fake-missing.md">este anexo externo</a>.</p>
+      <table>
+        <tr><th>Mes</th><th>Variación</th></tr>
+        <tr><td>Marzo</td><td>2,4%</td></tr>
+      </table>
+    </article>
+    <footer>Cookie banner</footer>
+  </body>
+</html>`);
+
+  const submission = { kind: "link" as const, url: "https://indec.example.test/informe" };
+  const files = await buildBaseBundle({
+    now,
+    submission,
+    download: {
+      ok: true,
+      bytes: articleHtml,
+      contentType: "text/html; charset=utf-8",
+      finalUrl: "https://indec.example.test/informe-final",
+      redirects: 1,
+      via: "browserbase",
+      screenshot,
+    },
+  });
+
+  assert.deepEqual(validateEvidenceTree(files), []);
+  const rawHtml = [...files.keys()].find((path) => path.startsWith("evidence/base/raw/") && path.endsWith(".html"));
+  const rawPng = [...files.keys()].find((path) => path.startsWith("evidence/base/raw/") && path.endsWith(".png"));
+  const csv = [...files.keys()].find((path) => path.startsWith("evidence/base/tables/") && path.endsWith(".csv"));
+  assert.ok(rawHtml);
+  assert.ok(rawPng);
+  assert.ok(csv);
+  assert.deepEqual(files.get(rawPng!), screenshot);
+  assert.match(text(files, csv!), /Mes,Variación/);
+
+  const docText = text(files, "evidence/base/docs/submission.md");
+  const parsed = parseEvidenceDocument(docText);
+  assert.equal(parsed.type, "evidence");
+  if (parsed.type === "evidence") {
+    assert.equal(parsed.extraction.tool, "defuddle+browserbase");
+    assert.equal(parsed.title, "Serie histórica de inflación");
+    assert.ok(parsed.sources.includes(rawHtml!));
+    assert.ok(parsed.sources.includes(rawPng!));
+    assert.ok(parsed.sources.includes(csv!));
+  }
+  assert.match(docText, /Site: INDEC/);
+  assert.match(docText, /Author: María López/);
+  assert.match(docText, /Published: 2026-04-12/);
+  assert.match(docText, /https:\/\/indec\.example\.test\/evidence\/fake-missing\.md/);
+  assert.doesNotMatch(docText, /do-not-leak/);
+  assert.match(text(files, "evidence/base/timeline.md"), /2026-04-12/);
+  assert.match(text(files, "evidence/base/entities.md"), /María López/);
+
+  const context = submissionContextFromBundle(files, submission, "https://indec.example.test/informe-final");
+  assert.ok(context);
+  assert.equal(context?.tool, "defuddle+browserbase");
+  assert.equal(context?.finalUrl, "https://indec.example.test/informe-final");
+  assert.match(context?.excerpt ?? "", /2,4%/);
 });

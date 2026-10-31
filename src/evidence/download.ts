@@ -1,15 +1,67 @@
 import { lookup as dnsLookup } from "node:dns/promises";
 import { isIP } from "node:net";
+import { Impit } from "impit";
+import { browserbaseConfigured, downloadWithBrowserbase } from "./browserbase.ts";
+
+export type DownloadVia = "impit" | "fetch" | "browserbase";
 
 export type DownloadResult =
-  | { ok: true; bytes: Uint8Array; contentType: string; finalUrl: string; redirects: number }
+  | {
+      ok: true;
+      bytes: Uint8Array;
+      contentType: string;
+      finalUrl: string;
+      redirects: number;
+      via?: DownloadVia;
+      screenshot?: Uint8Array;
+    }
   | { ok: false; error: string; status?: number };
 
-export const DOWNLOAD_LIMITS = { maxBytes: 8 * 1024 * 1024, maxRedirects: 5, timeoutMs: 15_000 } as const;
+export type PublicUrlCheck = (raw: string) => Promise<{ ok: true; url: string } | { ok: false; error: string }>;
+
+export type BrowserFetchOptions = {
+  assertPublic: PublicUrlCheck;
+  maxBytes: number;
+  maxRedirects: number;
+  timeoutMs: number;
+};
+
+export type BrowserFetch = (rawUrl: string, options: BrowserFetchOptions) => Promise<DownloadResult>;
+
+export const DOWNLOAD_LIMITS = {
+  maxBytes: 8 * 1024 * 1024,
+  maxRedirects: 5,
+  timeoutMs: 15_000,
+  browserTimeoutMs: 30_000,
+} as const;
 
 type Lookup = (hostname: string) => Promise<readonly string[]>;
+type ResponseLike = {
+  status: number;
+  headers: Pick<Headers, "get">;
+  body: ReadableStream<Uint8Array> | null;
+};
+type FetchLike = (url: string, init: RequestInit) => Promise<ResponseLike>;
 
 const REDIRECTS = new Set([301, 302, 303, 307, 308]);
+const ESCALATION_STATUSES = new Set([401, 403, 406, 429, 500, 502, 503, 520, 521, 522, 523, 524, 525, 526]);
+const BROWSER_HEADERS = {
+  accept: "text/html,application/xhtml+xml,application/xml;q=0.9,application/pdf,*/*;q=0.8",
+  "accept-language": "es-AR,es;q=0.9,en;q=0.8",
+} as const;
+
+let sharedImpit: Impit | undefined;
+
+function impitFetch(): FetchLike {
+  sharedImpit ??= new Impit({ browser: "chrome", followRedirects: false });
+  const client = sharedImpit;
+  return (url, init) =>
+    client.fetch(url, {
+      method: "GET",
+      headers: init.headers as Record<string, string> | undefined,
+      signal: init.signal ?? undefined,
+    });
+}
 
 export function isBlockedAddress(address: string): boolean {
   const normalized = address.toLowerCase().replace(/^\[|\]$/g, "").split("%", 1)[0] ?? "";
@@ -72,7 +124,7 @@ async function assertPublicUrl(raw: string, resolve: Lookup): Promise<{ ok: true
   return { ok: true, url: url.toString() };
 }
 
-async function readLimited(response: Response, maxBytes: number): Promise<{ ok: true; bytes: Uint8Array } | { ok: false; error: string }> {
+async function readLimited(response: ResponseLike, maxBytes: number): Promise<{ ok: true; bytes: Uint8Array } | { ok: false; error: string }> {
   const reader = response.body?.getReader();
   if (!reader) return { ok: false, error: "Downloaded file is empty" };
   const chunks: Uint8Array[] = [];
@@ -101,33 +153,81 @@ async function readLimited(response: Response, maxBytes: number): Promise<{ ok: 
   return { ok: true, bytes };
 }
 
-export async function downloadUrl(rawUrl: string, options?: {
-  fetchImpl?: typeof fetch;
-  lookup?: Lookup;
-  maxBytes?: number;
-  maxRedirects?: number;
-  timeoutMs?: number;
+function visibleHtmlWordCount(html: string): number {
+  const text = html
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ")
+    .replace(/<noscript\b[^>]*>[\s\S]*?<\/noscript>/gi, " ")
+    .replace(/<template\b[^>]*>[\s\S]*?<\/template>/gi, " ")
+    .replace(/<svg\b[^>]*>[\s\S]*?<\/svg>/gi, " ")
+    .replace(/<!--[\s\S]*?-->/g, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&(?:nbsp|#160);/gi, " ")
+    .trim();
+  return text ? text.split(/\s+/).length : 0;
+}
+
+const CHALLENGE_MARKERS =
+  /__cf_chl_|\/cdn-cgi\/challenge-platform|cf-browser-verification|attention required!\s*\|\s*cloudflare|<title>\s*just a moment|checking your browser before accessing|captcha-delivery\.com|px-captcha|_incapsula_resource/i;
+const SPA_MOUNT_MARKERS = /\bid=["'](?:root|__next|__nuxt|app)["']|\bdata-reactroot\b|\bng-version=/i;
+const JS_REQUIRED_MARKERS =
+  /enable javascript|javascript is required|turn on javascript|you need to enable javascript|habilit[aá]\s+javascript|activar\s+javascript|requiere\s+javascript/i;
+const CAPTCHA_WIDGET_MARKERS = /\b(?:cf-turnstile|g-recaptcha|h-captcha)\b/i;
+
+export function shouldEscalateToBrowser(result: DownloadResult): boolean {
+  if (!result.ok) {
+    if (result.status !== undefined) return ESCALATION_STATUSES.has(result.status);
+    return (
+      result.error === "Download failed" ||
+      result.error === "Download timed out" ||
+      result.error === "Downloaded file is empty"
+    );
+  }
+  let pathname = "";
+  try {
+    pathname = new URL(result.finalUrl).pathname;
+  } catch {
+    return false;
+  }
+  const ext = sniffExtension(result.bytes, result.contentType, pathname);
+  if (ext !== "html" && ext !== "htm") return false;
+
+  const html = new TextDecoder().decode(result.bytes);
+  if (CHALLENGE_MARKERS.test(html)) return true;
+
+  const words = visibleHtmlWordCount(html);
+  if (words < 120 && CAPTCHA_WIDGET_MARKERS.test(html)) return true;
+  if (words < 40 && JS_REQUIRED_MARKERS.test(html)) return true;
+  if (words < 40 && /<script\b/i.test(html) && SPA_MOUNT_MARKERS.test(html)) return true;
+  return false;
+}
+
+async function directDownload(rawUrl: string, options: {
+  fetchImpl: FetchLike;
+  via: DownloadVia;
+  resolve: Lookup;
+  maxBytes: number;
+  maxRedirects: number;
+  timeoutMs: number;
 }): Promise<DownloadResult> {
-  const fetchImpl = options?.fetchImpl ?? fetch;
-  const resolve = options?.lookup ?? defaultLookup;
-  const maxBytes = options?.maxBytes ?? DOWNLOAD_LIMITS.maxBytes;
-  const maxRedirects = options?.maxRedirects ?? DOWNLOAD_LIMITS.maxRedirects;
-  const timeoutMs = options?.timeoutMs ?? DOWNLOAD_LIMITS.timeoutMs;
+  const { fetchImpl, via, resolve, maxBytes, maxRedirects, timeoutMs } = options;
   let current = rawUrl;
 
   for (let redirects = 0; redirects <= maxRedirects; redirects++) {
     const allowed = await assertPublicUrl(current, resolve);
     if (!allowed.ok) return allowed;
-    let response: Response;
+    let response: ResponseLike;
     try {
       response = await fetchImpl(allowed.url, {
         redirect: "manual",
         credentials: "omit",
         signal: AbortSignal.timeout(timeoutMs),
-        headers: { accept: "*/*" },
+        headers: BROWSER_HEADERS,
       });
     } catch (error) {
-      const timedOut = error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError");
+      const timedOut =
+        error instanceof Error &&
+        (error.name === "TimeoutError" || error.name === "AbortError" || /timed?\s*out/i.test(error.message));
       return { ok: false, error: timedOut ? "Download timed out" : "Download failed" };
     }
     if (REDIRECTS.has(response.status)) {
@@ -150,9 +250,51 @@ export async function downloadUrl(rawUrl: string, options?: {
     const body = await readLimited(response, maxBytes);
     if (!body.ok) return { ...body, status: response.status };
     if (!body.bytes.byteLength) return { ok: false, error: "Downloaded file is empty", status: response.status };
-    return { ok: true, bytes: body.bytes, contentType: response.headers.get("content-type") ?? "", finalUrl: allowed.url, redirects };
+    return {
+      ok: true,
+      bytes: body.bytes,
+      contentType: response.headers.get("content-type") ?? "",
+      finalUrl: allowed.url,
+      redirects,
+      via,
+    };
   }
   return { ok: false, error: "Too many redirects" };
+}
+
+export async function downloadUrl(rawUrl: string, options?: {
+  fetchImpl?: typeof fetch;
+  browserFetch?: BrowserFetch;
+  escalate?: boolean;
+  lookup?: Lookup;
+  maxBytes?: number;
+  maxRedirects?: number;
+  timeoutMs?: number;
+  browserTimeoutMs?: number;
+}): Promise<DownloadResult> {
+  const fetchImpl: FetchLike = options?.fetchImpl ?? impitFetch();
+  const via: DownloadVia = options?.fetchImpl ? "fetch" : "impit";
+  const resolve = options?.lookup ?? defaultLookup;
+  const maxBytes = options?.maxBytes ?? DOWNLOAD_LIMITS.maxBytes;
+  const maxRedirects = options?.maxRedirects ?? DOWNLOAD_LIMITS.maxRedirects;
+  const timeoutMs = options?.timeoutMs ?? DOWNLOAD_LIMITS.timeoutMs;
+
+  const tier1 = await directDownload(rawUrl, { fetchImpl, via, resolve, maxBytes, maxRedirects, timeoutMs });
+  if (options?.escalate === false || !shouldEscalateToBrowser(tier1)) return tier1;
+
+  const browserFetch =
+    options?.browserFetch ?? (!options?.fetchImpl && browserbaseConfigured() ? downloadWithBrowserbase : undefined);
+  if (!browserFetch) return tier1;
+
+  const tier2 = await browserFetch(rawUrl, {
+    assertPublic: (candidate) => assertPublicUrl(candidate, resolve),
+    maxBytes,
+    maxRedirects,
+    timeoutMs: options?.browserTimeoutMs ?? Math.max(timeoutMs, DOWNLOAD_LIMITS.browserTimeoutMs),
+  });
+  if (tier2.ok) return tier2;
+  if (/non-public|credentials|Only http|not valid/i.test(tier2.error)) return tier2;
+  return tier1;
 }
 
 export function sniffExtension(bytes: Uint8Array, contentType: string, pathname: string): string {

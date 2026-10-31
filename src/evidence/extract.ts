@@ -3,6 +3,8 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { inflateSync } from "node:zlib";
+import { Defuddle } from "defuddle/node";
+import { parseHTML } from "linkedom";
 
 export type Transcript = { text: string; confidence: number; tool: string };
 export type Recognize = (bytes: Uint8Array, mimeType: string) => Promise<Transcript>;
@@ -11,6 +13,18 @@ export type PageText = { page: number; text: string; confidence: number; tool: s
 export type PdfExtraction =
   | { ok: true; pages: PageText[]; tool: string; confidence: number }
   | { ok: false; error: string };
+
+export type HtmlExtraction = {
+  markdown: string;
+  title?: string;
+  author?: string;
+  published?: string;
+  site?: string;
+  wordCount: number;
+  tool: "defuddle" | "html-text";
+  confidence: number;
+  csv?: string;
+};
 
 type RawObject = { id: number; dict: string; stream?: Uint8Array };
 
@@ -313,6 +327,81 @@ export function htmlToText(html: string): string {
     .replace(/[ \t]{2,}/g, " ")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+}
+
+function neutralizeInternalEvidenceLinks(markdown: string, pageUrl?: string): string {
+  return markdown.replace(/(\[[^\]]*\]\()(\/?evidence\/[^)\s>]+)(\))/g, (_whole, open: string, href: string, close: string) => {
+    if (pageUrl) {
+      try {
+        return `${open}${new URL(href, pageUrl).toString()}${close}`;
+      } catch {
+        // Fall through and strip unresolvable internal-looking path.
+      }
+    }
+    return `${open}#${close}`;
+  });
+}
+
+function countWords(value: string): number {
+  const trimmed = value.trim();
+  return trimmed ? trimmed.split(/\s+/).length : 0;
+}
+
+export async function extractHtml(html: string, url?: string): Promise<HtmlExtraction> {
+  const domSource = html
+    .replace(/<script\b(?![^>]*application\/ld\+json)[^>]*>[\s\S]*?<\/script>/gi, "")
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, "");
+  try {
+    const wrapped = /<body[\s>]/i.test(domSource)
+      ? domSource
+      : `<!doctype html><html><body>${domSource}</body></html>`;
+    const { document } = parseHTML(wrapped);
+    const doc = document as unknown as {
+      styleSheets?: unknown[];
+      defaultView?: { getComputedStyle?: () => { display: string } };
+      URL?: string;
+    };
+    if (!doc.styleSheets) doc.styleSheets = [];
+    if (doc.defaultView && !doc.defaultView.getComputedStyle) {
+      doc.defaultView.getComputedStyle = () => ({ display: "" });
+    }
+    if (url) doc.URL = url;
+
+    const parsed = await Defuddle(document, url, {
+      markdown: true,
+      useAsync: false,
+    });
+    const content = neutralizeInternalEvidenceLinks((parsed.content ?? "").trim(), url);
+    if (content) {
+      const title = parsed.title?.trim() || undefined;
+      const author = parsed.author?.trim() || undefined;
+      const published = parsed.published?.trim() || undefined;
+      const site = parsed.site?.trim() || undefined;
+      const wordCount = parsed.wordCount > 0 ? parsed.wordCount : countWords(content);
+      return {
+        markdown: content,
+        title,
+        author,
+        published,
+        site,
+        wordCount,
+        tool: "defuddle",
+        confidence: 0.85,
+        csv: tableCsv(content),
+      };
+    }
+  } catch {
+    // Fall back to deterministic tag stripping when DOM parsing fails on malformed markup.
+  }
+
+  const fallback = neutralizeInternalEvidenceLinks(htmlToText(html), url);
+  return {
+    markdown: fallback,
+    wordCount: countWords(fallback),
+    tool: "html-text",
+    confidence: fallback ? 0.7 : 0,
+    csv: tableCsv(fallback),
+  };
 }
 
 export function confidenceFromTsv(tsv: string): { text: string; confidence: number } {
