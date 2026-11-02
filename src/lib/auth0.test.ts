@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createSign, generateKeyPairSync } from "node:crypto";
 import { test } from "node:test";
 import { NextRequest } from "next/server";
-import { createAuth0Client, trimSession } from "./auth0.ts";
+import { createAuth0Client, normalizeLogoutRequest, trimSession } from "./auth0.ts";
 import { canRequestCase } from "./case-access.ts";
 
 const DOMAIN = "devlooped.us.auth0.com";
@@ -11,6 +11,7 @@ const CLIENT_ID = "pqq7y4f9IMv7PFLx6gEngGkIXUIeWo7A";
 const CLIENT_SECRET = "test-client-secret-for-callback-exchange";
 const SECRET = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 const APP_BASE_URL = "https://www.grokeado.com";
+const MICROSOFT_ROLE = "http://schemas.microsoft.com/ws/2008/06/identity/claims/role";
 
 const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
 const publicJwk = { ...publicKey.export({ format: "jwk" }), kid: "test-key-1", alg: "RS256", use: "sig" };
@@ -60,10 +61,16 @@ function buildMockFetch(options: { endSessionEndpoint?: string; nonceRef: { curr
         name: "Daniel Cazzulino",
         picture: "https://lh3.googleusercontent.com/a/ACg8ocLongProfilePictureUrlWithMetadataAndParameters1234567890abcdef=s96-c",
         updated_at: "2026-10-31T22:43:35.178Z",
-        "https://example.com/roles": Array.from({ length: 20 }, (_, i) => `custom-role-claim-padding-${i}`),
+        "https://grokeado.com/roles": ["admin", "beta"],
+        [MICROSOFT_ROLE]: ["admin", "beta", "reviewer"],
+        "https://example.com/groups": Array.from({ length: 20 }, (_, i) => `custom-group-claim-padding-${i}`),
       };
       const idToken = signJwt(bloatedClaims);
-      const accessToken = signJwt({ ...bloatedClaims, scope: "openid profile email offline_access" });
+      const accessToken = signJwt({
+        ...bloatedClaims,
+        roles: ["admin", "beta", "reviewer"],
+        scope: "openid profile email offline_access",
+      });
       return Response.json({
         access_token: accessToken,
         id_token: idToken,
@@ -77,19 +84,21 @@ function buildMockFetch(options: { endSessionEndpoint?: string; nonceRef: { curr
   };
 }
 
-test("trimSession retains only sub, email, email_verified, and required session metadata", async () => {
+test("trimSession retains sub, email, email_verified, received roles, and required session metadata", async () => {
+  const accessToken = signJwt({ sub: "auth0|123", "https://api.grokeado.com/roles": ["editor"] });
   const trimmed = await trimSession({
     user: {
       sub: "auth0|123",
       email: "user@example.com",
       email_verified: false,
+      "https://grokeado.com/roles": ["admin", "beta"],
       name: "Extra Name",
       picture: "https://example.com/avatar.png",
       custom: "ignored",
     },
     tokenSet: {
-      accessToken: "large-access-token",
-      idToken: "large-id-token",
+      accessToken,
+      idToken: "opaque-or-unused-id-token",
       refreshToken: "large-refresh-token",
       scope: "openid profile email offline_access",
       requestedScope: "openid profile email offline_access",
@@ -101,10 +110,21 @@ test("trimSession retains only sub, email, email_verified, and required session 
   });
 
   assert.deepEqual(trimmed, {
-    user: { sub: "auth0|123", email: "user@example.com", email_verified: false },
+    user: {
+      sub: "auth0|123",
+      email: "user@example.com",
+      email_verified: false,
+      "https://api.grokeado.com/roles": ["editor"],
+      "https://grokeado.com/roles": ["admin", "beta"],
+      roles: ["editor", "admin", "beta"],
+    },
     tokenSet: { accessToken: "", expiresAt: 1900000000 },
     internal: { sid: "sid-123", createdAt: 1899990000, sessionExpiresAt: 1900000000 },
   });
+
+  // Re-trimming an already-saved cookie user (when tokens were already stripped) preserves roles as-is.
+  const retrimmed = await trimSession(trimmed);
+  assert.deepEqual(retrimmed, trimmed);
 
   const withoutOptionalClaims = await trimSession({
     user: { sub: "auth0|no-email", name: "No Email" },
@@ -115,7 +135,71 @@ test("trimSession retains only sub, email, email_verified, and required session 
   assert.deepEqual(withoutOptionalClaims.user, { sub: "auth0|no-email" });
 });
 
-test("sign-in, rolling session, and v2 sign-out keep __session well below 4 KB without warnings", async (t) => {
+test("trimSession removes only a Microsoft role claim duplicated by an actual roles claim", async () => {
+  const session = (user: Record<string, unknown>, accessToken = "") => ({
+    user: { sub: "auth0|123", ...user },
+    tokenSet: { accessToken, expiresAt: 1900000000 },
+    internal: { sid: "sid-123", createdAt: 1899990000 },
+  });
+
+  const matching = await trimSession(session({
+    [MICROSOFT_ROLE]: ["admin", "beta"],
+    roles: ["beta", "admin", "admin"],
+    "https://example.com/roles": ["admin", "beta"],
+  }));
+  assert.deepEqual(matching.user, {
+    sub: "auth0|123",
+    "https://example.com/roles": ["admin", "beta"],
+    roles: ["admin", "beta"],
+  });
+  assert.deepEqual(await trimSession(matching), matching);
+
+  const acrossSources = await trimSession(session(
+    { [MICROSOFT_ROLE]: "admin" },
+    signJwt({ roles: ["admin"] }),
+  ));
+  assert.deepEqual(acrossSources.user, { sub: "auth0|123", roles: ["admin"] });
+
+  const distinct = await trimSession(session({ [MICROSOFT_ROLE]: ["admin", "beta"], roles: ["admin"] }));
+  assert.deepEqual(distinct.user, {
+    sub: "auth0|123",
+    [MICROSOFT_ROLE]: ["admin", "beta"],
+    roles: ["admin", "beta"],
+  });
+
+  const extraShortRole = await trimSession(session({ [MICROSOFT_ROLE]: "admin", roles: ["admin", "beta"] }));
+  assert.deepEqual(extraShortRole.user, {
+    sub: "auth0|123",
+    [MICROSOFT_ROLE]: ["admin"],
+    roles: ["admin", "beta"],
+  });
+
+  const withoutShortClaim = await trimSession(session({ [MICROSOFT_ROLE]: "admin" }));
+  assert.deepEqual(withoutShortClaim.user, {
+    sub: "auth0|123",
+    [MICROSOFT_ROLE]: ["admin"],
+    roles: ["admin"],
+  });
+
+  const invalidShortClaim = await trimSession(session({ [MICROSOFT_ROLE]: "admin", roles: ["admin", 1] }));
+  assert.deepEqual(invalidShortClaim.user, withoutShortClaim.user);
+});
+
+test("logout normalization uses the configured origin for root and rejects cross-origin returns", () => {
+  for (const [returnTo, expected] of [
+    ["/", APP_BASE_URL],
+    [`${APP_BASE_URL}/`, APP_BASE_URL],
+    [APP_BASE_URL, APP_BASE_URL],
+    ["/case?view=full", `${APP_BASE_URL}/case?view=full`],
+    ["https://other.example/", null],
+  ] as const) {
+    const req = new NextRequest(`${APP_BASE_URL}/auth/logout?returnTo=${encodeURIComponent(returnTo)}`);
+    const normalized = normalizeLogoutRequest(req, APP_BASE_URL);
+    assert.equal(normalized.nextUrl.searchParams.get("returnTo"), expected);
+  }
+});
+
+test("sign-in, rolling session, and v2 sign-out keep __session well below 4 KB while preserving roles", async (t) => {
   const warnings: string[] = [];
   t.mock.method(console, "warn", (...args: unknown[]) => {
     warnings.push(args.map(String).join(" "));
@@ -173,6 +257,8 @@ test("sign-in, rolling session, and v2 sign-out keep __session well below 4 KB w
     sub: "google-oauth2|109876543210987654321",
     email: "Daniel@Cazzulino.com",
     email_verified: true,
+    roles: ["admin", "beta", "reviewer"],
+    "https://grokeado.com/roles": ["admin", "beta"],
   });
   assert.equal(session?.tokenSet.accessToken, "");
   assert.equal(session?.tokenSet.idToken, undefined);
@@ -183,6 +269,8 @@ test("sign-in, rolling session, and v2 sign-out keep __session well below 4 KB w
   const rolledSession = rolledRes.cookies.get("__session");
   assert.ok(rolledSession?.value);
   assert.ok(cookieByteLength("__session", rolledSession.value) < 1024);
+  const rolledReq = new NextRequest(`${APP_BASE_URL}/`, { headers: { cookie: `__session=${rolledSession.value}` } });
+  assert.deepEqual((await client.getSession(rolledReq))?.user, session?.user);
 
   const accessTokenRouteRes = await client.middleware(
     new NextRequest(`${APP_BASE_URL}/auth/access-token`, { headers: { cookie: cookieHeader } })
@@ -195,6 +283,7 @@ test("sign-in, rolling session, and v2 sign-out keep __session well below 4 KB w
   const logoutUrl = new URL(logoutRes.headers.get("location") ?? "");
   assert.equal(logoutUrl.origin + logoutUrl.pathname, `${ISSUER}v2/logout`);
   assert.equal(logoutUrl.searchParams.get("client_id"), CLIENT_ID);
+  assert.equal(logoutUrl.searchParams.get("returnTo"), APP_BASE_URL);
   assert.equal(logoutRes.cookies.get("__session")?.value, "");
   assert.ok(Buffer.byteLength(logoutRes.headers.getSetCookie().join("\r\n"), "utf8") < 4096);
 });
@@ -223,19 +312,21 @@ test("OIDC RP-initiated sign-out uses sid logout_hint without needing idToken in
   );
   const sessionCookie = callbackRes.cookies.get("__session")!;
 
-  const logoutRes = await client.middleware(
-    new NextRequest(`${APP_BASE_URL}/auth/logout?returnTo=${encodeURIComponent(`${APP_BASE_URL}/`)}`, {
-      headers: { cookie: `__session=${sessionCookie.value}` },
-    })
-  );
-  const logoutUrl = new URL(logoutRes.headers.get("location") ?? "");
-  assert.equal(logoutUrl.origin + logoutUrl.pathname, `${ISSUER}oidc/logout`);
-  assert.equal(logoutUrl.searchParams.get("client_id"), CLIENT_ID);
-  assert.equal(logoutUrl.searchParams.get("post_logout_redirect_uri"), `${APP_BASE_URL}/`);
-  assert.equal(logoutUrl.searchParams.get("logout_hint"), "sid_zdfht_1793486614836_81e81a328d77");
-  assert.equal(logoutUrl.searchParams.has("id_token_hint"), false);
-  assert.equal(logoutRes.cookies.get("__session")?.value, "");
-  assert.ok(Buffer.byteLength(logoutRes.headers.getSetCookie().join("\r\n"), "utf8") < 4096);
+  for (const returnTo of ["/", `${APP_BASE_URL}/`, APP_BASE_URL]) {
+    const logoutRes = await client.middleware(
+      new NextRequest(`${APP_BASE_URL}/auth/logout?returnTo=${encodeURIComponent(returnTo)}`, {
+        headers: { cookie: `__session=${sessionCookie.value}` },
+      })
+    );
+    const logoutUrl = new URL(logoutRes.headers.get("location") ?? "");
+    assert.equal(logoutUrl.origin + logoutUrl.pathname, `${ISSUER}oidc/logout`);
+    assert.equal(logoutUrl.searchParams.get("client_id"), CLIENT_ID);
+    assert.equal(logoutUrl.searchParams.get("post_logout_redirect_uri"), APP_BASE_URL);
+    assert.equal(logoutUrl.searchParams.get("logout_hint"), "sid_zdfht_1793486614836_81e81a328d77");
+    assert.equal(logoutUrl.searchParams.has("id_token_hint"), false);
+    assert.equal(logoutRes.cookies.get("__session")?.value, "");
+    assert.ok(Buffer.byteLength(logoutRes.headers.getSetCookie().join("\r\n"), "utf8") < 4096);
+  }
 });
 
 test("default Auth0Client serialization exceeds 4 KB on the same callback payload", async (t) => {
