@@ -125,6 +125,10 @@ For a complete local scenario:
 4. Alternatively, sign in through the UI and submit text, a link, or an image.
    UI login needs the Auth0 variables and a callback registered for the local
    `APP_BASE_URL`; the terminal test doesn't need a browser login.
+   For `returnTo=/`, logout uses the application origin without a trailing slash
+   (for example `http://localhost:3000`). Register that exact URL in Auth0's
+   [Allowed Logout URLs](https://auth0.com/docs/authenticate/login/logout/log-users-out-of-auth0#post_logout_redirect_uri-parameter);
+   OIDC logout redirect URIs must match a registered URL.
 
 `test:court` uses the same `.next/workflow-data/` directory as the local server; run
 both from the project root. If using another port, set
