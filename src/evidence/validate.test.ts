@@ -25,7 +25,9 @@ test("rejects malformed or unknown OKF types", () => {
 
 test("renders page anchors while escaping document HTML", () => {
   const html = renderEvidenceHtml(serializeEvidenceDocument(fragment, "[p.2]\n<script>alert(1)</script>"));
+  assert(html.includes('lang="es-AR"'));
   assert(html.includes('id="p2"'));
+  assert(html.includes("Página 2"));
   assert(html.includes("&lt;script&gt;"));
   assert(!html.includes("<script>"));
 });

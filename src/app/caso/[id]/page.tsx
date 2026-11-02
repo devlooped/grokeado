@@ -1,21 +1,30 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
-import { retryCase } from "@/app/actions.ts";
+import { Suspended } from "@/components/suspended.tsx";
 import { Acta } from "@/components/acta.tsx";
 import { EvidencePanel, toEvidencePanelItems, type EvidencePanelItem } from "@/components/evidence-panel.tsx";
 import { AutoRefresh } from "@/components/auto-refresh.tsx";
 import { GavelIcon, JudgeSeal, VERDICT_TEXT, VoteChip } from "@/components/marks.tsx";
-import { submissionExcerpt, VERDICT_LABEL } from "@/domain/acta.ts";
+import { caseShareMetadata, submissionExcerpt, VERDICT_LABEL } from "@/domain/acta.ts";
 import { COUNSEL, COUNSEL_NAMES, JUDGE, MODEL_NAME, type CaseRecord, type ClaimView } from "@/domain/court.ts";
 import { project } from "@/domain/court.ts";
 import { blobConfigured, readEvidenceTree } from "@/evidence/blob.ts";
+import { auth0 } from "@/lib/auth0.ts";
 import { getCase, getEvents } from "@/store.ts";
 
 export async function generateMetadata(props: PageProps<"/caso/[id]">): Promise<Metadata> {
   const { id } = await props.params;
   const c = await getCase(id);
-  return { title: c ? "Caso Nº " + id + " · Grokeado" : "Grokeado" };
+  if (!c) return { title: "Grokeado" };
+  const events = c.status === "resolved" ? await getEvents(id) : [];
+  const { title, description } = caseShareMetadata(c, events);
+  return {
+    title,
+    description,
+    openGraph: { title, description, type: "article" },
+    twitter: { card: "summary", title, description },
+  };
 }
 
 const date = (at: string) => new Date(at).toLocaleString("es-AR", { dateStyle: "long", timeStyle: "short", timeZone: "America/Argentina/Buenos_Aires" });
@@ -152,26 +161,16 @@ function InSession({ c }: { c: CaseRecord }) {
   );
 }
 
-function Suspended({ c }: { c: CaseRecord }) {
-  return (
-    <section className="mx-auto max-w-2xl py-16 text-center">
-      <h1 className="font-display text-5xl">El análisis se interrumpió</h1>
-      <p className="mx-auto mt-4 max-w-md text-ink-soft">El panel no pudo completar el análisis. Podés volver a intentarlo.</p>
-      {c.error && <p className="mx-auto mt-3 max-w-md font-mono text-xs text-ink-soft">{c.error}</p>}
-      <form action={retryCase.bind(null, c.id)} className="mt-6">
-        <button className="rounded-sm bg-ink px-6 py-3 font-medium text-paper hover:bg-celeste-deep">Reintentar</button>
-      </form>
-    </section>
-  );
-}
-
 export default async function CasePage(props: PageProps<"/caso/[id]">) {
   await connection();
   const { id } = await props.params;
   const c = await getCase(id);
   if (!c) notFound();
   if (c.status === "queued" || c.status === "in_session") return <InSession c={c} />;
-  if (c.status === "failed") return <Suspended c={c} />;
+  if (c.status === "failed") {
+    const session = await auth0.getSession();
+    return <Suspended c={c} user={session?.user} />;
+  }
 
   const events = await getEvents(id);
   let evidenceItems: EvidencePanelItem[] = [];

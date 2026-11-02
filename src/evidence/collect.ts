@@ -45,15 +45,35 @@ function card(input: {
   };
 }
 
+const DOWNLOAD_ERROR_LABEL: Record<string, string> = {
+  "URL is not valid": "El enlace no es válido.",
+  "Only http and https URLs can be downloaded": "Solo se pueden descargar enlaces http o https.",
+  "URLs with credentials are rejected": "No se admiten enlaces con credenciales.",
+  "URL resolves to a non-public address": "El enlace apunta a una dirección no pública.",
+  "Could not resolve host": "No se pudo resolver el dominio del enlace.",
+  "Downloaded file is empty": "El archivo descargado está vacío.",
+  "Response exceeds the size limit": "La respuesta supera el límite de tamaño.",
+  "Download failed": "Falló la descarga del enlace.",
+  "Download timed out": "Se agotó el tiempo de espera al descargar el enlace.",
+  "Redirect is missing a location": "La redirección no indicó destino.",
+  "Too many redirects": "Demasiadas redirecciones.",
+  "Browserbase is not configured": "El navegador remoto no está configurado.",
+};
+
+function describeDownloadError(error?: string): string {
+  if (!error) return "No se descargó el contenido enlazado.";
+  return DOWNLOAD_ERROR_LABEL[error] ?? error;
+}
+
 function finish(files: Map<string, Uint8Array | string>, observed: string, entry: { path: string; document: EvidenceDocument }): void {
   files.set("evidence/base/timeline.md", extractTimeline(observed));
   files.set("evidence/base/entities.md", extractEntities(observed));
   const index = createEvidenceIndex([entry]).trimEnd();
-  files.set("evidence/base/index.md", `${index}\n- [Timeline](/evidence/base/timeline.md)\n- [Entities](/evidence/base/entities.md)\n`);
+  files.set("evidence/base/index.md", `${index}\n- [Cronología](/evidence/base/timeline.md)\n- [Entidades](/evidence/base/entities.md)\n`);
 }
 
 function note(value?: string): string {
-  return value ? `\n\nUser note: ${value}` : "";
+  return value ? `\n\nComentario: ${value}` : "";
 }
 
 export async function buildBaseBundle(input: {
@@ -75,8 +95,8 @@ export async function buildBaseBundle(input: {
     const rawPath = rawPathFor(files, raw, "txt");
     const body = `[p.1]\n\n${submission.text}\n`;
     const document = card({
-      title: "Submitted text",
-      description: "Original text submitted by the user; preserved without interpretation.",
+      title: "Texto enviado",
+      description: "Texto original enviado; conservado sin interpretación.",
       sources: [rawPath],
       now,
       pages: [1],
@@ -90,17 +110,17 @@ export async function buildBaseBundle(input: {
   }
 
   if (submission.kind === "image") {
-    if (!input.asset) throw new Error("Image evidence requires the original bytes.");
+    if (!input.asset) throw new Error("La evidencia de imagen requiere los bytes originales.");
     const extension = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif" }[input.assetMimeType ?? ""] ?? "bin";
     const rawPath = rawPathFor(files, input.asset, extension);
     const transcript = await recognize(input.asset, input.assetMimeType ?? "application/octet-stream");
     const text = transcript.text.trim();
-    const body = (text ? `[p.1]\n\n${text}` : `[p.1] Original image: ${rawPath}`) + note(submission.note) + "\n";
+    const body = (text ? `[p.1]\n\n${text}` : `[p.1] Imagen original: ${rawPath}`) + note(submission.note) + "\n";
     const document = card({
-      title: "Submitted image",
+      title: "Imagen enviada",
       description: text
-        ? "Original image preserved. The transcription reads visible text and does not replace the image."
-        : "Original image preserved; no transcription was produced.",
+        ? "Imagen original conservada. La transcripción recoge el texto visible y no reemplaza la imagen."
+        : "Imagen original conservada; no se obtuvo transcripción.",
       sources: [rawPath],
       now,
       pages: [1],
@@ -117,11 +137,11 @@ export async function buildBaseBundle(input: {
   if (!download?.ok) {
     const raw = new TextEncoder().encode(submission.url);
     const rawPath = rawPathFor(files, raw, "url");
-    const reason = download && !download.ok ? download.error : "The linked content has not been downloaded.";
+    const reason = describeDownloadError(download && !download.ok ? download.error : undefined);
     const body = `[p.1] ${submission.url}\n\n${reason}${note(submission.note)}`;
     const document = card({
-      title: "Submitted link",
-      description: "Original URL preserved. The linked content was not stored.",
+      title: "Enlace enviado",
+      description: "Enlace original conservado. No se guardó el contenido enlazado.",
       sources: [rawPath],
       now,
       pages: [1],
@@ -138,9 +158,9 @@ export async function buildBaseBundle(input: {
   const extension = sniffExtension(download.bytes, download.contentType, url.pathname);
   const rawPath = rawPathFor(files, download.bytes, extension);
   const observed: string[] = [];
-  let title = "Downloaded file";
-  let description = "Original downloaded bytes preserved. No text extraction was produced.";
-  let body = `Original file: ${rawPath}${note(submission.note)}`;
+  let title = "Archivo descargado";
+  let description = "Archivo original conservado. No se extrajo texto.";
+  let body = `Archivo original: ${rawPath}${note(submission.note)}`;
   let pages: number[] = [];
   let tool = "unrecognized-file";
   let confidence = 0;
@@ -149,13 +169,13 @@ export async function buildBaseBundle(input: {
 
   if (extension === "pdf") {
     const extracted = await extractPdf(download.bytes, recognize);
-    title = "Downloaded PDF";
+    title = "PDF descargado";
     if (!extracted.ok) {
-      description = "Original PDF bytes preserved. No text extraction was produced.";
-      body = `The original file was preserved and was not interpreted as a document.\n\n${extracted.error}${note(submission.note)}`;
+      description = "PDF original conservado. No se extrajo texto.";
+      body = `Se conservó el archivo original sin interpretarlo como documento.\n\n${extracted.error}${note(submission.note)}`;
       tool = "pdf-rejected";
     } else {
-      description = "Neutral text extraction of the downloaded PDF. The original bytes remain unchanged.";
+      description = "Extracción neutral de texto del PDF descargado. El archivo original permanece sin cambios.";
       body = renderMarkedPages(extracted.pages);
       for (const page of extracted.pages) {
         if (!page.csv) continue;
@@ -163,7 +183,7 @@ export async function buildBaseBundle(input: {
         files.set(csvPath, page.csv);
         sources.push(csvPath);
       }
-      if (sources.length > 1) body += `\nTables:\n${sources.slice(1).map((item) => `- ${item}`).join("\n")}\n`;
+      if (sources.length > 1) body += `\nTablas:\n${sources.slice(1).map((item) => `- ${item}`).join("\n")}\n`;
       body += note(submission.note);
       pages = extracted.pages.map((page) => page.page);
       tool = extracted.tool;
@@ -184,16 +204,16 @@ export async function buildBaseBundle(input: {
       tables.push(csvPath);
     }
     const meta = [
-      extracted.site ? `Site: ${extracted.site}` : "",
-      extracted.author ? `Author: ${extracted.author}` : "",
-      extracted.published ? `Published: ${extracted.published}` : "",
+      extracted.site ? `Sitio: ${extracted.site}` : "",
+      extracted.author ? `Autor: ${extracted.author}` : "",
+      extracted.published ? `Publicado: ${extracted.published}` : "",
     ].filter(Boolean);
     const header = meta.length ? `${meta.join("\n")}\n\n` : "";
-    const tableFooter = tables.length ? `\n\nTables:\n${tables.map((item) => `- ${item}`).join("\n")}` : "";
-    title = extracted.title ? extracted.title.slice(0, 300) : "Downloaded HTML";
+    const tableFooter = tables.length ? `\n\nTablas:\n${tables.map((item) => `- ${item}`).join("\n")}` : "";
+    title = extracted.title ? extracted.title.slice(0, 300) : "Página descargada";
     description = download.via === "browserbase"
-      ? "Neutral Markdown extraction of the browser-rendered HTML. Scripts were omitted from the extraction; the rendered HTML and screenshot remain in raw/."
-      : "Neutral Markdown extraction of the downloaded HTML. Scripts were omitted from the extraction; the original bytes remain unchanged.";
+      ? "Extracción neutral en Markdown del HTML renderizado en navegador. Se omitieron los scripts; el HTML renderizado y la captura se conservan en raw/."
+      : "Extracción neutral en Markdown del HTML descargado. Se omitieron los scripts; el archivo original permanece sin cambios.";
     body = `[p.1]\n\n${header}${extracted.markdown}${tableFooter}${note(submission.note)}`;
     pages = [1];
     tool = download.via && download.via !== "fetch" ? `${extracted.tool}+${download.via}` : extracted.tool;
@@ -206,9 +226,11 @@ export async function buildBaseBundle(input: {
     const mime = extension === "png" ? "image/png" : extension === "gif" ? "image/gif" : extension === "webp" ? "image/webp" : "image/jpeg";
     const transcript = await recognize(download.bytes, mime);
     const text = transcript.text.trim();
-    title = "Downloaded image";
-    description = text ? "Original image preserved. The transcription reads visible text and does not replace the image." : "Original image preserved; no transcription was produced.";
-    body = text ? `[p.1]\n\n${text}${note(submission.note)}` : `[p.1] Original image: ${rawPath}${note(submission.note)}`;
+    title = "Imagen descargada";
+    description = text
+      ? "Imagen original conservada. La transcripción recoge el texto visible y no reemplaza la imagen."
+      : "Imagen original conservada; no se obtuvo transcripción.";
+    body = text ? `[p.1]\n\n${text}${note(submission.note)}` : `[p.1] Imagen original: ${rawPath}${note(submission.note)}`;
     pages = [1];
     tool = transcript.tool;
     confidence = text ? Math.min(1, Math.max(0, transcript.confidence)) : 0;
@@ -216,8 +238,8 @@ export async function buildBaseBundle(input: {
     observed.push(text);
   } else if (extension === "txt" || extension === "csv") {
     const text = new TextDecoder().decode(download.bytes);
-    title = extension === "csv" ? "Downloaded table" : "Downloaded text";
-    description = "Original downloaded text preserved without interpretation.";
+    title = extension === "csv" ? "Tabla descargada" : "Texto descargado";
+    description = "Texto descargado original conservado sin interpretación.";
     body = `[p.1]\n\n${text}${note(submission.note)}`;
     pages = [1];
     tool = extension === "csv" ? "csv-text" : "original-text";
@@ -279,7 +301,7 @@ export async function collectEvidenceBase(
   let download: DownloadResult | undefined;
   if (submission.kind === "image") {
     const image = await getImage(caseId);
-    if (!image) throw new Error(`No original image found for evidence collection in case ${caseId}.`);
+    if (!image) throw new Error(`No se encontró la imagen original del caso ${caseId}.`);
     asset = new Uint8Array(image.bytes);
     assetMimeType = image.mimeType;
   } else if (submission.kind === "link" && !simulated) {
@@ -288,7 +310,7 @@ export async function collectEvidenceBase(
 
   const files = await buildBaseBundle({ submission, asset, assetMimeType, download });
   const errors = validateEvidenceTree(files);
-  if (errors.length) throw new Error("Collected evidence bundle is invalid: " + errors.join("; "));
+  if (errors.length) throw new Error("El expediente de evidencia recolectado no es válido: " + errors.join("; "));
   if (hasBlob) {
     await writeEvidenceTree(caseId, files);
   } else {

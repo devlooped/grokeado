@@ -3,6 +3,12 @@ import type { EvidenceSeat, EvidenceStage, EvidenceDocument } from "./schema.ts"
 import type { EvidenceFiles } from "./validate.ts";
 import { sha256 } from "./validate.ts";
 
+const STAGE_LABEL: Record<EvidenceStage, string> = {
+  exposicion: "exposición",
+  objecion: "objeción",
+  conclusion: "conclusión",
+};
+
 export function createMockEvidencePromotion(
   original: EvidenceFiles,
   seat: EvidenceSeat,
@@ -10,16 +16,16 @@ export function createMockEvidencePromotion(
 ): Map<string, string> {
   const sourcePath = "evidence/base/docs/submission.md";
   const source = original.get(sourcePath);
-  if (!source) throw new Error("The mock evidence harness requires base/docs/submission.md.");
+  if (!source) throw new Error("El entorno ficticio de evidencia requiere base/docs/submission.md.");
   const sourceDocument = parseEvidenceDocument(typeof source === "string" ? source : new TextDecoder().decode(source));
   const rawSource = sourceDocument.sources[0];
-  if (!rawSource) throw new Error("The mock evidence source has no raw source.");
+  if (!rawSource) throw new Error("La fuente base ficticia no tiene archivo original.");
   const generated = { by: seat, at: sourceDocument.generated.at };
   const fragmentPath = `evidence/${seat}/mock-${stage}-fragment.md`;
   const fragment: EvidenceDocument = {
     type: "fragment",
-    title: "Mock source passage",
-    description: "Deterministic fixture fragment produced without starting a sandbox.",
+    title: "Pasaje ficticio de fuente",
+    description: "Fragmento ficticio determinístico generado sin iniciar un entorno aislado.",
     sources: [rawSource],
     generated,
     page: 1,
@@ -27,8 +33,8 @@ export function createMockEvidencePromotion(
   };
   const argument: EvidenceDocument = {
     type: "argument",
-    title: `Mock ${stage} draft`,
-    description: "Deterministic fixture argument; not a model conclusion.",
+    title: `Borrador ficticio de ${STAGE_LABEL[stage]}`,
+    description: "Borrador ficticio determinístico; no es una conclusión real del modelo.",
     sources: [rawSource],
     generated,
     stage,
@@ -36,8 +42,8 @@ export function createMockEvidencePromotion(
     refutes: [],
   };
   const files = new Map<string, string>([
-    [fragmentPath, serializeEvidenceDocument(fragment, `[p.1] Fixture source hash: ${sha256(typeof source === "string" ? source : new Uint8Array(source))}.`)],
-    [`evidence/${seat}/mock-${stage}-argument.md`, serializeEvidenceDocument(argument, "This draft is only for workflow tests.")],
+    [fragmentPath, serializeEvidenceDocument(fragment, `[p.1] Hash de la fuente de prueba: ${sha256(typeof source === "string" ? source : new Uint8Array(source))}.`)],
+    [`evidence/${seat}/mock-${stage}-argument.md`, serializeEvidenceDocument(argument, "Este borrador es solo para pruebas del flujo.")],
   ]);
   return files;
 }

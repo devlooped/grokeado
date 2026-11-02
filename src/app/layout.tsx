@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Archivo, IBM_Plex_Mono, Instrument_Serif } from "next/font/google";
 import { ThemeToggle } from "@/components/theme-toggle.tsx";
+import { UserClaimsBadge } from "@/components/user-claims-badge.tsx";
 import { COUNSEL_NAMES, JUDGE, MODEL_NAME } from "@/domain/court.ts";
 import "./globals.css";
 
@@ -28,8 +29,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <header className="mx-auto max-w-5xl px-5 pt-6">
           <div className="flex items-baseline justify-between gap-4 text-[11px] uppercase tracking-[0.2em] text-ink-soft">
             <span>República Argentina</span>
-            <div className="flex items-center gap-3">
-              <span className="hidden sm:inline">Panel de chequeo de datos</span>
+            <div className="flex items-center gap-2">
+              <span className="mr-1 hidden sm:inline">Panel de chequeo de datos</span>
+              <UserClaimsBadge />
               <ThemeToggle />
             </div>
           </div>

@@ -1,4 +1,4 @@
-type CaseUser = { sub?: string; email?: string; email_verified?: boolean };
+export type CaseUser = { sub?: string; email?: string; email_verified?: boolean };
 
 export const BETA_MESSAGE = "Grokeado está en beta. Para pedir un chequeo, enviá un correo a grokeado@grokeado.com.";
 

@@ -66,6 +66,9 @@ export async function requestFactCheck(_prev: RequestState, formData: FormData):
 }
 
 export async function retryCase(id: string): Promise<void> {
+  const session = await auth0.getSession();
+  if (!canRequestCase(session?.user)) throw new Error("No autorizado para reintentar el caso.");
+
   if (await requeueCase(id)) {
     try {
       await start(courtSession, [id]);

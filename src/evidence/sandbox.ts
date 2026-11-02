@@ -10,13 +10,14 @@ import { validateEvidenceTree, validatePromotedFiles } from "./validate.ts";
 import { assembleWorkspace, citationAuthors, citationsFor, readOnlyHashesFor, workspaceIndex } from "./workspace.ts";
 
 const WORKSPACE = "/workspace";
-const EVIDENCE_GUIDE = `# Evidence format
-All Markdown documents except index.md require YAML frontmatter. Common keys:
+const EVIDENCE_GUIDE = `# Formato de evidencia
+Todos los documentos Markdown, salvo index.md, requieren encabezado YAML (frontmatter) con estas claves exactas:
 type, title, description, sources[], generated: { by, at }.
-evidence adds pages[], extraction: { tool, confidence }, tokens.
-fragment adds page and may add reprocess_of.
-argument adds stage (exposicion|objecion|conclusion), supports[], refutes[].
-Use page anchors #pN. Keep base/ and all other seats read-only.`;
+evidence agrega pages[], extraction: { tool, confidence }, tokens.
+fragment agrega page y puede incluir reprocess_of.
+argument agrega stage (exposicion|objecion|conclusion), supports[], refutes[].
+Escribí siempre title, description y el cuerpo del documento en español rioplatense claro y sobrio (manteniendo en inglés las claves YAML y los valores de type).
+Usá anclas de página #pN. Mantené base/ y las carpetas de los demás analistas en modo de solo lectura.`;
 
 export type EvidenceStepResult = {
   status: "ok" | "partial" | "timeout";
@@ -55,13 +56,13 @@ export async function runEvidenceStep(
 
   const original = await readEvidenceTree(caseId);
   const initialErrors = validateEvidenceTree(original);
-  if (initialErrors.length) throw new Error("Stored evidence bundle is invalid: " + initialErrors.join("; "));
+  if (initialErrors.length) throw new Error("El expediente de evidencia almacenado no es válido: " + initialErrors.join("; "));
 
   const current = presented(original, seat, stage);
   if (simulated) {
     const promoted = createMockEvidencePromotion(original, seat, stage);
     const errors = validatePromotedFiles(seat, original, promoted);
-    if (errors.length) throw new Error("Mock evidence promotion is invalid: " + errors.join("; "));
+    if (errors.length) throw new Error("La promoción ficticia de evidencia no es válida: " + errors.join("; "));
     const merged = new Map(original);
     for (const [path, content] of promoted) merged.set(path, new TextEncoder().encode(content));
     const indexPath = `evidence/${seat}/index.md`;
@@ -130,10 +131,10 @@ export async function runEvidenceStep(
       }
       throw error;
     }
-    if (command.exitCode !== 0) throw new Error((await command.stderr()).slice(-4000) || `Evidence harness exited with ${command.exitCode}.`);
+    if (command.exitCode !== 0) throw new Error((await command.stderr()).slice(-4000) || `El entorno de evidencia terminó con código ${command.exitCode}.`);
 
     const resultFile = await sandbox.readFileToBuffer({ path: `${WORKSPACE}/evidence/${seat}/result.json` });
-    if (!resultFile) throw new Error("The evidence harness did not return result.json.");
+    if (!resultFile) throw new Error("El entorno de evidencia no devolvió result.json.");
     const result = JSON.parse(resultFile.toString("utf8")) as {
       status: "ok" | "partial" | "timeout";
       promoted: string[];
@@ -158,10 +159,10 @@ export async function runEvidenceStep(
     const promoted = new Map<string, Uint8Array>();
     for (const path of result.promoted) {
       if (!path.startsWith(`evidence/${seat}/`) || path.includes("..") || path.includes("\\")) {
-        throw new Error(`Sandbox returned a path outside its namespace: ${path}`);
+        throw new Error(`El entorno aislado devolvió una ruta fuera de su espacio: ${path}`);
       }
       const content = await sandbox.readFileToBuffer({ path: `${WORKSPACE}/${path}` });
-      if (!content) throw new Error(`Evidence harness did not return ${path}.`);
+      if (!content) throw new Error(`El entorno de evidencia no devolvió ${path}.`);
       promoted.set(path, new Uint8Array(content));
     }
     const transcript = await sandbox.readFileToBuffer({ path: `${WORKSPACE}/transcript.jsonl` });

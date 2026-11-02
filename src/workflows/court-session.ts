@@ -26,17 +26,18 @@ async function play(
 }
 
 function evidenceTask(spec: TurnSpec): { seat: EvidenceSeat; stage: EvidenceStage; task: string } | undefined {
+  const language = " Escribí los títulos, descripciones y el contenido de cada archivo en español rioplatense.";
   if (spec.kind === "instruction") {
-    return { seat: spec.counsel, stage: "exposicion", task: "Examiná el expediente base y producí fragments neutrales y un borrador de argumento para la exposición." };
+    return { seat: spec.counsel, stage: "exposicion", task: "Examiná el expediente base y producí fragmentos neutrales y un borrador de argumento para la exposición." + language };
   }
   if (spec.kind === "statement") {
-    return { seat: spec.counsel, stage: spec.stage === "opening" ? "exposicion" : "objecion", task: "Prepará fragments y un borrador de argumento para esta intervención, contrastando cualquier fragmento ajeno con el raw." };
+    return { seat: spec.counsel, stage: spec.stage === "opening" ? "exposicion" : "objecion", task: "Prepará fragmentos y un borrador de argumento para esta intervención, contrastando cualquier fragmento ajeno con el archivo original." + language };
   }
   if (spec.kind === "objection") {
-    return { seat: spec.counsel, stage: "objecion", task: "Revisá el material base y los fragments de los pares para identificar evidencia que sustente o refute una objeción." };
+    return { seat: spec.counsel, stage: "objecion", task: "Revisá el material base y los fragmentos de los pares para identificar evidencia que sustente o refute una objeción." + language };
   }
   if (spec.kind === "closing") {
-    return { seat: spec.counsel, stage: "conclusion", task: "Prepará una síntesis de evidencia y un borrador de conclusión, señalando límites y contradicciones." };
+    return { seat: spec.counsel, stage: "conclusion", task: "Prepará una síntesis de evidencia y un borrador de conclusión, señalando límites y contradicciones." + language };
   }
 }
 

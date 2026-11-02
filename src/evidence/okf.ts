@@ -23,7 +23,7 @@ export interface IndexedEvidence {
 }
 
 export function createEvidenceIndex(entries: readonly IndexedEvidence[]): string {
-  const lines = ["# Evidence", "", "Evidence files promoted for this case.", ""];
+  const lines = ["# Evidencia", "", "Archivos de evidencia promovidos para este caso.", ""];
   for (const { path, document } of [...entries].sort((a, b) => a.path.localeCompare(b.path))) {
     const tokens = document.type === "evidence" ? ` (${document.tokens} tokens)` : "";
     lines.push(`- [${document.title}](/${path}) — ${document.description}${tokens}`);
@@ -54,13 +54,18 @@ export function evidencePageLink(path: string, page: number): string {
   return `/${path}#p${page}`;
 }
 
+function escapeHtml(value: string): string {
+  return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
+}
+
 export function renderEvidenceHtml(source: string): string {
   const document = parseEvidenceDocument(source);
   const body = source.replace(FRONTMATTER, "").trim();
   const markedPages = new Set([...body.matchAll(/\[p\.(\d+)\]/gi)].map((match) => Number(match[1])));
-  const escaped = body.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
-  const anchored = escaped.replace(/\[p\.(\d+)\]/gi, (_marker, page: string) => `<span id="p${page}" class="page">Page ${page}</span>`);
+  const escaped = escapeHtml(body);
+  const anchored = escaped.replace(/\[p\.(\d+)\]/gi, (_marker, page: string) => `<span id="p${page}" class="page">Página ${page}</span>`);
   const pages = document.type === "fragment" ? [document.page] : document.type === "evidence" ? document.pages : [];
   const missingAnchors = pages.filter((page) => !markedPages.has(page)).map((page) => `<span id="p${page}"></span>`).join("");
-  return `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Evidence document</title><style>body{font:16px/1.6 system-ui,sans-serif;margin:2rem auto;max-width:70rem;padding:0 1rem}pre{white-space:pre-wrap;overflow-wrap:anywhere}.page{display:block;font-weight:700;margin:1.5rem 0 .5rem}</style><main>${missingAnchors}<pre>${anchored}</pre></main></html>`;
+  const title = escapeHtml(document.title || "Documento de evidencia");
+  return `<!doctype html><html lang="es-AR"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${title} · Grokeado</title><style>body{font:16px/1.6 system-ui,sans-serif;margin:2rem auto;max-width:70rem;padding:0 1rem}pre{white-space:pre-wrap;overflow-wrap:anywhere}.page{display:block;font-weight:700;margin:1.5rem 0 .5rem}</style><main>${missingAnchors}<pre>${anchored}</pre></main></html>`;
 }

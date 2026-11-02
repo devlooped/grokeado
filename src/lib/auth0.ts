@@ -133,6 +133,7 @@ export function createAuth0Client(options: Auth0ClientOptions = {}): Auth0Client
     },
     enableAccessTokenEndpoint: options.enableAccessTokenEndpoint ?? false,
     includeIdTokenHintInOIDCLogoutUrl: options.includeIdTokenHintInOIDCLogoutUrl ?? false,
+    noContentProfileResponseWhenUnauthenticated: options.noContentProfileResponseWhenUnauthenticated ?? true,
     beforeSessionSaved: options.beforeSessionSaved ?? trimSession,
   });
 

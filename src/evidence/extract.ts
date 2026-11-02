@@ -104,7 +104,7 @@ function decodedStream(dict: string, stream: Uint8Array): Uint8Array {
 
 function integerObject(dict: string): number {
   const match = /^\s*(\d+)\s*$/.exec(dict);
-  if (!match) throw new Error("Malformed PDF: length is not an integer");
+  if (!match) throw new Error("PDF inválido: la longitud no es un entero.");
   return Number(match[1]);
 }
 
@@ -136,23 +136,23 @@ function xrefEntries(source: string): Map<number, number> | undefined {
 function parseObjectAt(bytes: Uint8Array, offset: number, lengthOf: (id: number) => number): RawObject {
   const source = latin1(bytes);
   const header = /^(\d+)\s+\d+\s+obj/.exec(source.slice(offset));
-  if (!header) throw new Error("Malformed PDF: missing object");
+  if (!header) throw new Error("PDF inválido: falta un objeto.");
   const cursor = offset + header[0].length;
   const rest = source.slice(cursor);
   const streamRel = rest.search(/(?:^|[\r\n])stream(?:\r\n|\n|\r)/);
   const endRel = rest.indexOf("endobj");
-  if (endRel < 0) throw new Error("Malformed PDF: truncated object");
+  if (endRel < 0) throw new Error("PDF inválido: objeto truncado.");
   if (streamRel >= 0 && streamRel < endRel) {
     const dict = rest.slice(0, streamRel);
     const indirect = /\/Length\s+(\d+)\s+\d+\s+R/.exec(dict);
     const direct = /\/Length\s+(\d+)\b/.exec(dict);
     const length = indirect ? lengthOf(Number(indirect[1])) : direct ? Number(direct[1]) : Number.NaN;
-    if (!Number.isInteger(length) || length < 0) throw new Error("Malformed PDF: missing stream length");
+    if (!Number.isInteger(length) || length < 0) throw new Error("PDF inválido: falta la longitud del flujo.");
     const keyword = /(?:^|[\r\n])stream(?:\r\n|\n|\r)/.exec(rest.slice(streamRel));
-    if (!keyword) throw new Error("Malformed PDF: broken stream");
+    if (!keyword) throw new Error("PDF inválido: flujo dañado.");
     const dataStart = cursor + streamRel + keyword.index + keyword[0].length;
     const stream = bytes.subarray(dataStart, dataStart + length);
-    if (stream.byteLength !== length) throw new Error("Malformed PDF: truncated stream");
+    if (stream.byteLength !== length) throw new Error("PDF inválido: flujo truncado.");
     return { id: Number(header[1]), dict, stream };
   }
   return { id: Number(header[1]), dict: rest.slice(0, endRel) };
@@ -167,9 +167,9 @@ function parseWithXref(bytes: Uint8Array): RawObject[] | undefined {
   const load = (id: number): RawObject => {
     const cached = cache.get(id);
     if (cached) return cached;
-    if (reading.has(id)) throw new Error("Malformed PDF: cyclic length");
+    if (reading.has(id)) throw new Error("PDF inválido: longitud cíclica.");
     const offset = entries.get(id);
-    if (offset === undefined) throw new Error("Malformed PDF: missing object");
+    if (offset === undefined) throw new Error("PDF inválido: falta un objeto.");
     reading.add(id);
     const object = parseObjectAt(bytes, offset, lengthOf);
     reading.delete(id);
@@ -182,20 +182,20 @@ function parseWithXref(bytes: Uint8Array): RawObject[] | undefined {
 
 function parseByScan(bytes: Uint8Array): RawObject[] {
   const source = latin1(bytes);
-  if (!source.includes("%PDF-")) throw new Error("Malformed PDF: missing header");
+  if (!source.includes("%PDF-")) throw new Error("PDF inválido: falta el encabezado.");
   const objects: RawObject[] = [];
   const marker = /(\d+)\s+\d+\s+obj/g;
   let match: RegExpExecArray | null;
   while ((match = marker.exec(source))) {
     const object = parseObjectAt(bytes, match.index, () => {
-      throw new Error("Malformed PDF: indirect lengths need an xref table");
+      throw new Error("PDF inválido: las longitudes indirectas requieren una tabla xref.");
     });
     objects.push(object);
     const end = source.indexOf("endobj", match.index);
-    if (end < 0) throw new Error("Malformed PDF: truncated object");
+    if (end < 0) throw new Error("PDF inválido: objeto truncado.");
     marker.lastIndex = end + "endobj".length;
   }
-  if (!objects.length) throw new Error("Malformed PDF: no objects");
+  if (!objects.length) throw new Error("PDF inválido: no contiene objetos.");
   return objects;
 }
 
@@ -294,8 +294,8 @@ export function extractTimeline(text: string): string {
     const iso = isoDate(Number(match[3]), month, Number(match[1]));
     if (iso) found.add(iso);
   }
-  const lines = ["# Timeline", ""];
-  if (!found.size) lines.push("No dates have been extracted from the submission.");
+  const lines = ["# Cronología", ""];
+  if (!found.size) lines.push("No se extrajeron fechas del material enviado.");
   else for (const date of [...found].sort()) lines.push(`- ${date}`);
   return lines.join("\n") + "\n";
 }
@@ -305,8 +305,8 @@ export function extractEntities(text: string): string {
   for (const match of text.matchAll(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi)) found.add(match[0]);
   for (const match of text.matchAll(/https?:\/\/[^\s)]+/gi)) found.add(match[0].replace(/[.,;]+$/, ""));
   for (const match of text.matchAll(/(?<![\p{L}\p{N}])(\p{Lu}\p{Ll}+(?:[ \t]+\p{Lu}\p{Ll}+)+)(?![\p{L}\p{N}])/gu)) found.add(match[1] ?? match[0]);
-  const lines = ["# Entities", ""];
-  if (!found.size) lines.push("No entities have been extracted from the submission.");
+  const lines = ["# Entidades", ""];
+  if (!found.size) lines.push("No se extrajeron entidades del material enviado.");
   else for (const entity of [...found].sort((a, b) => a.localeCompare(b, "es"))) lines.push(`- ${entity}`);
   return lines.join("\n") + "\n";
 }
@@ -451,10 +451,10 @@ export async function defaultRecognize(bytes: Uint8Array, mimeType: string): Pro
 
 export async function extractPdf(bytes: Uint8Array, recognize: Recognize = defaultRecognize): Promise<PdfExtraction> {
   try {
-    if (!latin1(bytes).includes("%PDF-")) return { ok: false, error: "Malformed PDF: missing header" };
+    if (!latin1(bytes).includes("%PDF-")) return { ok: false, error: "PDF inválido: falta el encabezado." };
     const objects = parseWithXref(bytes) ?? parseByScan(bytes);
     const pages = orderedPages(objects);
-    if (!pages.length) return { ok: false, error: "Malformed PDF: no pages" };
+    if (!pages.length) return { ok: false, error: "PDF inválido: no contiene páginas." };
     const extracted: PageText[] = [];
     for (const [index, page] of pages.entries()) {
       const streams = contentStreams(page, objects);
@@ -482,6 +482,6 @@ export async function extractPdf(bytes: Uint8Array, recognize: Recognize = defau
       confidence: Math.min(...extracted.map((page) => page.confidence)),
     };
   } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : "Malformed PDF" };
+    return { ok: false, error: error instanceof Error ? error.message : "PDF inválido." };
   }
 }

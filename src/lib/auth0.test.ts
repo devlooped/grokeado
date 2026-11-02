@@ -272,6 +272,15 @@ test("sign-in, rolling session, and v2 sign-out keep __session well below 4 KB w
   const rolledReq = new NextRequest(`${APP_BASE_URL}/`, { headers: { cookie: `__session=${rolledSession.value}` } });
   assert.deepEqual((await client.getSession(rolledReq))?.user, session?.user);
 
+  const unauthedProfileRes = await client.middleware(new NextRequest(`${APP_BASE_URL}/auth/profile`));
+  assert.equal(unauthedProfileRes.status, 204);
+
+  const authedProfileRes = await client.middleware(
+    new NextRequest(`${APP_BASE_URL}/auth/profile`, { headers: { cookie: cookieHeader } })
+  );
+  assert.equal(authedProfileRes.status, 200);
+  assert.deepEqual(await authedProfileRes.json(), session?.user);
+
   const accessTokenRouteRes = await client.middleware(
     new NextRequest(`${APP_BASE_URL}/auth/access-token`, { headers: { cookie: cookieHeader } })
   );

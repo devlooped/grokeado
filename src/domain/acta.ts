@@ -1,4 +1,4 @@
-import { JUDGE, MODEL_NAME, type CourtEvent, type Stage, type Submission, type Verdict } from "./court.ts";
+import { COUNSEL, JUDGE, MODEL_NAME, project, type CaseRecord, type CourtEvent, type Stage, type Submission, type Verdict } from "./court.ts";
 
 export function submissionExcerpt(s: Submission): string {
   if (s.kind === "text") return s.text;
@@ -17,6 +17,37 @@ export const VERDICT_LABEL: Record<Verdict, string> = {
   falso: "Falso",
   no_verificable: "No verificable",
 };
+
+export const VERDICT_THUMB: Record<Verdict, string> = {
+  verdadero: "👍",
+  falso: "👎",
+  no_verificable: "❓",
+};
+
+export function caseShareMetadata(c: CaseRecord, events: readonly CourtEvent[] = []): { title: string; description: string } {
+  const title = "Caso Nº " + c.id + " · Grokeado";
+  const quoted = `«${submissionExcerpt(c.submission)}»`;
+  if (c.status !== "resolved") return { title, description: quoted };
+  const view = project(events);
+  const outcomes = view.claims.flatMap((cl) => {
+    const votes = COUNSEL.flatMap((counsel) => {
+      const v = cl.votes[counsel]?.verdict;
+      return v ? [VERDICT_THUMB[v]] : [];
+    }).join("");
+    if (cl.judgment) {
+      const verdictText = `${VERDICT_THUMB[cl.judgment.verdict]} ${VERDICT_LABEL[cl.judgment.verdict]}`;
+      return [votes ? `${votes} · ${verdictText}` : verdictText];
+    }
+    return votes ? [votes] : [];
+  });
+  if (outcomes.length > 0) {
+    return { title: `${title} · ${outcomes.join(" / ")}`, description: `${quoted}\n${outcomes.join("\n")}` };
+  }
+  if (view.dismissal) {
+    return { title, description: `${quoted}\nCaso descartado` };
+  }
+  return { title, description: quoted };
+}
 
 export const ABSENCE_LABEL = { ...STAGE_LABEL, discovery: "investigación", instruction: "instrucción", source_review: "crítica de fuentes", objection: "ronda de objeciones" };
 export const EVIDENCE_STANCE_LABEL = { supports: "a favor", opposes: "en contra", context: "contexto" };

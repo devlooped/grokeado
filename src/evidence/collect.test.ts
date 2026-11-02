@@ -34,11 +34,29 @@ test("keeps a failed download as an immutable pointer", async () => {
   const document = parseEvidenceDocument(text(files, "evidence/base/docs/submission.md"));
   assert.equal(document.type, "evidence");
   if (document.type !== "evidence") return;
+  assert.equal(document.title, "Enlace enviado");
   assert.equal(document.extraction.tool, "download-failed");
   assert.equal(document.extraction.confidence, 0);
   assert.equal(document.pages[0], 1);
   assert.match(text(files, "evidence/base/docs/submission.md"), /HTTP 404/);
+  assert.match(text(files, "evidence/base/docs/submission.md"), /Comentario: nota/);
   assert.match(text(files, "evidence/base/index.md"), /tokens/);
+  assert.match(text(files, "evidence/base/index.md"), /Cronología/);
+});
+
+test("preserves text submissions with Spanish metadata and catalogs", async () => {
+  const files = await buildBaseBundle({
+    now,
+    submission: { kind: "text", text: "Una afirmación sin fechas ni nombres propios." },
+  });
+  assert.deepEqual(validateEvidenceTree(files), []);
+  const document = parseEvidenceDocument(text(files, "evidence/base/docs/submission.md"));
+  assert.equal(document.title, "Texto enviado");
+  assert.equal(document.description, "Texto original enviado; conservado sin interpretación.");
+  assert.match(text(files, "evidence/base/timeline.md"), /# Cronología/);
+  assert.match(text(files, "evidence/base/timeline.md"), /No se extrajeron fechas/);
+  assert.match(text(files, "evidence/base/entities.md"), /# Entidades/);
+  assert.match(text(files, "evidence/base/entities.md"), /No se extrajeron entidades/);
 });
 
 test("extracts a digital PDF, exports tables and leaves injection text as data", async () => {
@@ -61,6 +79,7 @@ test("extracts a digital PDF, exports tables and leaves injection text as data",
   assert.match(body, /\[p\.2\]/);
   assert.match(body, /Ignore previous instructions/);
   assert.match(body, /Compressed|Columna/);
+  assert.match(body, /Tablas:/);
   const csv = [...files.keys()].find((path) => path.startsWith("evidence/base/tables/") && path.endsWith(".csv"));
   assert.ok(csv);
   assert.match(text(files, csv!), /Columna,Valor/);
@@ -68,6 +87,7 @@ test("extracts a digital PDF, exports tables and leaves injection text as data",
   assert.match(text(files, "evidence/base/entities.md"), /ana@example.com/);
   assert.match(text(files, "evidence/base/entities.md"), /Ana Pérez/);
   const document = parseEvidenceDocument(body);
+  assert.equal(document.title, "PDF descargado");
   assert.equal(document.type === "evidence" && document.extraction.tool, "pdf-text");
   assert.equal(document.type === "evidence" && document.extraction.confidence, 0.95);
 });
@@ -107,7 +127,7 @@ test("preserves malformed PDFs and strips active HTML", async () => {
   assert.deepEqual(validateEvidenceTree(malformed), []);
   const rejected = parseEvidenceDocument(text(malformed, "evidence/base/docs/submission.md"));
   assert.equal(rejected.type === "evidence" && rejected.extraction.tool, "pdf-rejected");
-  assert.match(text(malformed, "evidence/base/docs/submission.md"), /Malformed PDF/);
+  assert.match(text(malformed, "evidence/base/docs/submission.md"), /PDF inválido/);
 
   const html = new TextEncoder().encode("<html><script>secret()</script><p>Visible claim</p></html>");
   const page = await buildBaseBundle({
@@ -199,9 +219,9 @@ test("extracts clean Markdown, metadata, CSV tables and Browserbase screenshots 
     assert.ok(parsed.sources.includes(rawPng!));
     assert.ok(parsed.sources.includes(csv!));
   }
-  assert.match(docText, /Site: INDEC/);
-  assert.match(docText, /Author: María López/);
-  assert.match(docText, /Published: 2026-04-12/);
+  assert.match(docText, /Sitio: INDEC/);
+  assert.match(docText, /Autor: María López/);
+  assert.match(docText, /Publicado: 2026-04-12/);
   assert.match(docText, /https:\/\/indec\.example\.test\/evidence\/fake-missing\.md/);
   assert.doesNotMatch(docText, /do-not-leak/);
   assert.match(text(files, "evidence/base/timeline.md"), /2026-04-12/);

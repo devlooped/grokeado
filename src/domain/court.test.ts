@@ -31,3 +31,39 @@ test("projection attaches votes and judgments to claims and strikes sustained ob
   assert.equal(view.claims[0].judgment?.method, "judge");
   assert.equal(view.closed, true);
 });
+
+test("caseShareMetadata formats quoted content and voted outcomes with thumbs", async () => {
+  const { caseShareMetadata } = await import("./acta.ts");
+  const c = {
+    id: "abc123",
+    createdAt: "2026-10-31T00:00:00Z",
+    status: "resolved" as const,
+    submission: { kind: "text" as const, text: "El dulce de leche se inventó en la Argentina y la birome es un invento argentino." },
+  };
+  const events: CourtEvent[] = [
+    {
+      type: "claims_entered",
+      claims: [
+        { id: "A1", quote: "El dulce de leche se inventó en la Argentina", text: "El dulce de leche se inventó en la Argentina." },
+        { id: "A2", quote: "la birome es un invento argentino", text: "La birome es un invento argentino." },
+      ],
+    },
+    { type: "vote", by: "grok", claimId: "A1", verdict: "falso", rationale: "r" },
+    { type: "vote", by: "gemini", claimId: "A1", verdict: "falso", rationale: "r" },
+    { type: "vote", by: "claude", claimId: "A1", verdict: "falso", rationale: "r" },
+    { type: "vote", by: "chatgpt", claimId: "A1", verdict: "verdadero", rationale: "r" },
+    { type: "vote", by: "grok", claimId: "A2", verdict: "verdadero", rationale: "r" },
+    { type: "vote", by: "gemini", claimId: "A2", verdict: "verdadero", rationale: "r" },
+    { type: "vote", by: "claude", claimId: "A2", verdict: "verdadero", rationale: "r" },
+    { type: "vote", by: "chatgpt", claimId: "A2", verdict: "verdadero", rationale: "r" },
+    { type: "judgment", claimId: "A1", verdict: "falso", method: "consensus", reasoning: "" },
+    { type: "judgment", claimId: "A2", verdict: "verdadero", method: "consensus", reasoning: "" },
+    { type: "session_closed" },
+  ];
+  const meta = caseShareMetadata(c, events);
+  assert.equal(meta.title, "Caso Nº abc123 · Grokeado · 👎👎👎👍 · 👎 Falso / 👍👍👍👍 · 👍 Verdadero");
+  assert.equal(
+    meta.description,
+    "«El dulce de leche se inventó en la Argentina y la birome es un invento argentino.»\n👎👎👎👍 · 👎 Falso\n👍👍👍👍 · 👍 Verdadero"
+  );
+});
