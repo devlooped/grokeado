@@ -11,3 +11,4 @@ test-results/
 /.swc
 !.env
 .vercel
+/.config/auth0
