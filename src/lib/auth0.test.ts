@@ -10,7 +10,7 @@ const ISSUER = `https://${DOMAIN}/`;
 const CLIENT_ID = "pqq7y4f9IMv7PFLx6gEngGkIXUIeWo7A";
 const CLIENT_SECRET = "test-client-secret-for-callback-exchange";
 const SECRET = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
-const APP_BASE_URL = "https://www.grokeado.com";
+const APP_BASE_URL = "https://www.verificado.si";
 const MICROSOFT_ROLE = "http://schemas.microsoft.com/ws/2008/06/identity/claims/role";
 
 const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
@@ -196,6 +196,25 @@ test("logout normalization uses the configured origin for root and rejects cross
     const req = new NextRequest(`${APP_BASE_URL}/auth/logout?returnTo=${encodeURIComponent(returnTo)}`);
     const normalized = normalizeLogoutRequest(req, APP_BASE_URL);
     assert.equal(normalized.nextUrl.searchParams.get("returnTo"), expected);
+  }
+});
+
+test("login callbacks and logout normalization use both Verificado origins", async () => {
+  for (const origin of ["https://verificado.si", "https://www.verificado.si"]) {
+    const client = createAuth0Client({
+      domain: DOMAIN,
+      clientId: CLIENT_ID,
+      clientSecret: CLIENT_SECRET,
+      secret: SECRET,
+      appBaseUrl: origin,
+      customFetch: buildMockFetch({ nonceRef: { current: "" } }),
+    });
+    const login = await client.middleware(new NextRequest(`${origin}/auth/login`));
+    const authorizeUrl = new URL(login.headers.get("location") ?? "");
+    assert.equal(authorizeUrl.searchParams.get("redirect_uri"), `${origin}/auth/callback`);
+
+    const logout = normalizeLogoutRequest(new NextRequest(`${origin}/auth/logout?returnTo=/`), origin);
+    assert.equal(logout.nextUrl.searchParams.get("returnTo"), origin);
   }
 });
 

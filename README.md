@@ -58,7 +58,10 @@ insufficient. Historical records without instruction events remain readable.
    web search, page fetch, and X research can all incur usage charges.
 3. For deployment, keep your Postgres and Auth0 variables configured and either
    use Vercel's automatic OIDC Gateway authentication or add the Gateway key to
-   the project's deployment environment variables. Redeploy after changes.
+   the project's deployment environment variables. Set the production
+   `APP_BASE_URL` to `https://www.verificado.si` (the canonical domain; the apex
+   redirects to it), and keep its callback and logout URLs registered in Auth0.
+   Redeploy after environment changes.
 4. Under project **Settings → Environment Variables**, enable access to **System
    Environment Variables**. Workflow uses `VERCEL_DEPLOYMENT_ID` to select its
    managed Vercel backend. No hosted workflow service is needed for local tests.
