@@ -100,7 +100,7 @@ test("mock statements and final votes use admitted shared sources and no live mo
   }
 });
 
-test("isolated mock objection, reply, ruling and tiebreak fixtures all complete through the AI tool loop", async (t) => {
+test("isolated mock objection, reply, ruling, tiebreak and summary fixtures all complete through the AI tool loop", async (t) => {
   t.mock.method(globalThis, "fetch", () => { throw new Error("No network allowed in mock mode"); });
   const record: CourtEvent[] = [...admitted,
     { type: "statement", id: "I1", by: "grok", stage: "opening", text: "SIMULACIÓN LOCAL: exposición de prueba.", evidenceIds: ["S1"] },
@@ -111,6 +111,7 @@ test("isolated mock objection, reply, ruling and tiebreak fixtures all complete 
     { kind: "reply", speaker: "grok", objector: "gemini", objectionId: "O1" },
     { kind: "ruling", objectionId: "O1" },
     { kind: "tiebreak" },
+    { kind: "summary" },
   ] satisfies TurnSpec[]) {
     const outcome = await runMock(spec, record);
     assert.equal(outcome.done, true, spec.kind);

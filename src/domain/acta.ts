@@ -15,13 +15,15 @@ export const STAGE_LABEL: Record<Stage, string> = {
 export const VERDICT_LABEL: Record<Verdict, string> = {
   verdadero: "Verdadero",
   falso: "Falso",
-  no_verificable: "No verificable",
+  no_verificable: "Insostenible",
+  enganoso: "Engañoso",
 };
 
 export const VERDICT_THUMB: Record<Verdict, string> = {
   verdadero: "👍",
   falso: "👎",
   no_verificable: "❓",
+  enganoso: "⚠️",
 };
 
 export function caseShareMetadata(c: CaseRecord, events: readonly CourtEvent[] = []): { title: string; description: string } {
@@ -90,6 +92,8 @@ export function describe(e: CourtEvent): string {
       return MODEL_NAME[e.by] + " vota " + VERDICT_LABEL[e.verdict] + " sobre " + e.claimId + ": " + e.rationale;
     case "judgment":
       return "Resultado de " + e.claimId + ": " + VERDICT_LABEL[e.verdict] + (e.method === "consensus" ? " (por mayoría)." : " (desempate del moderador). " + e.reasoning);
+    case "case_summary":
+      return "Resumen del moderador: " + e.text;
     case "absence":
       return MODEL_NAME[e.by] + " no se pronunció en la " + ABSENCE_LABEL[e.stage] + ".";
     case "session_closed":

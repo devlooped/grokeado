@@ -30,6 +30,7 @@ const events = [
   { type: "vote", by: "chatgpt", claimId: "A2", verdict: "verdadero", rationale: "Ejemplo ficticio: Bíró desarrolló su invento en Argentina." },
   { type: "judgment", claimId: "A1", verdict: "no_verificable", method: "judge", reasoning: "Fundamento de ejemplo del moderador." },
   { type: "judgment", claimId: "A2", verdict: "verdadero", method: "consensus", reasoning: "" },
+  { type: "case_summary", text: "Resumen ficticio: los analistas discreparon sobre el origen del dulce de leche y debatieron los matices de la trayectoria de Bíró en Argentina." },
   { type: "session_closed" },
 ];
 const at = new Date().toISOString();

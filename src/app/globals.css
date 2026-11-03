@@ -11,7 +11,12 @@
   --color-seal: #8b2323;
   --color-verdadero: #2f7a4b;
   --color-falso: #b3361f;
-  --color-dudoso: #b07d1a;
+  --color-insostenible: #e4c037;
+  --color-insostenible-text: #856700;
+  --color-enganoso: #e98939;
+  --color-enganoso-text: #b54a0b;
+  --color-verdict-glyph: #ffffff;
+  --color-caution-glyph: #1b1915;
   --font-display: var(--font-instrument), "Times New Roman", serif;
   --font-sans: var(--font-archivo), system-ui, sans-serif;
   --font-mono: var(--font-plex-mono), ui-monospace, monospace;
@@ -34,7 +39,11 @@ html[data-theme="dark"] {
   --color-seal: #e27f7b;
   --color-verdadero: #69b986;
   --color-falso: #ed8068;
-  --color-dudoso: #e2b64d;
+  --color-insostenible: #ead15b;
+  --color-insostenible-text: #ead15b;
+  --color-enganoso: #f49a50;
+  --color-enganoso-text: #f49a50;
+  --color-verdict-glyph: #1b1915;
   color-scheme: dark;
 }
 

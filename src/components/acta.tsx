@@ -207,6 +207,13 @@ function Entry({ e, view, caseId }: { e: RecordedEvent; view: CaseView; caseId: 
           Resultado de {e.claimId}: <span className={"font-semibold " + VERDICT_TEXT[e.verdict]}>{VERDICT_LABEL[e.verdict]}</span>, por mayoría.
         </p>
       );
+    case "case_summary":
+      return (
+        <div className="ml-12 text-sm">
+          <p className="font-semibold">Resumen del moderador</p>
+          <p className="mt-1 whitespace-pre-line text-ink-soft">{e.text}</p>
+        </div>
+      );
     case "absence":
       return <Clerk>{MODEL_NAME[e.by]} no se pronunció en la {ABSENCE_LABEL[e.stage]}</Clerk>;
     case "session_closed":
@@ -215,9 +222,19 @@ function Entry({ e, view, caseId }: { e: RecordedEvent; view: CaseView; caseId: 
 }
 
 export function Acta({ events, view, caseId }: { events: RecordedEvent[]; view: CaseView; caseId: string }) {
+  // La tarjeta ya muestra los votos y la decisión proyectados; conservar solo
+  // eventos que no estén representados allí (por ejemplo, registros incompletos).
+  const visible = events.filter((e) => {
+    if (e.type === "source_review_vote") {
+      const vote = view.sources.get(e.sourceId)?.votes[e.by];
+      return !vote || vote.veto !== e.veto || vote.reason !== e.reason;
+    }
+    if (e.type === "source_decided") return view.sources.get(e.sourceId)?.excluded !== e.excluded;
+    return true;
+  });
   return (
     <ol className="space-y-4">
-      {events.map((e) => (
+      {visible.map((e) => (
         <li key={e.seq}>
           <Entry e={e} view={view} caseId={caseId} />
         </li>

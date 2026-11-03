@@ -12,7 +12,8 @@ export const MODEL_NAME: Record<Counsel, string> = {
 
 export const COUNSEL_NAMES = new Intl.ListFormat("es-AR", { style: "long", type: "conjunction" }).format(COUNSEL.map((c) => MODEL_NAME[c]));
 
-export const VERDICTS = ["verdadero", "falso", "no_verificable"] as const;
+// Keep the historical identifier for Insostenible so stored cases remain readable.
+export const VERDICTS = ["verdadero", "falso", "no_verificable", "enganoso"] as const;
 export type Verdict = (typeof VERDICTS)[number];
 
 export const STAGES = ["opening", "rebuttal", "closing"] as const;
@@ -85,6 +86,7 @@ export type CourtEvent =
   | { type: "ruling"; objectionId: string; sustained: boolean; reason: string }
   | { type: "vote"; by: Counsel; claimId: string; verdict: Verdict; rationale: string }
   | { type: "judgment"; claimId: string; verdict: Verdict; method: "consensus" | "judge"; reasoning: string }
+  | { type: "case_summary"; text: string }
   | { type: "absence"; by: Counsel; stage: Stage | "discovery" | "instruction" | "source_review" | "objection" }
   | { type: "session_closed" };
 
@@ -114,6 +116,7 @@ export interface CaseView {
   sources: Map<string, SourceView>;
   struck: Set<string>;
   dismissal?: string;
+  summary?: string;
   closed: boolean;
 }
 
@@ -161,6 +164,9 @@ export function project(events: readonly CourtEvent[]): CaseView {
         if (c) c.judgment = { verdict: e.verdict, method: e.method, reasoning: e.reasoning };
         break;
       }
+      case "case_summary":
+        view.summary = e.text;
+        break;
       case "session_closed":
         view.closed = true;
         break;

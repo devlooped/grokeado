@@ -15,7 +15,8 @@ export type TurnSpec =
   | { kind: "reply"; speaker: Counsel; objector: Counsel; objectionId: string }
   | { kind: "ruling"; objectionId: string }
   | { kind: "closing"; counsel: Counsel }
-  | { kind: "tiebreak" };
+  | { kind: "tiebreak" }
+  | { kind: "summary" };
 
 export type StampedEvent = CourtEvent & { at: string };
 
@@ -41,6 +42,9 @@ export interface Docket {
 
 const OBJECTION_GROUNDS =
   "afirmación sin evidencia, evidencia inexistente, mal citada o tergiversada, fuente no confiable, o argumento ajeno a las afirmaciones en examen";
+
+const VERDICT_INSTRUCTIONS =
+  "Elegí verdadero si la evidencia respalda la afirmación; falso si la contradice; no_verificable (Insostenible) si no alcanza para sostenerla o refutarla; o enganoso (Engañoso) si presenta datos parciales o fuera de contexto que inducen a una conclusión equivocada.";
 
 function counselBrief(c: Counsel, today: string): string {
   const colleagues = COUNSEL.filter((x) => x !== c).map((x) => MODEL_NAME[x]);
@@ -95,7 +99,7 @@ export function composePrompt(input: { seat: SeatId; docket: Docket; record: rea
       ([...view.sources.values()].map((s) =>
         "[" + s.id + "] " + (s.excluded ? "ANULADA: no puede usarse como prueba" : s.excluded === false ? "ADMITIDA" : "PENDIENTE DE CRÍTICA") + ": " + s.title + " (" + s.url + ")\n" +
         s.contributions.map((e) => "  Aporte de " + MODEL_NAME[e.by] + " sobre " + e.claimId + " (" + EVIDENCE_STANCE_LABEL[e.stance ?? "context"] + "): " + e.excerpt).join("\n")
-      ).join("\n") || "Sin fuentes. No inventes evidencia; si no alcanza, votá no_verificable.") +
+      ).join("\n") || "Sin fuentes. No inventes evidencia; si no alcanza, votá no_verificable (Insostenible).") +
       "\nLas fuentes anuladas y sus aportes no pueden fundamentar exposiciones, votos ni decisiones. Podés refutar posiciones con cualquiera de las fuentes admitidas, aunque la haya aportado otro analista."
     : "";
   return [
@@ -113,6 +117,7 @@ export function seatOf(spec: TurnSpec): SeatId {
     case "unification":
     case "ruling":
     case "tiebreak":
+    case "summary":
       return "judge";
     case "reply":
       return spec.speaker;
@@ -375,7 +380,7 @@ export function planTurn(
       const tools: Toolset = {
         make_statement: statementTool(by, "closing"),
         cast_votes: tool(
-          "Tu voto final sobre cada afirmación: verdadero, falso o no_verificable (cuando la evidencia disponible no alcanza).",
+          "Tu voto final sobre cada afirmación. " + VERDICT_INSTRUCTIONS,
           z.object({
             votes: z.array(z.object({ claimId: claimId(), verdict: z.enum(VERDICTS), rationale: z.string().min(10) })),
           }),
@@ -401,7 +406,7 @@ export function planTurn(
       let decided = false;
       const tools: Toolset = {
         decide: tool(
-          "Tu decisión sobre las afirmaciones sin mayoría.",
+          "Tu decisión sobre las afirmaciones sin mayoría. " + VERDICT_INSTRUCTIONS,
           z.object({
             decisions: z.array(
               z.object({
@@ -425,6 +430,26 @@ export function planTurn(
       const instruction =
         "Los analistas no alcanzaron mayoría sobre " + ids.join(", ") + ". Decidí cada una con la herramienta decide, considerando solo la evidencia y las intervenciones no anuladas del registro.";
       return plan(instruction, tools, () => decided);
+    }
+
+    case "summary": {
+      const summarized = () => all().some((e) => e.type === "case_summary");
+      const tools: Toolset = {
+        summarize_case: tool(
+          "Registrá el resumen final del caso.",
+          z.object({ text: z.string().trim().min(20).describe("Resumen del caso y de los argumentos y desacuerdos relevantes del debate") }),
+          ({ text }) => {
+            if (summarized()) throw new Rejection("El resumen del caso ya está registrado.");
+            emit({ type: "case_summary", text: text.trim() });
+            return "Resumen registrado.";
+          }
+        ),
+      };
+      return plan(
+        "El caso ya está decidido. Escribí un resumen general con summarize_case: destacá los argumentos principales, debates y controversias entre los analistas, atribuyendo las posiciones relevantes. Reflejá también los acuerdos y límites de la evidencia; no inventes desacuerdos, pruebas ni posturas. Basate solo en el registro y no uses intervenciones o fuentes anuladas como prueba. No cambies los resultados ya decididos.",
+        tools,
+        summarized
+      );
     }
   }
 }

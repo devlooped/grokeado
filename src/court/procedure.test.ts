@@ -74,6 +74,7 @@ const judgeScript: Script = (prompt, tools) => {
     return [["enter_claims", { claims: [{ quote: "CABA tiene más habitantes", text: "La CABA tiene más habitantes que Córdoba." }, { quote: "", text: "La inflación de 2025 fue de un dígito." }] }]];
   if (tools.includes("rule")) return [["rule", { sustained: true, reason: "La evidencia no contiene la cifra." }]];
   if (tools.includes("decide")) return [["decide", { decisions: [{ claimId: "A2", verdict: "verdadero", reasoning: "La evidencia P2 del registro es la más directa." }] }]];
+  if (tools.includes("summarize_case")) return [["summarize_case", { text: "Los analistas debatieron el alcance de las cifras y discreparon sobre la segunda afirmación." }]];
   return [];
 };
 
@@ -96,6 +97,14 @@ test("a full session reaches consensus where 3 of 4 agree and sends a split to t
     ["A1", "falso", "consensus"],
     ["A2", "verdadero", "judge"],
   ]);
+  assert.match(view.summary ?? "", /debatieron el alcance/);
+  const summaryIndex = events.findIndex((e) => e.type === "case_summary");
+  assert.ok(events.filter((e) => e.type === "judgment").every((e) => e.seq < events[summaryIndex].seq));
+  assert.equal(summaryIndex, events.length - 2, "the summary is recorded after every judgment and before the session closes");
+  const summaryPrompt = prompts.judge.at(-1)!;
+  assert.ok(summaryPrompt.includes("Resultado de A1: Falso (por mayoría)"));
+  assert.ok(summaryPrompt.includes("Resultado de A2: Verdadero (desempate del moderador)"));
+  assert.match(summaryPrompt, /no inventes desacuerdos/);
   assert.ok(view.struck.has("I1"), "sustained objection strikes the objected statement");
 
   const rejected = results.find((r) => r.isError && r.tool === "make_statement");
@@ -137,6 +146,31 @@ test("the judge can dismiss a submission with no verifiable claims", async () =>
   const { bench, events } = makeBench({ judge: dismiss, grok: () => [], gemini: () => [], claude: () => [], chatgpt: () => [] });
   await holdSession(bench);
   assert.deepEqual(events.map((e) => e.type), ["session_opened", "dismissed", "session_closed"]);
+});
+
+test("an unfinished summary is retried and does not close the case without the moderator's words", async () => {
+  const silent: Script = (prompt, tools) => tools.includes("summarize_case") ? [] : judgeScript(prompt, tools);
+  const allAgree = (name: Counsel) => counsel(name, { A1: "falso", A2: "falso" });
+  const { bench, events, prompts } = makeBench({ judge: silent, grok: allAgree("grok"), gemini: allAgree("gemini"), claude: allAgree("claude"), chatgpt: allAgree("chatgpt") });
+  await assert.rejects(holdSession(bench), /no resumió el caso/);
+  assert.equal(prompts.judge.filter((p) => p.includes("El caso ya está decidido")).length, 2);
+  assert.equal(events.filter((e) => e.type === "judgment").length, 2);
+  assert.ok(!events.some((e) => e.type === "case_summary" || e.type === "session_closed"));
+});
+
+test("the moderator can finish the summary on retry after unanimous decisions", async () => {
+  let attempts = 0;
+  const retrying: Script = (prompt, tools) => {
+    if (tools.includes("summarize_case") && attempts++ === 0) return [];
+    return judgeScript(prompt, tools);
+  };
+  const allAgree = (name: Counsel) => counsel(name, { A1: "falso", A2: "falso" });
+  const { bench, events } = makeBench({ judge: retrying, grok: allAgree("grok"), gemini: allAgree("gemini"), claude: allAgree("claude"), chatgpt: allAgree("chatgpt") });
+  await holdSession(bench);
+  assert.equal(attempts, 2);
+  assert.equal(events.filter((e) => e.type === "case_summary").length, 1);
+  assert.ok(project(events).claims.every((c) => c.judgment?.method === "consensus"));
+  assert.equal(events.at(-1)?.type, "session_closed");
 });
 
 test("instruction finishes before opening and only an absolute majority can annul a shared source", async (t) => {
@@ -205,4 +239,23 @@ test("instruction with no evidence records unsuccessful searches and shares an e
   assert.ok(!events.some((e) => e.type === "source_review_vote" || e.type === "absence"));
   assert.ok(project(events).claims.every((c) => c.judgment?.verdict === "no_verificable"));
   assert.ok(prompts.grok.some((p) => p.includes("Sin fuentes. No inventes evidencia")));
+});
+
+test("a misleading verdict can win a majority or be chosen by the moderator", async () => {
+  const judge: Script = (prompt, tools) => tools.includes("decide")
+    ? [["decide", { decisions: [{ claimId: "A2", verdict: "enganoso", reasoning: "Los datos se presentan fuera de su contexto original." }] }]]
+    : judgeScript(prompt, tools);
+  const { bench, events, prompts } = makeBench({
+    judge,
+    grok: counsel("grok", { A1: "enganoso", A2: "verdadero" }),
+    gemini: counsel("gemini", { A1: "enganoso", A2: "falso" }),
+    claude: counsel("claude", { A1: "enganoso", A2: "no_verificable" }),
+    chatgpt: counsel("chatgpt", { A1: "falso", A2: "enganoso" }),
+  });
+  await holdSession(bench);
+  assert.deepEqual(project(events).claims.map((c) => [c.judgment?.verdict, c.judgment?.method]), [
+    ["enganoso", "consensus"], ["enganoso", "judge"],
+  ]);
+  assert.ok(prompts.judge.at(-1)!.includes("Resultado de A1: Engañoso (por mayoría)"));
+  assert.ok(prompts.judge.at(-1)!.includes("Resultado de A2: Engañoso (desempate del moderador)"));
 });

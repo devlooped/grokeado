@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { connection } from "next/server";
-import { submissionExcerpt } from "@/domain/acta.ts";
+import { submissionExcerpt, VERDICT_LABEL } from "@/domain/acta.ts";
 import { COUNSEL, COUNSEL_NAMES, JUDGE, project, type CaseRecord } from "@/domain/court.ts";
 import { JudgeSeal, ModelMark, VERDICT_TEXT, VerdictGlyph } from "@/components/marks.tsx";
 import { auth0 } from "@/lib/auth0.ts";
@@ -13,7 +13,7 @@ const STEPS = [
   { n: "I", title: "Instrucción", body: "El moderador fija las afirmaciones. " + COUNSEL_NAMES + " buscan pruebas a favor y en contra. El moderador unifica las fuentes y conserva los aportes de cada analista." },
   { n: "II", title: "Crítica de fuentes", body: "Cada analista revisa la confiabilidad de las fuentes. Tres de los cuatro votos anulan una fuente; todos los votos y sus motivos quedan registrados." },
   { n: "III", title: "Debate", body: "Con las fuentes admitidas conocidas por todos, cada analista expone, responde y puede objetar a sus colegas. El moderador resuelve las objeciones." },
-  { n: "IV", title: "Resultado", body: "Votan verdadero, falso o no verificable. Si tres coinciden, hay mayoría. Si no, desempata el moderador con la evidencia del registro." },
+  { n: "IV", title: "Resultado", body: "Votan verdadero, falso, insostenible o engañoso. Si tres coinciden, hay mayoría. Si no, desempata el moderador con la evidencia del registro." },
 ];
 
 async function CaseRow({ c }: { c: CaseRecord }) {
@@ -31,7 +31,7 @@ async function CaseRow({ c }: { c: CaseRecord }) {
                 <JudgeSeal verdict={claim.judgment.verdict} model={JUDGE} />
               </span>
             ) : claim.judgment ? (
-              <span key={claim.id} title={claim.text} className={"grid size-7 place-items-center rounded-full border border-rule bg-paper/70 " + VERDICT_TEXT[claim.judgment.verdict]}>
+              <span key={claim.id} role="img" title={claim.text + ": " + VERDICT_LABEL[claim.judgment.verdict]} aria-label={claim.text + ": " + VERDICT_LABEL[claim.judgment.verdict]} className={"grid size-7 place-items-center rounded-full border border-rule bg-paper/70 " + VERDICT_TEXT[claim.judgment.verdict]}>
                 <VerdictGlyph verdict={claim.judgment.verdict} className="size-3.5" />
               </span>
             ) : null

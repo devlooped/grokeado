@@ -42,8 +42,18 @@ may use any admitted source to support or challenge positions, regardless of who
 contributed it. Statements can cite only admitted `S` identifiers. New evidence
 cannot be filed during the debate; excluded sources cannot support statements,
 votes or moderator decisions. If no evidence was found, the empty dossier is
-recorded and analysts are instructed to vote `no_verificable` when evidence is
-insufficient. Historical records without instruction events remain readable.
+recorded and analysts are instructed to vote `no_verificable` (presented as
+Insostenible) when evidence is insufficient. The other verdicts are Verdadero,
+Falso and Engañoso (`enganoso`, for misleading or out-of-context claims). The
+historical `no_verificable` identifier is retained so existing records remain
+readable. Historical records without instruction events remain readable too.
+
+Once every claim has a decision, the moderator records a case summary of the
+salient arguments, agreements and disagreements, using the completed record.
+An unfinished summary suspends the court after one retry. Existing cases without
+a summary remain readable; they are not silently backfilled with invented text.
+The result page places the summary before the individual claims and links the
+compact votes beside quoted claims to their respective reasons.
 
 ## Vercel setup
 

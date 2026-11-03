@@ -151,6 +151,8 @@ export async function holdSession(bench: Bench): Promise<void> {
   const judged = new Set(log.flatMap((e) => (e.type === "judgment" ? [e.claimId] : [])));
   if (claims().some((c) => !judged.has(c.id)) && !(await solo({ kind: "tiebreak" }))) throw new Error("El moderador no desempató.");
 
+  if (!(await solo({ kind: "summary" }))) throw new Error("El moderador no resumió el caso.");
+
   note({ type: "session_closed" });
   await flush();
 }

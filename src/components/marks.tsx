@@ -42,20 +42,33 @@ export function ModelMark({ model, className = "size-5" }: { model: Counsel; cla
 const VERDICT_COLOR: Record<Verdict, string> = {
   verdadero: "bg-verdadero",
   falso: "bg-falso",
-  no_verificable: "bg-dudoso",
+  no_verificable: "bg-insostenible",
+  enganoso: "bg-enganoso",
 };
 
 export const VERDICT_TEXT: Record<Verdict, string> = {
   verdadero: "text-verdadero",
   falso: "text-falso",
-  no_verificable: "text-dudoso",
+  no_verificable: "text-insostenible-text",
+  enganoso: "text-enganoso-text",
 };
+
+function verdictGlyphColor(verdict: Verdict): string {
+  return verdict === "no_verificable" || verdict === "enganoso" ? "text-caution-glyph" : "text-verdict-glyph";
+}
 
 export function VerdictGlyph({ verdict, className = "size-3" }: { verdict: Verdict; className?: string }) {
   if (verdict === "no_verificable")
     return (
       <svg viewBox="0 0 16 16" className={className} aria-hidden>
         <path d="M5.5 5.5a2.5 2.5 0 1 1 3.6 2.2c-.7.4-1.1.9-1.1 1.8" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+        <circle cx="8" cy="12.5" r="1.1" fill="currentColor" />
+      </svg>
+    );
+  if (verdict === "enganoso")
+    return (
+      <svg viewBox="0 0 16 16" className={className} aria-hidden>
+        <path d="M8 3v6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
         <circle cx="8" cy="12.5" r="1.1" fill="currentColor" />
       </svg>
     );
@@ -66,18 +79,19 @@ export function VerdictGlyph({ verdict, className = "size-3" }: { verdict: Verdi
   );
 }
 
-export function VoteChip({ model, verdict }: { model: Counsel; verdict?: Verdict }) {
+export function VoteChip({ model, verdict, size = "md" }: { model: Counsel; verdict?: Verdict; size?: "sm" | "md" }) {
   const label = MODEL_NAME[model] + ": " + (verdict ? VERDICT_LABEL[verdict] : "no votó");
   return (
-    <span title={label} aria-label={label} className="relative inline-grid size-10 place-items-center rounded-full border border-rule bg-paper/70 shadow-sm">
-      <ModelMark model={model} className="size-5" />
+    <span title={label} aria-label={label} className={"relative inline-grid place-items-center rounded-full border border-rule bg-paper/70 shadow-sm " + (size === "sm" ? "size-6" : "size-10")}>
+      <ModelMark model={model} className={size === "sm" ? "size-3" : "size-5"} />
       <span
         className={
-          "absolute -bottom-1 -right-1 grid size-5 place-items-center rounded-full text-white ring-2 ring-paper " +
-          (verdict ? VERDICT_COLOR[verdict] : "bg-ink-soft/40")
+          "absolute -bottom-1 -right-1 grid place-items-center rounded-full ring-2 ring-paper " +
+          (size === "sm" ? "size-3.5 " : "size-5 ") +
+          (verdict ? verdictGlyphColor(verdict) + " " + VERDICT_COLOR[verdict] : "text-white bg-ink-soft/40")
         }
       >
-        {verdict ? <VerdictGlyph verdict={verdict} /> : <span className="text-[10px] leading-none">–</span>}
+        {verdict ? <VerdictGlyph verdict={verdict} className={size === "sm" ? "size-2.5" : "size-3"} /> : <span className={size === "sm" ? "text-[8px] leading-none" : "text-[10px] leading-none"}>–</span>}
       </span>
     </span>
   );
@@ -116,7 +130,7 @@ export function JudgeSeal({ verdict, model, size = "md" }: { verdict: Verdict; m
       </span>
       <span
         className={
-          "absolute -bottom-1 grid place-items-center rounded-full text-white ring-2 ring-paper " +
+          "absolute -bottom-1 grid place-items-center rounded-full ring-2 ring-paper " + verdictGlyphColor(verdict) + " " +
           VERDICT_COLOR[verdict] +
           (size === "lg" ? " size-7" : " size-5")
         }
