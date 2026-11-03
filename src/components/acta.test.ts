@@ -103,11 +103,11 @@ test("the acta links OKF page citations to the case evidence route", () => {
   assert.ok(html.includes('href="/caso/fixture/evidencia/grok/passage.md#p3"'));
 });
 
-test("the acta includes the moderator's recorded case summary", () => {
+test("the acta omits the moderator's summary because it is already shown in the case result", () => {
   const html = render([{ type: "case_summary", text: "El debate trató las diferencias entre los analistas." }, { type: "session_closed" }]);
-  assert.ok(html.includes("Resumen del moderador"));
-  assert.ok(html.includes("El debate trató las diferencias entre los analistas."));
-  assert.ok(html.indexOf("Resumen del moderador") < html.indexOf("Termina el debate"));
+  assert.ok(!html.includes("Resumen del moderador"));
+  assert.ok(!html.includes("El debate trató las diferencias entre los analistas."));
+  assert.ok(html.includes("Termina el debate"));
 });
 
 test("the acta renders historical Insostenible and new Engañoso verdicts", () => {

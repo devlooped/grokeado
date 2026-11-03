@@ -31,6 +31,7 @@ test("the moderator summary follows the content and precedes the claims and thei
   const html = render(events);
   assert.ok(html.indexOf("Contenido</span>") < html.indexOf("Resumen del caso"));
   assert.ok(html.indexOf("Resumen del caso") < html.indexOf('id="A1"'));
+  assert.equal((html.match(/Resumen del caso/g) ?? []).length, 1);
   assert.ok(html.includes("Por el moderador (Grok)"));
   assert.ok(html.includes("El debate discutió el alcance de las pruebas."));
   assert.ok(html.includes("Los analistas discreparon."));

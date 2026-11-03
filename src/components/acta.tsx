@@ -222,9 +222,10 @@ function Entry({ e, view, caseId }: { e: RecordedEvent; view: CaseView; caseId: 
 }
 
 export function Acta({ events, view, caseId }: { events: RecordedEvent[]; view: CaseView; caseId: string }) {
-  // La tarjeta ya muestra los votos y la decisión proyectados; conservar solo
+  // La tarjeta ya muestra el resumen, los votos y la decisión proyectados; conservar solo
   // eventos que no estén representados allí (por ejemplo, registros incompletos).
   const visible = events.filter((e) => {
+    if (e.type === "case_summary") return false;
     if (e.type === "source_review_vote") {
       const vote = view.sources.get(e.sourceId)?.votes[e.by];
       return !vote || vote.veto !== e.veto || vote.reason !== e.reason;
