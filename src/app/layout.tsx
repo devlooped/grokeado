@@ -11,8 +11,8 @@ const archivo = Archivo({ subsets: ["latin"], variable: "--font-archivo" });
 const plexMono = IBM_Plex_Mono({ subsets: ["latin"], weight: ["400", "500"], variable: "--font-plex-mono" });
 
 export const metadata: Metadata = {
-  title: "Grokeado · Panel de chequeo de datos",
-  description: "Un panel de inteligencias artificiales investiga, debate y vota. Un moderador desempata cuando no hay mayoría. Sin sesgos humanos.",
+  title: "Che, bot, es cierto...?",
+  description: "Un panel de inteligencias artificiales investiga, debate y vota. Sin sesgos humanos.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -28,15 +28,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="min-h-screen font-sans antialiased">
         <header className="mx-auto max-w-5xl px-5 pt-6">
           <div className="flex items-baseline justify-between gap-4 text-[11px] uppercase tracking-[0.2em] text-ink-soft">
-            <span>República Argentina</span>
+            <span className="fi fi-ar"></span>
             <div className="flex items-center gap-2">
-              <span className="mr-1 hidden sm:inline">Panel de chequeo de datos</span>
               <UserClaimsBadge />
               <ThemeToggle />
             </div>
           </div>
           <Link href="/" className="mt-2 block text-center">
-            <span className="font-display text-6xl leading-none tracking-tight sm:text-7xl">Grokeado</span>
+            <span className="font-display text-6xl leading-none tracking-tight sm:text-7xl">Che, bot, es cierto esto?</span>
           </Link>
           <p className="mt-1 text-center font-display text-lg italic text-ink-soft">El panel debate. Un moderador desempata. Ningún humano opina.</p>
           <div className="rule-double mt-4" />

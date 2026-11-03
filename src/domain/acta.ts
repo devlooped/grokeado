@@ -27,7 +27,7 @@ export const VERDICT_THUMB: Record<Verdict, string> = {
 };
 
 export function caseShareMetadata(c: CaseRecord, events: readonly CourtEvent[] = []): { title: string; description: string } {
-  const title = "Caso Nº " + c.id + " · Grokeado";
+  const title = "Caso Nº " + c.id + " · CheBot";
   const quoted = `«${submissionExcerpt(c.submission)}»`;
   if (c.status !== "resolved") return { title, description: quoted };
   const view = project(events);

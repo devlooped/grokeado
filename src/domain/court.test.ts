@@ -80,7 +80,7 @@ test("caseShareMetadata formats quoted content and voted outcomes with thumbs", 
     { type: "session_closed" },
   ];
   const meta = caseShareMetadata(c, events);
-  assert.equal(meta.title, "Caso Nº abc123 · Grokeado · 👎👎👎👍 · 👎 Falso / 👍👍👍👍 · 👍 Verdadero");
+  assert.equal(meta.title, "Caso Nº abc123 · CheBot · 👎👎👎👍 · 👎 Falso / 👍👍👍👍 · 👍 Verdadero");
   assert.equal(
     meta.description,
     "«El dulce de leche se inventó en la Argentina y la birome es un invento argentino.»\n👎👎👎👍 · 👎 Falso\n👍👍👍👍 · 👍 Verdadero"

@@ -1,4 +1,4 @@
-# Grokeado
+# Che, bot
 
 The whole court runs as a Vercel Workflow. Each seat attempt is a durable step
 using AI SDK through Vercel AI Gateway. Court events are saved to Postgres in

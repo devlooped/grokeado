@@ -17,7 +17,7 @@ import { getCase, getEvents } from "@/store.ts";
 export async function generateMetadata(props: PageProps<"/caso/[id]">): Promise<Metadata> {
   const { id } = await props.params;
   const c = await getCase(id);
-  if (!c) return { title: "Grokeado" };
+  if (!c) return { title: "Che, bot" };
   const events = c.status === "resolved" ? await getEvents(id) : [];
   const { title, description } = caseShareMetadata(c, events);
   return {
