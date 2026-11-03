@@ -35,6 +35,13 @@ outside the author's namespace, and changes to `evidence/base/`.
 
 Public Blob storage is the canonical source. Objects are written with
 `access: "public"` and stable pathnames, so anyone with the URL can read them.
+When a case completes, the complete `evidence/` tree (including originals,
+catalogs, extractions, analyst files, and run artifacts) is compressed and
+stored separately at `cases/{caseId}/expediente.zip` before the case is marked
+resolved. A storage error prevents the case from being marked resolved. The
+case page offers a single ZIP download; individual files remain available for
+citations. Resolved cases created before ZIP export was introduced create and
+store the archive on their first download, if their base evidence exists.
 Sandbox workspaces are rebuilt
 from Blob for each attempt; the sandbox never receives Blob credentials.
 The base collector preserves text and uploaded images, and downloads http(s)
@@ -71,7 +78,7 @@ processing, set a monthly quota and short expiration, then configure it as
 `npm run evidence:snapshot`, set its output as
 `EVIDENCE_SANDBOX_SNAPSHOT_ID`, and deploy on a Vercel plan that supports
 network-policy header transforms. Without blob credentials, the evidence bundle
-is extracted in memory for court turns and not persisted. Without the snapshot or dedicated key, workflow evidence
+is extracted in memory for court turns and not persisted, so no ZIP is available. Without the snapshot or dedicated key, workflow evidence
 steps return `partial` and the existing decision workflow continues.
 
 The credential broker and open-egress policy require a Vercel plan that
@@ -102,6 +109,8 @@ each one has passed:
    `access: "public"`.
    Reads fetch the public blob URL with no token. An unauthenticated `GET` of
    `/caso/{id}/evidencia/...` returns the file when the case exists.
+   After a case resolves, download `/caso/{id}/expediente` and verify that the
+   ZIP stored at `cases/{caseId}/expediente.zip` contains the complete tree.
 2. `npm run evidence:snapshot` prints a snapshot id. Set it as
    `EVIDENCE_SANDBOX_SNAPSHOT_ID`.
 3. `EVIDENCE_AI_GATEWAY_API_KEY` is a different key from `AI_GATEWAY_API_KEY`,

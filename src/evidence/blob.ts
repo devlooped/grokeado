@@ -1,7 +1,8 @@
-import { del, list, put } from "@vercel/blob";
+import { BlobNotFoundError, del, head, list, put } from "@vercel/blob";
 import { normalizeEvidenceBytes, sha256, type EvidenceFiles } from "./validate.ts";
 
 const ROOT = (caseId: string) => `cases/${encodeURIComponent(caseId)}/evidence/`;
+const ARCHIVE = (caseId: string) => `cases/${encodeURIComponent(caseId)}/expediente.zip`;
 const HASHES = ".sha256/";
 const BLOB_ACCESS = "public" as const;
 
@@ -91,6 +92,38 @@ export async function readEvidenceTree(caseId: string): Promise<Map<string, Uint
 
 export async function deleteEvidenceBlobs(urls: string[]): Promise<void> {
   if (urls.length) await del(urls, blobAuth());
+}
+
+export type EvidenceArchive = { downloadUrl: string; etag: string };
+
+async function findBlob(pathname: string) {
+  try {
+    return await head(pathname, blobAuth());
+  } catch (error) {
+    if (error instanceof BlobNotFoundError) return undefined;
+    throw error;
+  }
+}
+
+export async function findEvidenceArchive(caseId: string): Promise<EvidenceArchive | undefined> {
+  const blob = await findBlob(ARCHIVE(caseId));
+  return blob && { downloadUrl: blob.downloadUrl, etag: blob.etag };
+}
+
+export async function hasEvidenceBase(caseId: string): Promise<boolean> {
+  return Boolean(await findBlob(`${ROOT(caseId)}base/index.md`));
+}
+
+export async function writeEvidenceArchive(caseId: string, bytes: Uint8Array): Promise<EvidenceArchive> {
+  const blob = await put(ARCHIVE(caseId), Buffer.from(bytes), {
+    access: BLOB_ACCESS,
+    addRandomSuffix: false,
+    allowOverwrite: true,
+    cacheControlMaxAge: 60,
+    contentType: "application/zip",
+    ...blobAuth(),
+  });
+  return { downloadUrl: blob.downloadUrl, etag: blob.etag };
 }
 
 export async function writeEvidenceTree(caseId: string, files: EvidenceFiles): Promise<void> {

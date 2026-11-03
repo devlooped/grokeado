@@ -3,14 +3,14 @@ import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { Suspended } from "@/components/suspended.tsx";
 import { Acta } from "@/components/acta.tsx";
-import { EvidencePanel, toEvidencePanelItems, type EvidencePanelItem } from "@/components/evidence-panel.tsx";
+import { EvidencePanel } from "@/components/evidence-panel.tsx";
 import { AutoRefresh } from "@/components/auto-refresh.tsx";
 import { GavelIcon } from "@/components/marks.tsx";
 import { CaseResult } from "@/components/case-result.tsx";
 import { caseShareMetadata, submissionExcerpt } from "@/domain/acta.ts";
 import { COUNSEL_NAMES, type CaseRecord } from "@/domain/court.ts";
 import { project } from "@/domain/court.ts";
-import { blobConfigured, readEvidenceTree } from "@/evidence/blob.ts";
+import { blobConfigured, findEvidenceArchive, hasEvidenceBase } from "@/evidence/blob.ts";
 import { auth0 } from "@/lib/auth0.ts";
 import { getCase, getEvents } from "@/store.ts";
 
@@ -62,10 +62,7 @@ export default async function CasePage(props: PageProps<"/caso/[id]">) {
   }
 
   const events = await getEvents(id);
-  let evidenceItems: EvidencePanelItem[] = [];
-  if (blobConfigured()) {
-    evidenceItems = toEvidencePanelItems(await readEvidenceTree(id));
-  }
+  const hasEvidence = blobConfigured() && Boolean(await findEvidenceArchive(id) || await hasEvidenceBase(id));
   const simulated = events.some((e) => e.type === "session_opened" && e.simulated);
   const view = project(events);
   const byJudge = view.claims.filter((cl) => cl.judgment?.method === "judge").length;
@@ -99,7 +96,7 @@ export default async function CasePage(props: PageProps<"/caso/[id]">) {
         </div>
       </section>
 
-      <EvidencePanel caseId={id} items={evidenceItems} />
+      {hasEvidence && <EvidencePanel caseId={id} />}
     </>
   );
 }

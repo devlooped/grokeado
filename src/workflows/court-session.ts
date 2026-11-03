@@ -4,6 +4,8 @@ import { holdSession } from "../court/procedure.ts";
 import type { Docket, TurnSpec } from "../court/turns.ts";
 import type { CourtEvent, RecordedEvent, Submission } from "../domain/court.ts";
 import { collectEvidenceBase } from "../evidence/collect.ts";
+import { archiveEvidence } from "../evidence/archive.ts";
+import { blobConfigured } from "../evidence/blob.ts";
 import { runEvidenceStep, type EvidenceStepResult } from "../evidence/sandbox.ts";
 import type { EvidenceSeat, EvidenceStage } from "../evidence/schema.ts";
 import { closeCase, openCase, saveEvents } from "./steps.ts";
@@ -11,6 +13,11 @@ import { closeCase, openCase, saveEvents } from "./steps.ts";
 async function collect(caseId: string, submission: Submission, simulated: boolean) {
   "use step";
   return collectEvidenceBase(caseId, submission, simulated);
+}
+
+async function archive(caseId: string): Promise<void> {
+  "use step";
+  if (blobConfigured()) await archiveEvidence(caseId);
 }
 
 async function play(
@@ -71,6 +78,7 @@ export async function courtSession(caseId: string): Promise<void> {
       },
       commit: (events: readonly RecordedEvent[]) => saveEvents(caseId, [...events]),
     });
+    await archive(caseId);
     await closeCase(caseId, "resolved");
   } catch (err) {
     await closeCase(caseId, "failed", describeError(err));
