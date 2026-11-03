@@ -62,9 +62,9 @@ function describeError(err: unknown): string {
 export async function courtSession(caseId: string): Promise<void> {
   "use workflow";
   const { submission, today, simulated } = await openCase(caseId);
-  const submissionContext = await collect(caseId, submission, simulated);
-  const docket: Docket = { submission, today, simulated, ...(submissionContext ? { submissionContext } : {}) };
   try {
+    const submissionContext = await collect(caseId, submission, simulated);
+    const docket: Docket = { submission, today, simulated, ...(submissionContext ? { submissionContext } : {}) };
     await holdSession({
       submission,
       simulated,
