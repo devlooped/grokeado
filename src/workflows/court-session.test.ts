@@ -1,7 +1,22 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { Pool } from "pg";
-import { courtSession } from "./court-session.ts";
+import { courtSession, linkEvidenceRun } from "./court-session.ts";
+import type { TurnOutcome } from "../court/turns.ts";
+import { COUNSEL_MODELS, MOCK_MODEL_ID } from "../court/models.ts";
+
+test("links only statements to the promoted evidence run for their own attempt", () => {
+  const outcome: TurnOutcome = { done: false, events: [
+    { type: "statement", id: "I1", by: "grok", stage: "closing", text: "Argumento", evidenceIds: [], at: "2026-01-01T00:00:00.000Z" },
+    { type: "vote", by: "grok", claimId: "A1", verdict: "verdadero", rationale: "Motivo", at: "2026-01-01T00:00:01.000Z" },
+  ] };
+  assert.deepEqual(linkEvidenceRun(outcome).events[0], { ...outcome.events[0], modelId: COUNSEL_MODELS.grok.id });
+  const linked = linkEvidenceRun(outcome, "run-1");
+  assert.deepEqual(linked.events[0], { ...outcome.events[0], evidenceRunId: "run-1", modelId: COUNSEL_MODELS.grok.id });
+  assert.deepEqual(linkEvidenceRun(outcome, undefined, true).events[0], { ...outcome.events[0], modelId: MOCK_MODEL_ID });
+  assert.deepEqual(linked.events[1], outcome.events[1]);
+  assert.notEqual(linked.events[0], outcome.events[0]);
+});
 
 test("a collection failure after opening marks the case as failed and rethrows", async (t) => {
   const env = ["DATABASE_URL", "COURT_AI_MODE", "BLOB_READ_WRITE_TOKEN", "VERCEL_OIDC_TOKEN", "BLOB_STORE_ID"] as const;

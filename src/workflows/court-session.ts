@@ -1,7 +1,7 @@
-import { COUNSEL_MODELS, JUDGE_MODEL } from "../court/models.ts";
+import { COUNSEL_MODELS, JUDGE_MODEL, MOCK_MODEL_ID } from "../court/models.ts";
 import { playTurn } from "../court/play.ts";
 import { holdSession } from "../court/procedure.ts";
-import type { Docket, TurnSpec } from "../court/turns.ts";
+import type { Docket, TurnOutcome, TurnSpec } from "../court/turns.ts";
 import type { CourtEvent, RecordedEvent, Submission } from "../domain/court.ts";
 import { collectEvidenceBase } from "../evidence/collect.ts";
 import { archiveEvidence } from "../evidence/archive.ts";
@@ -29,7 +29,14 @@ async function play(
   evidence?: EvidenceStepResult
 ) {
   "use step";
-  return playTurn(caseId, docket, spec, record, attempt, evidence);
+  const outcome = await playTurn(caseId, docket, spec, record, attempt, evidence);
+  return linkEvidenceRun(outcome, evidence?.runId, docket.simulated);
+}
+
+export function linkEvidenceRun(outcome: TurnOutcome, runId?: string, simulated = false): TurnOutcome {
+  return { ...outcome, events: outcome.events.map((event) => event.type === "statement" ? {
+    ...event, modelId: simulated ? MOCK_MODEL_ID : COUNSEL_MODELS[event.by].id, ...(runId ? { evidenceRunId: runId } : {}),
+  } : event) };
 }
 
 function evidenceTask(spec: TurnSpec): { seat: EvidenceSeat; stage: EvidenceStage; task: string } | undefined {

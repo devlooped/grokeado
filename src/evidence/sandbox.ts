@@ -7,6 +7,7 @@ import { createMockEvidencePromotion } from "./mock.ts";
 import type { EvidenceSeat, EvidenceStage } from "./schema.ts";
 import { blobConfigured, readEvidenceTree, writeEvidenceTree } from "./blob.ts";
 import { validateEvidenceTree, validatePromotedFiles } from "./validate.ts";
+import { annotateEvidenceTranscript } from "./transcript.ts";
 import { assembleWorkspace, citationAuthors, citationsFor, readOnlyHashesFor, workspaceIndex } from "./workspace.ts";
 
 const WORKSPACE = "/workspace";
@@ -23,6 +24,7 @@ export type EvidenceStepResult = {
   status: "ok" | "partial" | "timeout";
   index: string;
   citations: string[];
+  runId?: string;
 };
 
 function presented(files: ReadonlyMap<string, Uint8Array | string>, seat: EvidenceSeat, stage: EvidenceStage): Pick<EvidenceStepResult, "index" | "citations"> {
@@ -81,6 +83,7 @@ export async function runEvidenceStep(
 
   const deadlineAt = new Date(Date.now() + 180_000).toISOString();
   const runId = randomUUID();
+  const modelId = COUNSEL_MODELS[seat].id;
   const workspace = assembleWorkspace(original, seat, stage);
   const readOnlyHashes = readOnlyHashesFor(workspace);
   const sandbox = await Sandbox.create({
@@ -101,7 +104,7 @@ export async function runEvidenceStep(
         content: JSON.stringify(evidenceTaskDocument({
           caseId,
           runId,
-          model: COUNSEL_MODELS[seat].id,
+          model: modelId,
           seat,
           stage,
           task,
@@ -166,7 +169,7 @@ export async function runEvidenceStep(
       promoted.set(path, new Uint8Array(content));
     }
     const transcript = await sandbox.readFileToBuffer({ path: `${WORKSPACE}/transcript.jsonl` });
-    if (transcript) promoted.set(`evidence/${seat}/runs/${runId}/transcript.jsonl`, new Uint8Array(transcript));
+    promoted.set(`evidence/${seat}/runs/${runId}/transcript.jsonl`, new TextEncoder().encode(annotateEvidenceTranscript(transcript ? new Uint8Array(transcript) : new Uint8Array(), modelId)));
     promoted.set(`evidence/${seat}/runs/${runId}/result.json`, new TextEncoder().encode(JSON.stringify(result)));
 
     const validationErrors = validatePromotedFiles(seat, original, promoted);
@@ -181,7 +184,7 @@ export async function runEvidenceStep(
     const seatIndex = new TextEncoder().encode(indexFor(merged, seat));
     await writeEvidenceTree(caseId, new Map([...promoted, [indexPath, seatIndex]]));
     merged.set(indexPath, seatIndex);
-    return { status: result.status, ...presented(merged, seat, stage) };
+    return { status: result.status, runId, ...presented(merged, seat, stage) };
   } finally {
     await sandbox.stop({ signal: AbortSignal.timeout(10_000) });
   }

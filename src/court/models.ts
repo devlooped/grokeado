@@ -6,6 +6,8 @@ export interface CourtModel {
   providerOptions?: Parameters<typeof generateText>[0]["providerOptions"];
 }
 
+export const MOCK_MODEL_ID = "court-fixture";
+
 // AI Gateway catalog IDs, shared by execution and the recorded acta.
 export const JUDGE_MODEL: CourtModel = { id: "spacexai/grok-4.7", providerOptions: { xai: { reasoningEffort: "high" } } };
 

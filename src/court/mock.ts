@@ -1,5 +1,6 @@
 import { tool, type ToolSet } from "ai";
 import { MockLanguageModelV4 } from "ai/test";
+import { MOCK_MODEL_ID } from "./models.ts";
 import { z } from "zod";
 import { project, type CourtEvent, type Submission } from "../domain/court.ts";
 import type { TurnSpec } from "./turns.ts";
@@ -95,7 +96,7 @@ export function createMockSeat(turn: MockTurn, search: boolean) {
   let generation = 0;
   const model = new MockLanguageModelV4({
     provider: "local-mock",
-    modelId: "court-fixture",
+    modelId: MOCK_MODEL_ID,
     doGenerate: async () => {
       const index = generation++;
       const calls = script[index] ?? [];

@@ -1,6 +1,8 @@
 import { deflateRaw } from "node:zlib";
 import { promisify } from "node:util";
-import { findEvidenceArchive, hasEvidenceBase, readEvidenceTree, writeEvidenceArchive, type EvidenceArchive } from "./blob.ts";
+import { getEvents } from "../store.ts";
+import { findEvidenceArchive, hasEvidenceBase, readEvidenceTree, writeCaseTranscript, writeEvidenceArchive, writeEvidenceTree, type EvidenceArchive } from "./blob.ts";
+import { buildCaseTranscript } from "./transcript.ts";
 import { normalizeEvidenceBytes, type EvidenceFiles } from "./validate.ts";
 
 const compress = promisify(deflateRaw);
@@ -30,7 +32,7 @@ export async function createEvidenceArchive(files: EvidenceFiles): Promise<Buffe
   const directory: Buffer[] = [];
   let offset = 0;
   for (const [path, content] of [...files].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)) {
-    const bytes = normalizeEvidenceBytes(path, content);
+    const bytes = path === "transcript.jsonl" ? (typeof content === "string" ? Buffer.from(content) : content) : normalizeEvidenceBytes(path, content);
     if (/[:\x00-\x1f]/.test(path)) throw new Error(`Invalid archive path: ${path}`);
     const name = Buffer.from(path, "utf8");
     if (name.length > 0xffff) throw new Error(`Archive path is too long: ${path}`);
@@ -83,12 +85,21 @@ export async function createEvidenceArchive(files: EvidenceFiles): Promise<Buffe
 
 type ArchiveStore = {
   readEvidenceTree: typeof readEvidenceTree;
+  getEvents: typeof getEvents;
+  writeEvidenceTree: typeof writeEvidenceTree;
+  writeCaseTranscript: typeof writeCaseTranscript;
   writeEvidenceArchive: typeof writeEvidenceArchive;
 };
 
-export async function archiveEvidence(caseId: string, store: ArchiveStore = { readEvidenceTree, writeEvidenceArchive }): Promise<EvidenceArchive> {
+export async function archiveEvidence(caseId: string, store: ArchiveStore = { readEvidenceTree, getEvents, writeEvidenceTree, writeCaseTranscript, writeEvidenceArchive }): Promise<EvidenceArchive> {
   const files = await store.readEvidenceTree(caseId);
-  return store.writeEvidenceArchive(caseId, await createEvidenceArchive(files));
+  const { transcript, updatedRuns } = buildCaseTranscript(files, await store.getEvents(caseId));
+  for (const [path, content] of updatedRuns) files.set(path, new TextEncoder().encode(content));
+  files.set("transcript.jsonl", new TextEncoder().encode(transcript));
+  const zip = await createEvidenceArchive(files);
+  if (updatedRuns.size) await store.writeEvidenceTree(caseId, updatedRuns);
+  await store.writeCaseTranscript(caseId, transcript);
+  return store.writeEvidenceArchive(caseId, zip);
 }
 
 type ArchiveLookup = {

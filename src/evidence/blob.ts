@@ -3,6 +3,7 @@ import { normalizeEvidenceBytes, sha256, type EvidenceFiles } from "./validate.t
 
 const ROOT = (caseId: string) => `cases/${encodeURIComponent(caseId)}/evidence/`;
 const ARCHIVE = (caseId: string) => `cases/${encodeURIComponent(caseId)}/expediente.zip`;
+const TRANSCRIPT = (caseId: string) => `cases/${encodeURIComponent(caseId)}/transcript.jsonl`;
 const HASHES = ".sha256/";
 const BLOB_ACCESS = "public" as const;
 
@@ -124,6 +125,17 @@ export async function writeEvidenceArchive(caseId: string, bytes: Uint8Array): P
     ...blobAuth(),
   });
   return { downloadUrl: blob.downloadUrl, etag: blob.etag };
+}
+
+export async function writeCaseTranscript(caseId: string, content: string): Promise<void> {
+  await put(TRANSCRIPT(caseId), content, {
+    access: BLOB_ACCESS,
+    addRandomSuffix: false,
+    allowOverwrite: true,
+    cacheControlMaxAge: 60,
+    contentType: "application/x-ndjson; charset=utf-8",
+    ...blobAuth(),
+  });
 }
 
 export async function writeEvidenceTree(caseId: string, files: EvidenceFiles): Promise<void> {

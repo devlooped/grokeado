@@ -39,7 +39,22 @@ When a case completes, the complete `evidence/` tree (including originals,
 catalogs, extractions, analyst files, and run artifacts) is compressed and
 stored separately at `cases/{caseId}/expediente.zip` before the case is marked
 resolved. A storage error prevents the case from being marked resolved. The
-case page offers a single ZIP download; individual files remain available for
+closing step also writes `cases/{caseId}/transcript.jsonl` and includes it at
+the ZIP root. It merges sandbox evidence steps (tagged `evidence_step` with
+`seat` and `runId`) and committed debate `statement` events in timestamp
+order. Every entry has a `modelId`: the model used for that evidence step or
+statement. Simulated statements use `court-fixture`. For older records, the
+stored session model is used when available; `modelId` is `null` when the
+historical model is unknown rather than guessing from current configuration.
+Statements carry their original sequence and, when an evidence run was
+promoted for that turn, its `evidenceRunId`; those statements are also appended
+to that run's `evidence/{seat}/runs/{runId}/transcript.jsonl`. The export is
+rebuilt on retries without duplicating statements. Statements without a
+promoted run still appear in the case transcript. Existing ZIPs are not
+rewritten; older cases without an archive get a transcript on first download,
+but historical statements cannot be matched to runs without a recorded run ID.
+The transcript, like the rest of the Blob store, is publicly readable.
+The case page offers a single ZIP download; individual files remain available for
 citations. Resolved cases created before ZIP export was introduced create and
 store the archive on their first download, if their base evidence exists.
 Sandbox workspaces are rebuilt

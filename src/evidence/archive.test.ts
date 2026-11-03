@@ -3,6 +3,7 @@ import test from "node:test";
 import { inflateRawSync } from "node:zlib";
 import { archiveEvidence, createEvidenceArchive, getOrCreateEvidenceArchive } from "./archive.ts";
 import { evidenceDownloadResponse } from "./archive-download.ts";
+import type { RecordedEvent } from "../domain/court.ts";
 import type { EvidenceFiles } from "./validate.ts";
 
 // Read the central directory and inflate each entry independently of the writer.
@@ -73,21 +74,68 @@ test("refuses missing base indexes and unsafe extraction paths", async () => {
 test("reads the final tree and uploads it, propagating read or write errors", async () => {
   const expected = { downloadUrl: "https://blob.test/expediente.zip?download=1", etag: "final" };
   let saved: Buffer | undefined;
+  let transcript: string | undefined;
+  const dependencies = {
+    getEvents: async () => [],
+    writeEvidenceTree: async () => {},
+    writeCaseTranscript: async (_id: string, value: string) => { transcript = value; },
+  };
   const result = await archiveEvidence("case-1", {
+    ...dependencies,
     readEvidenceTree: async (id) => { assert.equal(id, "case-1"); return new Map([...files].map(([path, value]) => [path, Buffer.from(value)])); },
     writeEvidenceArchive: async (id, zip) => { assert.equal(id, "case-1"); saved = Buffer.from(zip); return expected; },
   });
   assert.deepEqual(result, expected);
   assert.ok(saved);
-  assert.equal(unzip(saved).size, files.size);
+  assert.equal(unzip(saved).size, files.size + 1);
+  assert.equal(unzip(saved).get("transcript.jsonl")!.toString(), transcript);
   await assert.rejects(archiveEvidence("case-1", {
+    ...dependencies,
     readEvidenceTree: async () => { throw new Error("read failed"); },
     writeEvidenceArchive: async () => { throw new Error("unexpected write"); },
   }), /read failed/);
   await assert.rejects(archiveEvidence("case-1", {
+    ...dependencies,
     readEvidenceTree: async () => new Map([["evidence/base/index.md", Buffer.from("index")]]),
     writeEvidenceArchive: async () => { throw new Error("write failed"); },
   }), /write failed/);
+  await assert.rejects(archiveEvidence("case-1", {
+    ...dependencies,
+    readEvidenceTree: async () => new Map([["evidence/base/index.md", Buffer.from("index")]]),
+    writeCaseTranscript: async () => { throw new Error("transcript write failed"); },
+    writeEvidenceArchive: async () => { throw new Error("unexpected write"); },
+  }), /transcript write failed/);
+});
+
+test("persists the same merged transcript in the run, case blob and ZIP on retries", async () => {
+  const run = "evidence/grok/runs/run-1/transcript.jsonl";
+  const step = { at: "2026-01-01T00:00:00.000Z", step: 0, toolCalls: [] };
+  const event: RecordedEvent = { type: "statement", id: "I1", by: "grok", stage: "opening", text: "Argumento", evidenceIds: [], evidenceRunId: "run-1", seq: 1, at: "2026-01-01T00:00:01.000Z" };
+  const session: RecordedEvent = { type: "session_opened", judgeModel: "judge-id", counselModels: { grok: "grok-id", gemini: "gemini-id", claude: "claude-id", chatgpt: "chatgpt-id" }, seq: 0, at: "2025-01-01T00:00:00.000Z" };
+  const stored = new Map<string, Uint8Array>([["evidence/base/index.md", Buffer.from("index")], [run, Buffer.from(JSON.stringify(step) + "\n")]]);
+  let transcript = "";
+  let zip = Buffer.alloc(0);
+  let writes = 0;
+  const store = {
+    readEvidenceTree: async () => new Map(stored),
+    getEvents: async () => [session, event],
+    writeEvidenceTree: async (_id: string, updates: EvidenceFiles) => {
+      writes++;
+      for (const [path, content] of updates) stored.set(path, Buffer.from(content));
+    },
+    writeCaseTranscript: async (_id: string, value: string) => { transcript = value; },
+    writeEvidenceArchive: async (_id: string, value: Uint8Array) => { zip = Buffer.from(value); return { downloadUrl: "url", etag: "v1" }; },
+  };
+  await archiveEvidence("case-1", store);
+  const firstZip = zip;
+  const extracted = unzip(zip);
+  assert.equal(extracted.get("transcript.jsonl")!.toString(), transcript);
+  assert.equal(extracted.get(run)!.toString(), stored.get(run)!.toString());
+  assert.deepEqual(extracted.get(run)!.toString().trim().split("\n").map((line) => JSON.parse(line)), [{ ...step, modelId: "grok-id" }, { ...event, modelId: "grok-id" }]);
+  assert.deepEqual(transcript.trim().split("\n").map((line) => JSON.parse(line)), [{ ...step, modelId: "grok-id", type: "evidence_step", seat: "grok", runId: "run-1" }, { ...event, modelId: "grok-id" }]);
+  await archiveEvidence("case-1", store);
+  assert.equal(writes, 1);
+  assert.deepEqual(zip, firstZip);
 });
 
 test("reuses existing archives and backfills old resolved cases only when evidence exists", async () => {

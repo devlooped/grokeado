@@ -80,7 +80,7 @@ export type CourtEvent =
   | { type: "source_decided"; sourceId: string; excluded: boolean }
   | { type: "instruction_closed" }
   | { type: "floor_granted"; to: Counsel; stage: Stage }
-  | { type: "statement"; id: string; by: Counsel; stage: Stage; text: string; evidenceIds: string[] }
+  | { type: "statement"; id: string; by: Counsel; stage: Stage; text: string; evidenceIds: string[]; evidenceRunId?: string; modelId?: string }
   | { type: "objection"; id: string; by: Counsel; against: string; grounds: string }
   | { type: "objection_reply"; objectionId: string; by: Counsel; text: string }
   | { type: "ruling"; objectionId: string; sustained: boolean; reason: string }

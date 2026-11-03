@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import test from "node:test";
-import { findEvidenceArchive, hasEvidenceBase, writeEvidenceArchive } from "./blob.ts";
+import { findEvidenceArchive, hasEvidenceBase, writeCaseTranscript, writeEvidenceArchive } from "./blob.ts";
 
 test("stores and locates the ZIP separately from the evidence tree using the Blob SDK", async () => {
   const uploads: Array<{ pathname: string; headers: Record<string, string | string[] | undefined>; body: Buffer }> = [];
@@ -47,6 +47,12 @@ test("stores and locates the ZIP separately from the evidence tree using the Blo
     assert.equal(uploads[0]!.headers["x-content-type"], "application/zip");
     assert.deepEqual(uploads[0]!.body, Buffer.from([1, 2, 3]));
     assert.deepEqual(await findEvidenceArchive("case 1"), archive);
+    await writeCaseTranscript("case 1", '{"type":"statement"}\n');
+    assert.equal(uploads[1]!.pathname, "cases/case%201/transcript.jsonl");
+    assert.equal(uploads[1]!.headers["x-vercel-blob-access"], "public");
+    assert.equal(uploads[1]!.headers["x-allow-overwrite"], "1");
+    assert.equal(uploads[1]!.headers["x-content-type"], "application/x-ndjson; charset=utf-8");
+    assert.equal(uploads[1]!.body.toString(), '{"type":"statement"}\n');
     deny = true;
     await assert.rejects(findEvidenceArchive("case 1"));
   } finally {
