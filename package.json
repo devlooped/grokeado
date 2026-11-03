@@ -16,7 +16,8 @@
     "evidence:snapshot": "node --import tsx scripts/evidence-snapshot.ts",
     "evidence:smoke": "node --import tsx scripts/evidence-blob-smoke.ts",
     "eval:tiers": "node --import tsx scripts/eval-tiers.ts",
-    "models": "node scripts/models.mjs"
+    "models": "node scripts/models.mjs",
+    "cases:regenerate-ids": "node --import tsx scripts/regenerate-case-ids.ts"
   },
   "dependencies": {
     "@ai-sdk/xai": "^5.0.33",

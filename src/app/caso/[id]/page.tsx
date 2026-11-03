@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
+import { notFound, permanentRedirect } from "next/navigation";
 import { connection } from "next/server";
 import { Suspended } from "@/components/suspended.tsx";
 import { Acta } from "@/components/acta.tsx";
@@ -12,7 +12,7 @@ import { COUNSEL_NAMES, type CaseRecord } from "@/domain/court.ts";
 import { project } from "@/domain/court.ts";
 import { blobConfigured, findEvidenceArchive, hasEvidenceBase } from "@/evidence/blob.ts";
 import { auth0 } from "@/lib/auth0.ts";
-import { getCase, getEvents } from "@/store.ts";
+import { findCaseAlias, getCase, getEvents } from "@/store.ts";
 
 export async function generateMetadata(props: PageProps<"/caso/[id]">): Promise<Metadata> {
   const { id } = await props.params;
@@ -54,7 +54,11 @@ export default async function CasePage(props: PageProps<"/caso/[id]">) {
   await connection();
   const { id } = await props.params;
   const c = await getCase(id);
-  if (!c) notFound();
+  if (!c) {
+    const renamed = await findCaseAlias(id);
+    if (renamed) permanentRedirect("/caso/" + renamed);
+    notFound();
+  }
   if (c.status === "queued" || c.status === "in_session") return <InSession c={c} />;
   if (c.status === "failed") {
     const session = await auth0.getSession();

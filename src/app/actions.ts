@@ -6,7 +6,7 @@ import { z } from "zod";
 import type { Submission } from "@/domain/court.ts";
 import { auth0 } from "@/lib/auth0.ts";
 import { BETA_MESSAGE, canRequestCase } from "@/lib/case-access.ts";
-import { createCase, finishCase, newCaseId, requeueCase } from "@/store.ts";
+import { createNewCase, finishCase, requeueCase } from "@/store.ts";
 import { courtSession } from "@/workflows/court-session.ts";
 
 const IMAGE_TYPES = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif" } as const;
@@ -45,7 +45,6 @@ export async function requestFactCheck(_prev: RequestState, formData: FormData):
   const parsed = RequestForm.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Revisá los datos." };
 
-  const id = newCaseId();
   let submission: Submission;
   let image: Buffer | undefined;
   const input = parsed.data;
@@ -55,7 +54,7 @@ export async function requestFactCheck(_prev: RequestState, formData: FormData):
   } else {
     submission = input;
   }
-  await createCase(id, submission, image, user.sub);
+  const id = await createNewCase(submission, image, user.sub);
   try {
     await start(courtSession, [id]);
   } catch (err) {

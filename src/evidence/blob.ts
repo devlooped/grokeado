@@ -1,4 +1,4 @@
-import { BlobNotFoundError, del, head, list, put } from "@vercel/blob";
+import { BlobNotFoundError, copy, del, head, list, put } from "@vercel/blob";
 import { normalizeEvidenceBytes, sha256, type EvidenceFiles } from "./validate.ts";
 
 const ROOT = (caseId: string) => `cases/${encodeURIComponent(caseId)}/evidence/`;
@@ -89,6 +89,47 @@ export async function readEvidenceTree(caseId: string): Promise<Map<string, Uint
     }
   }
   throw consistencyError ?? new Error("Could not read the evidence bundle.");
+}
+
+// Copies every blob of a case to the prefix of its new id and returns the old URLs,
+// which the caller deletes once the database points at the new id.
+export async function copyCaseBlobs(oldId: string, newId: string): Promise<string[]> {
+  const auth = blobAuth();
+  const from = `cases/${encodeURIComponent(oldId)}/`;
+  const to = `cases/${encodeURIComponent(newId)}/`;
+  const blobs: { url: string; pathname: string; uploadedAt: Date }[] = [];
+  let cursor: string | undefined;
+  do {
+    const result = await list({ prefix: from, cursor, limit: 1000, ...auth });
+    blobs.push(...result.blobs);
+    cursor = result.hasMore ? result.cursor : undefined;
+  } while (cursor);
+
+  // Copies get fresh upload times, so only the current hash of each file is copied;
+  // otherwise a stale hash could become the newest one at the new prefix.
+  const hashPrefix = from + "evidence/" + HASHES;
+  const currentHash = new Map<string, { url: string; uploadedAt: number }>();
+  for (const blob of blobs) {
+    if (!blob.pathname.startsWith(hashPrefix)) continue;
+    const file = blob.pathname.slice(hashPrefix.length).replace(/^[a-f0-9]{64}\//, "");
+    const current = currentHash.get(file);
+    if (!current || blob.uploadedAt.getTime() >= current.uploadedAt) currentHash.set(file, { url: blob.url, uploadedAt: blob.uploadedAt.getTime() });
+  }
+  const keep = new Set([...currentHash.values()].map((hash) => hash.url));
+
+  for (const blob of blobs) {
+    if (blob.pathname.startsWith(hashPrefix) && !keep.has(blob.url)) continue;
+    const meta = await head(blob.url, auth);
+    await copy(blob.url, to + blob.pathname.slice(from.length), {
+      access: BLOB_ACCESS,
+      addRandomSuffix: false,
+      allowOverwrite: true,
+      cacheControlMaxAge: 60,
+      contentType: meta.contentType,
+      ...auth,
+    });
+  }
+  return blobs.map((blob) => blob.url);
 }
 
 export async function deleteEvidenceBlobs(urls: string[]): Promise<void> {

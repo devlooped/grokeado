@@ -1,7 +1,9 @@
 import { attachDatabasePool } from "@vercel/functions";
-import { randomBytes } from "node:crypto";
 import { Pool } from "pg";
 import type { CaseRecord, CaseStatus, RecordedEvent, Submission } from "./domain/court.ts";
+import { newCaseId } from "./lib/case-id.ts";
+
+export { newCaseId };
 
 export interface StoredImage {
   mimeType: string;
@@ -51,6 +53,10 @@ async function db(): Promise<Pool> {
          case_id TEXT PRIMARY KEY REFERENCES cases(id) ON DELETE CASCADE,
          mime_type TEXT NOT NULL,
          bytes BYTEA NOT NULL
+       );
+       CREATE TABLE IF NOT EXISTS case_aliases (
+         old_id TEXT PRIMARY KEY,
+         case_id TEXT NOT NULL REFERENCES cases(id) ON DELETE CASCADE
        );`
     )
     .then(async () => {
@@ -75,16 +81,62 @@ function toRecord(row: CaseRow): CaseRecord {
   return { id: row.id, createdAt: row.created_at, status: row.status, submission: row.submission, ownerId: row.owner_id ?? undefined, error: row.error ?? undefined };
 }
 
-export function newCaseId(): string {
-  return randomBytes(6).toString("base64url");
-}
-
 export async function createCase(id: string, submission: Submission, image?: Buffer, ownerId?: string): Promise<void> {
   const client = await (await db()).connect();
   try {
     await client.query("BEGIN");
     await client.query("INSERT INTO cases (id, created_at, status, submission, owner_id) VALUES ($1, $2, 'queued', $3, $4)", [id, new Date().toISOString(), JSON.stringify(submission), ownerId ?? null]);
     if (image && submission.kind === "image") await client.query("INSERT INTO images (case_id, mime_type, bytes) VALUES ($1, $2, $3)", [id, submission.mimeType, image]);
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+// Random ids can collide; a taken id (or a retired alias) is retried with a new one.
+export async function createNewCase(submission: Submission, image?: Buffer, ownerId?: string): Promise<string> {
+  for (let attempt = 0; ; attempt++) {
+    const id = newCaseId();
+    const { rowCount } = await (await db()).query("SELECT 1 FROM case_aliases WHERE old_id = $1", [id]);
+    if (rowCount) continue;
+    try {
+      await createCase(id, submission, image, ownerId);
+      return id;
+    } catch (err) {
+      if (attempt >= 4 || (err as { code?: string }).code !== "23505") throw err;
+    }
+  }
+}
+
+// Old ids keep resolving after a case is renamed, so shared links still work.
+export async function findCaseAlias(oldId: string): Promise<string | undefined> {
+  const { rows } = await (await db()).query<{ case_id: string }>("SELECT case_id FROM case_aliases WHERE old_id = $1", [oldId]);
+  return rows[0]?.case_id;
+}
+
+export async function caseIdTaken(id: string): Promise<boolean> {
+  const { rowCount } = await (await db()).query("SELECT 1 FROM cases WHERE id = $1 UNION ALL SELECT 1 FROM case_aliases WHERE old_id = $1", [id]);
+  return Boolean(rowCount);
+}
+
+// Moves a case and its rows to a new id in one transaction and records the old id as an alias.
+export async function renameCase(oldId: string, newId: string): Promise<void> {
+  const client = await (await db()).connect();
+  try {
+    await client.query("BEGIN");
+    const { rowCount } = await client.query(
+      "INSERT INTO cases (id, created_at, status, submission, owner_id, error) SELECT $2, created_at, status, submission, owner_id, error FROM cases WHERE id = $1",
+      [oldId, newId]
+    );
+    if (rowCount !== 1) throw new Error("case " + oldId + " does not exist");
+    await client.query("UPDATE events SET case_id = $2 WHERE case_id = $1", [oldId, newId]);
+    await client.query("UPDATE images SET case_id = $2 WHERE case_id = $1", [oldId, newId]);
+    await client.query("UPDATE case_aliases SET case_id = $2 WHERE case_id = $1", [oldId, newId]);
+    await client.query("DELETE FROM cases WHERE id = $1", [oldId]);
+    await client.query("INSERT INTO case_aliases (old_id, case_id) VALUES ($1, $2)", [oldId, newId]);
     await client.query("COMMIT");
   } catch (err) {
     await client.query("ROLLBACK");
