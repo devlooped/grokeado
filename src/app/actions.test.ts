@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Pool } from "pg";
 import { auth0 } from "../lib/auth0.ts";
-import { BETA_MESSAGE } from "../lib/case-access.ts";
 import { requestFactCheck, retryCase } from "./actions.ts";
 
 test("case requests require the verified authorized account before validating input", async (t) => {
@@ -19,9 +18,9 @@ test("case requests require the verified authorized account before validating in
   ];
   for (const session of sessions) {
     const getSession = t.mock.method(auth0, "getSession", async () => session as Awaited<ReturnType<typeof auth0.getSession>>);
-    assert.deepEqual(await requestFactCheck({}, form), { error: BETA_MESSAGE });
+    assert.deepEqual(await requestFactCheck({}, form), { error: "Che.bot está en beta. Para pedir un chequeo, enviá un correo a hola@che.bot." });
     form.set("text", "Una afirmación suficientemente larga para pedir un chequeo.");
-    assert.deepEqual(await requestFactCheck({}, form), { error: BETA_MESSAGE });
+    assert.deepEqual(await requestFactCheck({}, form), { error: "Che.bot está en beta. Para pedir un chequeo, enviá un correo a hola@che.bot." });
     form.set("text", "short");
     getSession.mock.restore();
   }

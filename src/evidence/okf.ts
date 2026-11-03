@@ -67,5 +67,5 @@ export function renderEvidenceHtml(source: string): string {
   const pages = document.type === "fragment" ? [document.page] : document.type === "evidence" ? document.pages : [];
   const missingAnchors = pages.filter((page) => !markedPages.has(page)).map((page) => `<span id="p${page}"></span>`).join("");
   const title = escapeHtml(document.title || "Documento de evidencia");
-  return `<!doctype html><html lang="es-AR"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${title} · Grokeado</title><style>body{font:16px/1.6 system-ui,sans-serif;margin:2rem auto;max-width:70rem;padding:0 1rem}pre{white-space:pre-wrap;overflow-wrap:anywhere}.page{display:block;font-weight:700;margin:1.5rem 0 .5rem}</style><main>${missingAnchors}<pre>${anchored}</pre></main></html>`;
+  return `<!doctype html><html lang="es-AR"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${title} · CheBot</title><style>body{font:16px/1.6 system-ui,sans-serif;margin:2rem auto;max-width:70rem;padding:0 1rem}pre{white-space:pre-wrap;overflow-wrap:anywhere}.page{display:block;font-weight:700;margin:1.5rem 0 .5rem}</style><main>${missingAnchors}<pre>${anchored}</pre></main></html>`;
 }
