@@ -8,6 +8,7 @@ const files = new Map<string, string>([
   ["evidence/grok/passage.md", "grok"],
   ["evidence/chatgpt/note.md", "peer"],
   ["evidence/chatgpt/research/run/step-000.json", "raw research"],
+  ["evidence/chatgpt/downloads/run/source/original.bin", "raw source"],
   ["scratch/notes.txt", "scratch"],
   ["outside.txt", "no"],
 ]);
@@ -24,6 +25,7 @@ test("hides peer namespaces until objections and keeps writes on the seat", () =
   const conclusion = assembleWorkspace(files, "chatgpt", "conclusion");
   assert.equal(conclusion.has("evidence/grok/passage.md"), true);
   assert.equal(conclusion.has("evidence/chatgpt/research/run/step-000.json"), false);
+  assert.equal(conclusion.has("evidence/chatgpt/downloads/run/source/original.bin"), false);
   assert.equal(conclusion.has("outside.txt"), false);
 
   assert.equal(isWritablePath("evidence/chatgpt/note.md", "chatgpt"), true);

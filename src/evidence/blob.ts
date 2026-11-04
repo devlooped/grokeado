@@ -1,5 +1,6 @@
 import { BlobNotFoundError, copy, del, head, list, put } from "@vercel/blob";
 import { normalizeEvidenceBytes, sha256, type EvidenceFiles } from "./validate.ts";
+import { withCaseWriteLock } from "../store.ts";
 
 const ROOT = (caseId: string) => `cases/${encodeURIComponent(caseId)}/evidence/`;
 const ARCHIVE = (caseId: string) => `cases/${encodeURIComponent(caseId)}/expediente.zip`;
@@ -137,6 +138,27 @@ export async function deleteEvidenceBlobs(urls: string[]): Promise<void> {
   if (urls.length) await del(urls, blobAuth());
 }
 
+// List every page before deleting: removing a page while paging can skip blobs.
+// IDs include any retired aliases whose old prefixes may still have artifacts.
+export async function deleteCaseBlobs(ids: readonly string[]): Promise<void> {
+  const auth = blobAuth();
+  for (const id of ids) {
+    const prefix = `cases/${encodeURIComponent(id)}/`;
+    const urls: string[] = [];
+    let cursor: string | undefined;
+    do {
+      const page = await list({ prefix, cursor, limit: 1000, ...auth });
+      for (const blob of page.blobs) {
+        if (!blob.pathname.startsWith(prefix)) throw new Error("Blob fuera del caso solicitado.");
+        urls.push(blob.url);
+      }
+      if (page.hasMore && (!page.cursor || page.cursor === cursor)) throw new Error("No se pudo paginar la lista de archivos del caso.");
+      cursor = page.hasMore ? page.cursor : undefined;
+    } while (cursor);
+    for (let index = 0; index < urls.length; index += 1000) await del(urls.slice(index, index + 1000), auth);
+  }
+}
+
 export type EvidenceArchive = { downloadUrl: string; etag: string };
 
 async function findBlob(pathname: string) {
@@ -167,53 +189,59 @@ export async function hasEvidenceBase(caseId: string): Promise<boolean> {
 }
 
 export async function writeEvidenceArchive(caseId: string, bytes: Uint8Array): Promise<EvidenceArchive> {
-  const blob = await put(COMPLETE_ARCHIVE(caseId), Buffer.from(bytes), {
-    access: BLOB_ACCESS,
-    addRandomSuffix: false,
-    allowOverwrite: true,
-    cacheControlMaxAge: 60,
-    contentType: "application/zip",
-    ...blobAuth(),
+  return withCaseWriteLock(caseId, async () => {
+    const blob = await put(COMPLETE_ARCHIVE(caseId), Buffer.from(bytes), {
+      access: BLOB_ACCESS,
+      addRandomSuffix: false,
+      allowOverwrite: true,
+      cacheControlMaxAge: 60,
+      contentType: "application/zip",
+      ...blobAuth(),
+    });
+    return { downloadUrl: blob.downloadUrl, etag: blob.etag };
   });
-  return { downloadUrl: blob.downloadUrl, etag: blob.etag };
 }
 
 export async function writeCaseTranscript(caseId: string, content: string): Promise<void> {
-  await put(TRANSCRIPT(caseId), content, {
-    access: BLOB_ACCESS,
-    addRandomSuffix: false,
-    allowOverwrite: true,
-    cacheControlMaxAge: 60,
-    contentType: "application/x-ndjson; charset=utf-8",
-    ...blobAuth(),
+  await withCaseWriteLock(caseId, async () => {
+    await put(TRANSCRIPT(caseId), content, {
+      access: BLOB_ACCESS,
+      addRandomSuffix: false,
+      allowOverwrite: true,
+      cacheControlMaxAge: 60,
+      contentType: "application/x-ndjson; charset=utf-8",
+      ...blobAuth(),
+    });
   });
 }
 
 export async function writeEvidenceTree(caseId: string, files: EvidenceFiles): Promise<void> {
-  const auth = blobAuth();
-  const prefix = ROOT(caseId);
-  let totalSize = 0;
-  for (const [path, content] of files) {
-    const bytes = normalizeEvidenceBytes(path, content);
-    totalSize += bytes.byteLength;
-    if (totalSize > 25 * 1024 * 1024) throw new Error("Evidence upload exceeds 25 MiB.");
-    const pathname = prefix + path.slice("evidence/".length);
-    const digest = sha256(bytes);
-    await put(pathname, Buffer.from(bytes), {
-      access: BLOB_ACCESS,
-      addRandomSuffix: false,
-      allowOverwrite: true,
-      cacheControlMaxAge: 60,
-      contentType: path.endsWith(".md") ? "text/markdown; charset=utf-8" : "application/octet-stream",
-      ...auth,
-    });
-    await put(`${prefix}${HASHES}${digest}/${path.slice("evidence/".length)}.json`, JSON.stringify({ path, sha256: digest }), {
-      access: BLOB_ACCESS,
-      addRandomSuffix: false,
-      allowOverwrite: true,
-      cacheControlMaxAge: 60,
-      contentType: "application/json",
-      ...auth,
-    });
-  }
+  await withCaseWriteLock(caseId, async () => {
+    const auth = blobAuth();
+    const prefix = ROOT(caseId);
+    let totalSize = 0;
+    for (const [path, content] of files) {
+      const bytes = normalizeEvidenceBytes(path, content);
+      totalSize += bytes.byteLength;
+      if (totalSize > 25 * 1024 * 1024) throw new Error("Evidence upload exceeds 25 MiB.");
+      const pathname = prefix + path.slice("evidence/".length);
+      const digest = sha256(bytes);
+      await put(pathname, Buffer.from(bytes), {
+        access: BLOB_ACCESS,
+        addRandomSuffix: false,
+        allowOverwrite: true,
+        cacheControlMaxAge: 60,
+        contentType: path.endsWith(".md") ? "text/markdown; charset=utf-8" : "application/octet-stream",
+        ...auth,
+      });
+      await put(`${prefix}${HASHES}${digest}/${path.slice("evidence/".length)}.json`, JSON.stringify({ path, sha256: digest }), {
+        access: BLOB_ACCESS,
+        addRandomSuffix: false,
+        allowOverwrite: true,
+        cacheControlMaxAge: 60,
+        contentType: "application/json",
+        ...auth,
+      });
+    }
+  });
 }

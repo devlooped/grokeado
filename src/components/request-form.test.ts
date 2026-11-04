@@ -11,6 +11,10 @@ test("the form uses native radios and visible labels, and keeps every kind mount
   assert.deepEqual(radios.map((r) => r.getAttribute("value")), ["text", "link", "image"]);
   assert.ok(radios[0].hasAttribute("checked"));
   assert.equal(document.querySelector('[role="tablist"]'), null);
+  const language = document.querySelector('select[name="language"]')!;
+  assert.ok(document.querySelector(`label[for="${language.id}"]`));
+  assert.deepEqual([...language.querySelectorAll("option")].map((option) => [option.getAttribute("value"), option.textContent]), [["auto", "Detectar"], ["es", "Español"], ["en", "Inglés"]]);
+  assert.ok(language.querySelector('option[value="auto"]')!.hasAttribute("selected"));
   for (const name of ["text", "url", "image"]) {
     const input = document.querySelector('[name="' + name + '"]')!;
     const label = document.querySelector('label[for="' + input.id + '"]')!;

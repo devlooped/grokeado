@@ -6,10 +6,11 @@ import { COUNSEL, JUDGE, MODEL_NAME, project, type CaseRecord, type ClaimView } 
 import { GavelIcon, ModelMark, VERDICT_TEXT, VoteChip } from "@/components/marks.tsx";
 import { voteId } from "@/components/case-result.tsx";
 import { auth0 } from "@/lib/auth0.ts";
-import { canRequestCase } from "@/lib/case-access.ts";
+import { canDeleteCase, canRequestCase } from "@/lib/case-access.ts";
 import { BetaNotice } from "@/components/beta-notice.tsx";
 import { RequestForm } from "@/components/request-form.tsx";
 import { CaseLinkStatus } from "@/components/case-link-status.tsx";
+import { DeleteCaseButton } from "@/components/delete-case-button.tsx";
 import { coverVersions, getEvents, listCases } from "@/store.ts";
 
 const MAX_CLAIMS = 3;
@@ -80,14 +81,15 @@ function ClaimLine({ c, claim, voted }: { c: CaseRecord; claim: ClaimView; voted
   );
 }
 
-async function CaseCard({ c, cover, index }: { c: CaseRecord; cover?: string; index: number }) {
+async function CaseCard({ c, cover, index, admin }: { c: CaseRecord; cover?: string; index: number; admin: boolean }) {
   const view = c.status === "queued" ? undefined : project(await getEvents(c.id));
   const voted = c.status === "resolved";
   const claims = view?.claims ?? [];
   const hidden = claims.length - MAX_CLAIMS;
   return (
     <li className="reveal" style={{ animationDelay: Math.min(index, 4) * 45 + "ms" }}>
-      <article className="flex h-full flex-col overflow-hidden rounded-sm border border-rule bg-paper/70 shadow-[0_1px_0_0_var(--color-rule)]">
+      <article className="relative flex h-full flex-col overflow-hidden rounded-sm border border-rule bg-paper/70 shadow-[0_1px_0_0_var(--color-rule)]">
+        {admin && <DeleteCaseButton caseId={c.id} active={c.status === "queued" || c.status === "in_session"} />}
         <Link href={caseHref(c.id)} aria-label={"Ver el caso Nº " + c.id} className="group relative block aspect-square overflow-hidden border-b border-rule bg-paper-deep">
           <CoverImage c={c} cover={cover} />
           <CaseLinkStatus />
@@ -164,7 +166,7 @@ export default async function Home() {
         ) : (
           <ul className="mt-6 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {cases.map((c, i) => (
-              <CaseCard key={c.id} c={c} cover={covers.get(c.id)} index={i} />
+              <CaseCard key={c.id} c={c} cover={covers.get(c.id)} index={i} admin={canDeleteCase(session?.user)} />
             ))}
           </ul>
         )}

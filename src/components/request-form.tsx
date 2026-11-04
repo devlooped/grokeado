@@ -51,6 +51,7 @@ export function RequestForm() {
   const fileRef = useRef<HTMLInputElement>(null);
   const uid = useId();
   const ids = {
+    language: uid + "-language",
     text: uid + "-text",
     url: uid + "-url",
     linkNote: uid + "-link-note",
@@ -63,7 +64,7 @@ export function RequestForm() {
 
   // A client check wins over the last server answer; an error about a field of another kind is not shown.
   const shown = local ?? state;
-  const problem = shown.error && (!shown.field || FIELDS[kind].includes(shown.field)) ? shown : undefined;
+  const problem = shown.error && (!shown.field || shown.field === "language" || FIELDS[kind].includes(shown.field)) ? shown : undefined;
   const invalid = (f: RequestField) => problem?.field === f || undefined;
   const describedBy = (f: RequestField, extra?: string) => [extra, problem?.field === f ? ids.error : undefined].filter(Boolean).join(" ") || undefined;
 
@@ -143,6 +144,16 @@ export function RequestForm() {
       <div className="flex items-end justify-between gap-4">
         <h2 className="font-display text-3xl leading-none">Pedí un chequeo</h2>
         <span className="font-mono text-[11px] uppercase tracking-widest text-ink-soft">Formulario Nº 1</span>
+      </div>
+
+      <div className="mt-5">
+        <label htmlFor={ids.language} className={label}>Idioma del caso</label>
+        <select id={ids.language} name="language" defaultValue="auto" aria-invalid={invalid("language")} aria-describedby={describedBy("language")} className={field}>
+          <option value="auto">Detectar</option>
+          <option value="es">Español</option>
+          <option value="en">Inglés</option>
+        </select>
+        <p className="mt-1 text-xs text-ink-soft">Detectar usa el idioma del material enviado; español se trata como español latinoamericano.</p>
       </div>
 
       <fieldset className="mt-5">

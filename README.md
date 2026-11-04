@@ -6,6 +6,13 @@ idempotent batches between rounds. Completed steps are replayed from the workflo
 journal; an interrupted seat attempt can run again, including its paid model and
 research calls.
 
+Admins can delete resolved or failed cases and their Postgres and Blob data;
+active cases cannot be deleted. A failed Blob cleanup leaves the case record for
+a retry, although some files may already have been deleted. Workflow journals
+are not deleted by this feature and may retain step data under the workflow
+backend’s retention policy. Do not run `cases:regenerate-ids -- --apply`
+concurrently with case deletion.
+
 The moderator and Grok analyst use `spacexai/grok-4.7`; the other analysts use
 `google/gemini-4-argon`, `anthropic/claude-opus-5.5`, and `openai/gpt-5.5`.
 `npm run models` lists the current Gateway catalog.

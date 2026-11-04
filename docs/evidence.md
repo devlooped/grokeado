@@ -43,6 +43,34 @@ ZIP includes every stored file under `evidence/`, including raw court research
 tool calls and their complete returned results under
 `evidence/{seat}/research/{runId}/` (including `judge` when applicable). These
 JSON files are export artifacts, not promoted or citable sandbox evidence.
+For new cases, each analyst's filed URLs are also downloaded under
+`evidence/{seat}/downloads/{runId}/`. `source.json` records the URL, download or
+extraction status, and paths to the unchanged original and extracted text.
+When extraction succeeds, the text is translated into the case language if
+needed and saved separately as `translated.txt`; otherwise the extracted text
+remains unchanged. Unsupported formats, inaccessible sources, and unsuccessful
+OCR are recorded rather than presented as translations. Originals, raw research
+responses, and audit transcripts are never replaced with translations. These
+downloads are archive artifacts, not new citable evidence; the source itself
+must still be checked. They use the existing public-URL and size checks.
+
+The requested language is Detectar, Español, or Inglés. Automatic detection
+uses the submitted text, extracted linked content, or the submitted image;
+when no usable content is available it falls back to Spanish. Spanish means
+Latin American Spanish. The resolved language is saved for retries. Analyst
+Markdown documents downloaded from the sandbox are translated when necessary;
+their originals are retained under the run's `originals/` directory. Model
+translation can introduce errors and is not a substitute for the original.
+Detection and translation make additional AI Gateway calls; a translation
+error fails the case rather than silently presenting untranslated content.
+Mock mode uses
+fixed Spanish fixtures and does not download analyst URLs or call translation.
+Existing cases and archives are not retroactively translated.
+
+Rebuild and configure the evidence sandbox snapshot using
+`npm run evidence:snapshot` after deploying the updated harness; older snapshots still
+contain the former Spanish-only instruction, although the promotion translation
+step applies the case language after download.
 The ZIP also contains `acta.jsonl`, the complete committed event record,
 including evidence submissions, source reviews, objections, votes, and decisions.
 The closing step also writes `cases/{caseId}/transcript.jsonl` and includes it at

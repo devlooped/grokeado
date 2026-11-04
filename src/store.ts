@@ -123,6 +123,59 @@ export async function createNewCase(submission: Submission, image?: Buffer, owne
   }
 }
 
+// Persist the detection so retries reuse the same language as the first attempt.
+export async function saveCaseLanguage(id: string, language: string): Promise<void> {
+  await (await db()).query("UPDATE cases SET submission = jsonb_set(submission, '{resolvedLanguage}', to_jsonb($2::text)) WHERE id = $1", [id, language]);
+}
+
+// Blob writes hold a shared row lock so deletion waits for in-flight uploads;
+// uploads starting after deletion cannot recreate orphaned artifacts.
+export async function withCaseWriteLock<T>(id: string, write: () => Promise<T>): Promise<T> {
+  const client = await (await db()).connect();
+  try {
+    await client.query("BEGIN");
+    const result = await client.query("SELECT id FROM cases WHERE id = $1 FOR KEY SHARE", [id]);
+    if (!result.rows.length) throw new Error("El caso ya no existe.");
+    const value = await write();
+    await client.query("COMMIT");
+    return value;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+// Keep the row locked through Blob cleanup. A failed cleanup leaves the case
+// available for a retry; cascading foreign keys remove events, images, covers
+// and aliases only after cleanup succeeds.
+export async function deleteCase(id: string, deleteBlobs: (ids: string[]) => Promise<void>): Promise<"deleted" | "missing" | "active"> {
+  const client = await (await db()).connect();
+  try {
+    await client.query("BEGIN");
+    const { rows } = await client.query<{ status: CaseStatus }>("SELECT status FROM cases WHERE id = $1 FOR UPDATE", [id]);
+    if (!rows.length) {
+      await client.query("ROLLBACK");
+      return "missing";
+    }
+    if (rows[0]!.status !== "resolved" && rows[0]!.status !== "failed") {
+      await client.query("ROLLBACK");
+      return "active";
+    }
+    const aliases = await client.query<{ old_id: string }>("SELECT old_id FROM case_aliases WHERE case_id = $1", [id]);
+    await deleteBlobs([id, ...aliases.rows.map((row) => row.old_id)]);
+    await client.query("DELETE FROM cases WHERE id = $1", [id]);
+    await client.query("COMMIT");
+    return "deleted";
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 // Old ids keep resolving after a case is renamed, so shared links still work.
 export async function findCaseAlias(oldId: string): Promise<string | undefined> {
   const { rows } = await (await db()).query<{ case_id: string }>("SELECT case_id FROM case_aliases WHERE old_id = $1", [oldId]);

@@ -36,7 +36,7 @@ const RequestForm = z.discriminatedUnion("kind", [
   }),
 ]);
 
-export type RequestField = "text" | "url" | "note" | "image";
+export type RequestField = "text" | "url" | "note" | "image" | "language";
 // The field names the input to fix, so the form can mark and focus it.
 export type RequestState = { error?: string; field?: RequestField };
 
@@ -46,6 +46,8 @@ export async function requestFactCheck(_prev: RequestState, formData: FormData):
   const session = await auth0.getSession();
   const user = session?.user;
   if (!user?.sub || !canRequestCase(user)) return { error: BETA_MESSAGE };
+  const language = z.enum(["auto", "es", "en"], { error: "Elegí un idioma válido." }).default("auto").safeParse(formData.get("language") ?? undefined);
+  if (!language.success) return { error: language.error.issues[0]?.message, field: "language" };
   const parsed = RequestForm.safeParse(Object.fromEntries(formData));
   if (!parsed.success) {
     const issue = parsed.error.issues[0];
@@ -58,9 +60,9 @@ export async function requestFactCheck(_prev: RequestState, formData: FormData):
   const input = parsed.data;
   if (input.kind === "image") {
     image = Buffer.from(await input.image.arrayBuffer());
-    submission = { kind: "image", mimeType: input.image.type, note: input.note };
+    submission = { kind: "image", mimeType: input.image.type, note: input.note, language: language.data };
   } else {
-    submission = input;
+    submission = { ...input, language: language.data };
   }
   const id = await createNewCase(submission, image, user.sub);
   try {

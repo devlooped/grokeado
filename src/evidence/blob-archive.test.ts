@@ -2,9 +2,18 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import test from "node:test";
+import { Pool } from "pg";
 import { findEvidenceArchive, hasEvidenceBase, writeCaseTranscript, writeEvidenceArchive } from "./blob.ts";
 
-test("stores and locates the ZIP separately from the evidence tree using the Blob SDK", async () => {
+test("stores and locates the ZIP separately from the evidence tree using the Blob SDK", async (t) => {
+  const database = process.env.DATABASE_URL;
+  process.env.DATABASE_URL = "postgres://example.invalid/test";
+  t.after(() => { if (database === undefined) delete process.env.DATABASE_URL; else process.env.DATABASE_URL = database; });
+  t.mock.method(Pool.prototype, "query", (async () => ({ rows: [] })) as unknown as typeof Pool.prototype.query);
+  t.mock.method(Pool.prototype, "connect", (async () => ({
+    query: async (sql: string) => ({ rows: sql.startsWith("SELECT id FROM cases") ? [{ id: "case 1" }] : [] }),
+    release: () => {},
+  })) as unknown as typeof Pool.prototype.connect);
   const uploads: Array<{ pathname: string; headers: Record<string, string | string[] | undefined>; body: Buffer }> = [];
   let deny = false;
   const server = createServer(async (request, response) => {

@@ -8,6 +8,7 @@ import type { EvidenceSeat, EvidenceStage } from "./schema.ts";
 import { blobConfigured, readEvidenceTree, writeEvidenceTree } from "./blob.ts";
 import { validateEvidenceTree, validatePromotedFiles } from "./validate.ts";
 import { annotateEvidenceTranscript } from "./transcript.ts";
+import { translatePromotedEvidence } from "./translate.ts";
 import { assembleWorkspace, citationAuthors, citationsFor, readOnlyHashesFor, workspaceIndex } from "./workspace.ts";
 
 const WORKSPACE = "/workspace";
@@ -17,7 +18,7 @@ type, title, description, sources[], generated: { by, at }.
 evidence agrega pages[], extraction: { tool, confidence }, tokens.
 fragment agrega page y puede incluir reprocess_of.
 argument agrega stage (exposicion|objecion|conclusion), supports[], refutes[].
-Escribí siempre title, description y el cuerpo del documento en español rioplatense claro y sobrio (manteniendo en inglés las claves YAML y los valores de type).
+Escribí title, description y el cuerpo del documento en el idioma indicado en la tarea (manteniendo en inglés las claves YAML y los valores de type).
 Usá anclas de página #pN. Mantené base/ y las carpetas de los demás analistas en modo de solo lectura.`;
 
 export type EvidenceStepResult = {
@@ -50,7 +51,8 @@ export async function runEvidenceStep(
   seat: EvidenceSeat,
   stage: EvidenceStage,
   task: string,
-  simulated = false
+  simulated = false,
+  language = "es"
 ): Promise<EvidenceStepResult> {
   "use step";
   const empty: EvidenceStepResult = { status: "partial", index: "", citations: [] };
@@ -177,6 +179,10 @@ export async function runEvidenceStep(
       console.warn("Rejected invalid evidence promotion:", validationErrors.join("; "));
       return { status: "partial", ...current };
     }
+
+    await translatePromotedEvidence(promoted, runId, seat, language);
+    const translatedErrors = validatePromotedFiles(seat, original, promoted);
+    if (translatedErrors.length) throw new Error("La evidencia traducida no es válida: " + translatedErrors.join("; "));
 
     const merged = new Map(original);
     for (const [path, content] of promoted) merged.set(path, content);

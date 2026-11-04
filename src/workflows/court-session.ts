@@ -1,19 +1,37 @@
 import { illustrateCase } from "../court/cover.ts";
 import { COUNSEL_MODELS, JUDGE_MODEL, MOCK_MODEL_ID } from "../court/models.ts";
 import { playTurn } from "../court/play.ts";
+import { resolveCaseLanguage } from "../court/language.ts";
 import { holdSession } from "../court/procedure.ts";
 import type { Docket, TurnOutcome, TurnSpec } from "../court/turns.ts";
-import type { CourtEvent, RecordedEvent, Submission } from "../domain/court.ts";
+import type { CourtEvent, RecordedEvent, Submission, SubmissionContext } from "../domain/court.ts";
+import { languageInstruction } from "../domain/language.ts";
 import { collectEvidenceBase } from "../evidence/collect.ts";
+import { saveContributedSources } from "../evidence/contributions.ts";
 import { archiveEvidence } from "../evidence/archive.ts";
 import { blobConfigured } from "../evidence/blob.ts";
 import { runEvidenceStep, type EvidenceStepResult } from "../evidence/sandbox.ts";
 import type { EvidenceSeat, EvidenceStage } from "../evidence/schema.ts";
 import { closeCase, openCase, saveEvents } from "./steps.ts";
+import { saveCaseLanguage } from "../store.ts";
 
 async function collect(caseId: string, submission: Submission, simulated: boolean) {
   "use step";
   return collectEvidenceBase(caseId, submission, simulated);
+}
+
+async function determineLanguage(caseId: string, submission: Submission, context: SubmissionContext | undefined, simulated: boolean): Promise<string> {
+  "use step";
+  const language = await resolveCaseLanguage(caseId, submission, context, simulated);
+  if (!submission.resolvedLanguage) await saveCaseLanguage(caseId, language);
+  return language;
+}
+
+// Keep source processing separate from the paid court turn so a retry need not
+// repeat the analyst's model call.
+async function collectSources(caseId: string, events: CourtEvent[], language: string): Promise<void> {
+  "use step";
+  if (blobConfigured()) await saveContributedSources(caseId, events, language);
 }
 
 async function archive(caseId: string): Promise<void> {
@@ -51,8 +69,8 @@ export function linkEvidenceRun(outcome: TurnOutcome, runId?: string, simulated 
   } : event) };
 }
 
-function evidenceTask(spec: TurnSpec): { seat: EvidenceSeat; stage: EvidenceStage; task: string } | undefined {
-  const language = " Escribí los títulos, descripciones y el contenido de cada archivo en español rioplatense.";
+function evidenceTask(spec: TurnSpec, targetLanguage: string): { seat: EvidenceSeat; stage: EvidenceStage; task: string } | undefined {
+  const language = " " + languageInstruction(targetLanguage);
   if (spec.kind === "instruction") {
     return { seat: spec.counsel, stage: "exposicion", task: "Examiná el expediente base y producí fragmentos neutrales y un borrador de argumento para la exposición." + language };
   }
@@ -67,10 +85,10 @@ function evidenceTask(spec: TurnSpec): { seat: EvidenceSeat; stage: EvidenceStag
   }
 }
 
-async function prepareEvidence(caseId: string, spec: TurnSpec, simulated: boolean): Promise<EvidenceStepResult | undefined> {
-  const request = evidenceTask(spec);
+async function prepareEvidence(caseId: string, spec: TurnSpec, simulated: boolean, language: string): Promise<EvidenceStepResult | undefined> {
+  const request = evidenceTask(spec, language);
   if (!request) return undefined;
-  return runEvidenceStep(caseId, request.seat, request.stage, request.task, simulated);
+  return runEvidenceStep(caseId, request.seat, request.stage, request.task, simulated, language);
 }
 
 function describeError(err: unknown): string {
@@ -83,7 +101,8 @@ export async function courtSession(caseId: string): Promise<void> {
   const { submission, today, simulated } = await openCase(caseId);
   try {
     const submissionContext = await collect(caseId, submission, simulated);
-    const docket: Docket = { submission, today, simulated, ...(submissionContext ? { submissionContext } : {}) };
+    const language = await determineLanguage(caseId, submission, submissionContext, simulated);
+    const docket: Docket = { submission, today, simulated, language, ...(submissionContext ? { submissionContext } : {}) };
     await holdSession({
       submission,
       simulated,
@@ -92,8 +111,10 @@ export async function courtSession(caseId: string): Promise<void> {
         counsel: { grok: COUNSEL_MODELS.grok.id, gemini: COUNSEL_MODELS.gemini.id, claude: COUNSEL_MODELS.claude.id, chatgpt: COUNSEL_MODELS.chatgpt.id },
       },
       play: async (spec, record, attempt) => {
-        const evidence = await prepareEvidence(caseId, spec, simulated);
-        return play(caseId, docket, spec, record, attempt, evidence);
+        const evidence = await prepareEvidence(caseId, spec, simulated, language);
+        const outcome = await play(caseId, docket, spec, record, attempt, evidence);
+        if (!simulated && spec.kind === "instruction") await collectSources(caseId, outcome.events, language);
+        return outcome;
       },
       commit: (events: readonly RecordedEvent[]) => saveEvents(caseId, [...events]),
     });

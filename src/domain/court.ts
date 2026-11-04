@@ -21,10 +21,13 @@ export type Stage = (typeof STAGES)[number];
 
 export type CaseStatus = "queued" | "in_session" | "resolved" | "failed";
 
-export type Submission =
+export type CaseLanguageChoice = "auto" | "es" | "en";
+
+export type Submission = (
   | { kind: "text"; text: string }
   | { kind: "link"; url: string; note?: string }
-  | { kind: "image"; mimeType: string; note?: string };
+  | { kind: "image"; mimeType: string; note?: string }
+) & { language?: CaseLanguageChoice; resolvedLanguage?: string };
 
 export interface SubmissionContext {
   title: string;
