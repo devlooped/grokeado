@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { connection } from "next/server";
-import { caseOutcome, submissionExcerpt, VERDICT_LABEL } from "@/domain/acta.ts";
-import { COUNSEL, JUDGE, MODEL_NAME, project, type CaseRecord, type CaseView, type ClaimView } from "@/domain/court.ts";
-import { GavelIcon, ModelMark, VERDICT_TEXT, VerdictGlyph, VoteChip } from "@/components/marks.tsx";
+import { submissionExcerpt, VERDICT_LABEL } from "@/domain/acta.ts";
+import { caseCardImageUrl } from "@/domain/case-card.ts";
+import { COUNSEL, JUDGE, MODEL_NAME, project, type CaseRecord, type ClaimView } from "@/domain/court.ts";
+import { GavelIcon, ModelMark, VERDICT_TEXT, VoteChip } from "@/components/marks.tsx";
 import { voteId } from "@/components/case-result.tsx";
 import { auth0 } from "@/lib/auth0.ts";
 import { canRequestCase } from "@/lib/case-access.ts";
@@ -15,7 +16,7 @@ const caseHref = (id: string) => "/caso/" + id;
 const shortDate = (at: string) => new Date(at).toLocaleDateString("es-AR", { day: "numeric", month: "short", year: "numeric", timeZone: "America/Argentina/Buenos_Aires" });
 
 function CoverImage({ c, cover }: { c: CaseRecord; cover?: string }) {
-  const src = c.submission.kind === "image" ? caseHref(c.id) + "/imagen" : cover ? caseHref(c.id) + "/portada?v=" + cover : undefined;
+  const src = c.status === "resolved" ? caseCardImageUrl(c.id, cover) : c.submission.kind === "image" ? caseHref(c.id) + "/imagen" : cover ? caseHref(c.id) + "/portada?v=" + cover : undefined;
   if (src) {
     // eslint-disable-next-line @next/next/no-img-element
     return <img src={src} alt="" loading="lazy" className="size-full object-cover transition duration-500 group-hover:scale-[1.03]" />;
@@ -28,8 +29,8 @@ function CoverImage({ c, cover }: { c: CaseRecord; cover?: string }) {
   );
 }
 
-// The "final picture" stamped on the cover: the case outcome or where it stands.
-function OutcomeStamp({ c, view }: { c: CaseRecord; view?: CaseView }) {
+// Cases without a generated card still show their current status.
+function OutcomeStamp({ c }: { c: CaseRecord }) {
   const stamp = "inline-flex items-center gap-2 rounded-sm border border-ink/80 bg-paper/95 px-3 py-1.5 shadow-[3px_3px_0_0_var(--color-ink)]";
   if (c.status === "queued" || c.status === "in_session") {
     return (
@@ -38,31 +39,7 @@ function OutcomeStamp({ c, view }: { c: CaseRecord; view?: CaseView }) {
       </span>
     );
   }
-  if (c.status === "failed") return <span className={stamp + " text-xs uppercase tracking-wider text-ink-soft"}>Interrumpido</span>;
-  if (!view) return null;
-  if (view.dismissal) return <span className={stamp + " text-xs uppercase tracking-wider text-ink-soft"}>Descartado</span>;
-  const outcome = caseOutcome(view);
-  if (!outcome) return null;
-  if (outcome === "mixto") {
-    return (
-      <span className={stamp}>
-        <span className="font-display text-2xl leading-none">Resultado mixto</span>
-        <span className="flex gap-1">
-          {view.claims.map((claim) => claim.judgment && (
-            <span key={claim.id} title={claim.id + ": " + VERDICT_LABEL[claim.judgment.verdict]} className={VERDICT_TEXT[claim.judgment.verdict]}>
-              <VerdictGlyph verdict={claim.judgment.verdict} className="size-4" />
-            </span>
-          ))}
-        </span>
-      </span>
-    );
-  }
-  return (
-    <span className={stamp + " " + VERDICT_TEXT[outcome]}>
-      <VerdictGlyph verdict={outcome} className="size-5" />
-      <span className="font-display text-3xl leading-none">{VERDICT_LABEL[outcome]}</span>
-    </span>
-  );
+  return c.status === "failed" ? <span className={stamp + " text-xs uppercase tracking-wider text-ink-soft"}>Interrumpido</span> : null;
 }
 
 function ClaimLine({ c, claim, voted }: { c: CaseRecord; claim: ClaimView; voted: boolean }) {
@@ -112,10 +89,14 @@ async function CaseCard({ c, cover, index }: { c: CaseRecord; cover?: string; in
       <article className="flex h-full flex-col overflow-hidden rounded-sm border border-rule bg-paper/70 shadow-[0_1px_0_0_var(--color-rule)]">
         <Link href={caseHref(c.id)} aria-label={"Ver el caso Nº " + c.id} className="group relative block aspect-square overflow-hidden border-b border-rule bg-paper-deep">
           <CoverImage c={c} cover={cover} />
-          <span className="absolute left-3 top-3 rounded-sm bg-paper/90 px-2 py-1 font-mono text-[11px] text-ink-soft">Nº {c.id}</span>
-          <span className="absolute bottom-3 left-3 right-3">
-            <OutcomeStamp c={c} view={view} />
-          </span>
+          {c.status !== "resolved" && (
+            <>
+              <span className="absolute left-3 top-3 rounded-sm bg-paper/90 px-2 py-1 font-mono text-[11px] text-ink-soft">Nº {c.id}</span>
+              <span className="absolute bottom-3 left-3 right-3">
+                <OutcomeStamp c={c} />
+              </span>
+            </>
+          )}
         </Link>
         <div className="flex flex-1 flex-col p-4">
           <p className="font-mono text-[11px] uppercase tracking-widest text-ink-soft">

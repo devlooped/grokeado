@@ -35,27 +35,14 @@ export function caseOutcome(view: Pick<CaseView, "claims">): Verdict | "mixto" |
 
 export function caseShareMetadata(c: CaseRecord, events: readonly CourtEvent[] = []): { title: string; description: string } {
   const title = "Caso Nº " + c.id + " · CheBot";
-  const quoted = `«${submissionExcerpt(c.submission)}»`;
-  if (c.status !== "resolved") return { title, description: quoted };
-  const view = project(events);
-  const outcomes = view.claims.flatMap((cl) => {
-    const votes = COUNSEL.flatMap((counsel) => {
-      const v = cl.votes[counsel]?.verdict;
-      return v ? [VERDICT_THUMB[v]] : [];
-    }).join("");
-    if (cl.judgment) {
-      const verdictText = `${VERDICT_THUMB[cl.judgment.verdict]} ${VERDICT_LABEL[cl.judgment.verdict]}`;
-      return [votes ? `${votes} · ${verdictText}` : verdictText];
-    }
-    return votes ? [votes] : [];
-  });
-  if (outcomes.length > 0) {
-    return { title: `${title} · ${outcomes.join(" / ")}`, description: `${quoted}\n${outcomes.join("\n")}` };
-  }
-  if (view.dismissal) {
-    return { title, description: `${quoted}\nCaso descartado` };
-  }
-  return { title, description: quoted };
+  const view = c.status === "resolved" ? project(events) : undefined;
+  const claims = view?.claims.map((claim) => claim.text).filter(Boolean) ?? [];
+  const quoted = `«${claims.length ? claims.join(" / ") : submissionExcerpt(c.submission)}»`;
+  const outcome = view && !view.dismissal ? caseOutcome(view) : undefined;
+  const icon = outcome === "mixto" ? "⚖️" : outcome ? VERDICT_THUMB[outcome] : undefined;
+  return icon
+    ? { title: `${title} · ${icon}`, description: `${quoted} ${icon}` }
+    : { title, description: quoted };
 }
 
 export const ABSENCE_LABEL = { ...STAGE_LABEL, discovery: "investigación", instruction: "instrucción", source_review: "crítica de fuentes", objection: "ronda de objeciones" };

@@ -10,24 +10,29 @@ import { GavelIcon } from "@/components/marks.tsx";
 import { CaseResult } from "@/components/case-result.tsx";
 import { SessionProgress } from "@/components/session-progress.tsx";
 import { caseShareMetadata, submissionExcerpt } from "@/domain/acta.ts";
+import { caseCardImageUrl } from "@/domain/case-card.ts";
 import { COUNSEL_NAMES, type CaseRecord, type CourtEvent } from "@/domain/court.ts";
 import { project } from "@/domain/court.ts";
 import { displayHistoricalCitations } from "@/domain/historical-citations.ts";
 import { blobConfigured, findEvidenceArchive, hasEvidenceBase } from "@/evidence/blob.ts";
 import { auth0 } from "@/lib/auth0.ts";
-import { findCaseAlias, getCase, getEvents } from "@/store.ts";
+import { coverVersions, findCaseAlias, getCase, getEvents } from "@/store.ts";
 
 export async function generateMetadata(props: PageProps<"/caso/[id]">): Promise<Metadata> {
   const { id } = await props.params;
   const c = await getCase(id);
   if (!c) return { title: "Che, bot" };
-  const events = c.status === "resolved" ? await getEvents(id) : [];
+  const [events, covers] = c.status === "resolved"
+    ? await Promise.all([getEvents(id), coverVersions([id])])
+    : [[], new Map<string, string>()];
   const { title, description } = caseShareMetadata(c, events);
+  const image = c.status === "resolved" ? caseCardImageUrl(c.id, covers.get(c.id)) : undefined;
   return {
+    metadataBase: new URL(process.env.APP_BASE_URL || "https://www.che.bot"),
     title,
     description,
-    openGraph: { title, description, type: "article" },
-    twitter: { card: "summary", title, description },
+    openGraph: { title, description, type: "article", ...(image && { images: [{ url: image, width: 720, height: 720, type: "image/jpeg", alt: title }] }) },
+    twitter: { card: image ? "summary_large_image" : "summary", title, description, ...(image && { images: [image] }) },
   };
 }
 

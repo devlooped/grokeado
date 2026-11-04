@@ -28,8 +28,8 @@ test("historical and misleading verdicts have distinct labels in records and sha
   assert.match(describe(events[1]), /Insostenible/);
   assert.match(describe(events[2]), /Engañoso/);
   const meta = caseShareMetadata(c, events);
-  assert.match(meta.title, /❓ · ⚠️ Engañoso/);
-  assert.match(meta.description, /⚠️ Engañoso/);
+  assert.equal(meta.title, "Caso Nº abc · CheBot · ⚠️");
+  assert.equal(meta.description, "«Afirmación» ⚠️");
 });
 
 test("projection attaches votes and judgments to claims and strikes sustained objections", () => {
@@ -51,7 +51,7 @@ test("projection attaches votes and judgments to claims and strikes sustained ob
   assert.equal(view.closed, true);
 });
 
-test("caseShareMetadata formats quoted content and voted outcomes with thumbs", async () => {
+test("caseShareMetadata uses one mixed outcome icon without vote icons", async () => {
   const { caseShareMetadata } = await import("./acta.ts");
   const c = {
     id: "abc123",
@@ -80,9 +80,6 @@ test("caseShareMetadata formats quoted content and voted outcomes with thumbs", 
     { type: "session_closed" },
   ];
   const meta = caseShareMetadata(c, events);
-  assert.equal(meta.title, "Caso Nº abc123 · CheBot · 👎👎👎👍 · 👎 Falso / 👍👍👍👍 · 👍 Verdadero");
-  assert.equal(
-    meta.description,
-    "«El dulce de leche se inventó en la Argentina y la birome es un invento argentino.»\n👎👎👎👍 · 👎 Falso\n👍👍👍👍 · 👍 Verdadero"
-  );
+  assert.equal(meta.title, "Caso Nº abc123 · CheBot · ⚖️");
+  assert.equal(meta.description, "«El dulce de leche se inventó en la Argentina. / La birome es un invento argentino.» ⚖️");
 });
