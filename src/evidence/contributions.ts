@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import type { CourtEvent } from "../domain/court.ts";
 import { writeEvidenceTree } from "./blob.ts";
 import { downloadUrl, sniffExtension, type DownloadResult } from "./download.ts";
@@ -28,15 +27,18 @@ async function extract(download: Extract<DownloadResult, { ok: true }>, extensio
 
 // Capture the URLs filed by each analyst. Original bytes and extracted text are
 // retained; the translation is a separate, explicitly labelled derivative.
+// A failed translation never fails the case: the source is kept untranslated.
 export async function saveContributedSources(caseId: string, events: readonly CourtEvent[], language: string, deps: Dependencies = { download: downloadUrl, translate: translateSourceText, write: writeEvidenceTree }): Promise<void> {
-  const seen = new Set<string>();
-  const runId = randomUUID();
+  const sources = new Map<string, { by: string; url: string }>();
   for (const event of events) {
     if (event.type !== "evidence_filed") continue;
     const { by, url } = event.evidence;
-    const key = `${by}:${url}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
+    sources.set(`${by}:${url}`, { by, url });
+  }
+  // Derived from the input, so a retried step overwrites the files of the
+  // failed attempt instead of leaving them beside new ones.
+  const runId = sha256(JSON.stringify([caseId, language, [...sources.keys()].sort()]));
+  for (const { by, url } of sources.values()) {
     const root = `evidence/${by}/downloads/${runId}/${sha256(url)}`;
     const downloaded = await deps.download(url);
     const files = new Map<string, Uint8Array | string>();
@@ -54,15 +56,24 @@ export async function saveContributedSources(caseId: string, events: readonly Co
       } catch (error) {
         extractionError = error instanceof Error ? error.message : String(error);
       }
-      const result = originalText?.trim() ? await deps.translate(originalText, language) : undefined;
+      let result: Awaited<ReturnType<Dependencies["translate"]>> | undefined;
+      let translationError: string | undefined;
+      if (originalText?.trim()) {
+        try {
+          result = await deps.translate(originalText, language);
+        } catch (error) {
+          translationError = error instanceof Error ? error.message : String(error);
+        }
+      }
       const textPath = `${root}/extracted.txt`;
       const translatedPath = `${root}/translated.txt`;
       if (originalText) files.set(textPath, originalText);
       if (result?.changed) files.set(translatedPath, result.text);
       files.set(`${root}/source.json`, JSON.stringify({
         url, finalUrl: downloaded.finalUrl, original: rawPath, originalExtension: extension, language,
-        status: result ? (result.changed ? "translated" : "already_in_language") : "extraction_unavailable",
+        status: result ? (result.changed ? "translated" : "already_in_language") : translationError ? "translation_failed" : "extraction_unavailable",
         ...(extractionError ? { error: extractionError } : {}),
+        ...(translationError ? { translationError } : {}),
         ...(originalText ? { extracted: textPath } : {}),
         ...(result?.changed ? { translation: translatedPath } : {}),
       }));

@@ -48,3 +48,34 @@ test("keeps same-language sources without a redundant translation and records un
   assert.equal([...uploads[0]!.keys()].some((path) => path.endsWith("translated.txt")), false);
   assert.equal(manifest(uploads[1]!).status, "extraction_unavailable");
 });
+
+test("keeps a source untranslated when its translation times out", async () => {
+  const files = new Map<string, Uint8Array | string>();
+  const url = "https://example.test/long.txt";
+  await saveContributedSources("case", [event(url)], "es", {
+    download: async () => ({ ok: true, bytes: new TextEncoder().encode("Long English text"), contentType: "text/plain", finalUrl: url, redirects: 0 }),
+    translate: async () => { throw new DOMException("The operation was aborted due to timeout", "TimeoutError"); },
+    write: async (_id, items) => { for (const [path, content] of items) files.set(path, content); },
+  });
+  const find = (suffix: string) => [...files].find(([path]) => path.endsWith(suffix))?.[1];
+  assert.equal(find("extracted.txt"), "Long English text");
+  assert.equal(find("translated.txt"), undefined);
+  const manifest = JSON.parse(find("source.json") as string);
+  assert.equal(manifest.status, "translation_failed");
+  assert.equal(manifest.translationError, "The operation was aborted due to timeout");
+});
+
+test("writes a retried step to the same paths", async () => {
+  const run = async () => {
+    const paths: string[] = [];
+    await saveContributedSources("case", [event("https://example.test/a.txt"), event("https://example.test/b.txt")], "es", {
+      download: async () => ({ ok: false, error: "HTTP 403" }),
+      translate: async () => { throw new Error("unexpected translation"); },
+      write: async (_id, items) => { paths.push(...items.keys()); },
+    });
+    return paths;
+  };
+  const first = await run();
+  assert.equal(first.length, 2);
+  assert.deepEqual(await run(), first);
+});
