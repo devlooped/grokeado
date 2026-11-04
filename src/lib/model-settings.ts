@@ -32,6 +32,7 @@ export function parseModelSettings(form: FormData, current: ModelConfig, catalog
       continue;
     }
     if (!MODEL_ID.test(modelId)) { errors[role.key] = "Usá un ID de AI Gateway, como proveedor/modelo."; continue; }
+    if (role.provider && !modelId.startsWith(role.provider + "/")) { errors[role.key] = "Este rol solo admite modelos de " + role.provider + "."; continue; }
     if (effort && !EFFORT.test(effort)) { errors[role.key] = "Esfuerzo no válido."; continue; }
     const entry = catalog?.find((model) => model.id === modelId);
     if (catalog && !entry) { errors[role.key] = modelId + " no está en el catálogo de AI Gateway."; continue; }

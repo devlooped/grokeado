@@ -18,6 +18,7 @@ test("defaults keep the models that were hardcoded before they became configurab
   assert.deepEqual(COUNSEL_MODELS.claude, { id: "anthropic/claude-opus-5.5", providerOptions: { anthropic: { effort: "high" } } });
   assert.deepEqual(COUNSEL_MODELS.chatgpt, { id: "openai/gpt-6.1-sol", providerOptions: { openai: { reasoningEffort: "high" } } });
   assert.deepEqual(DEFAULT_MODELS["cover.chooser"], { id: "spacexai/grok-4.7" });
+  assert.deepEqual(DEFAULT_MODELS["research.x"], { id: "spacexai/grok-4.7" });
   assert.deepEqual(DEFAULT_MODELS["cover.image"], { id: "spacexai/grok-imagine-image-2.0" });
   assert.equal(DEFAULT_MODELS["tier.claude.comparison"].id, "anthropic/claude-sonnet-5.5");
 });

@@ -24,7 +24,7 @@ const admitted: CourtEvent[] = [...unified, ...sources.map((s): CourtEvent => ({
 
 function runMock(spec: TurnSpec, record: readonly CourtEvent[], input = submission) {
   return conductTurn({ submission: input, today: "hoy", simulated: true }, spec, record, 0, async ({ prompt, tools, done }) =>
-    runSeat({ model: { id: "unused-live-provider" }, research: spec.kind === "instruction", prompt, tools, done, mock: { spec, record, submission: input } }));
+    runSeat({ model: { id: "unused-live-provider" }, xResearcher: { id: "unused-live-provider" }, research: spec.kind === "instruction", prompt, tools, done, mock: { spec, record, submission: input } }));
 }
 
 test("mock mode is explicit, defaults to live, and rejects a misspelled mode", (t) => {
@@ -53,7 +53,7 @@ test("mock instruction exercises searches in both directions and court schema va
   const mock = createMockSeat({ spec, record: [claims], submission }, true);
   const outcome = await conductTurn({ submission, today: "hoy" }, spec, [claims], 0, async ({ prompt, tools, done }) => {
     // Inject the scripted provider, retaining simulated research implementations.
-    await runSeat({ model: { id: "unused-live-provider" }, research: true, prompt, tools, done, mock: { spec, record: [claims], submission } }, mock.model);
+    await runSeat({ model: { id: "unused-live-provider" }, xResearcher: { id: "unused-live-provider" }, research: true, prompt, tools, done, mock: { spec, record: [claims], submission } }, mock.model);
   });
   assert.equal(outcome.done, true);
   const filed = outcome.events.flatMap((e) => e.type === "evidence_filed" ? [e.evidence] : []);

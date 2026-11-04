@@ -30,6 +30,7 @@ export async function playTurn(
     await runSeat({
       model: seatModel(models, seat),
       research: spec.kind === "instruction",
+      xResearcher: models["research.x"],
       prompt,
       tools,
       done,

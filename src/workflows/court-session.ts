@@ -1,4 +1,4 @@
-import { illustrateCase, liveCoverDeps } from "../court/cover.ts";
+import { illustrateCase, liveCoverDeps, type CoverModels } from "../court/cover.ts";
 import { loadModels } from "../court/model-config.ts";
 import { counselModels, DEFAULT_MODELS, MOCK_MODEL_ID, modelEffort, seatModel, type CourtModel, type ModelConfig } from "../court/models.ts";
 import { playTurn } from "../court/play.ts";
@@ -49,7 +49,7 @@ async function archive(caseId: string): Promise<void> {
 }
 
 // A missing cover never fails a case: the home page shows a placeholder instead.
-async function illustrate(caseId: string, simulated: boolean, models: Pick<ModelConfig, "cover.chooser" | "cover.check" | "cover.image">): Promise<void> {
+async function illustrate(caseId: string, simulated: boolean, models: CoverModels): Promise<void> {
   "use step";
   if (simulated) return;
   try {

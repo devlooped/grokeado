@@ -51,6 +51,14 @@ test("rejects unknown models, wrong kinds, missing capabilities and unsupported 
   assert.match(result.errors.language!, /proveedor\/modelo/);
 });
 
+test("x_search's researcher only takes Grok models, since native X search exists only there", () => {
+  const rejected = parseModelSettings(form({ [modelField("research.x")]: "openai/gpt-6-luna" }), DEFAULT_MODELS, catalog);
+  assert.equal(rejected.ok, false);
+  if (!rejected.ok) assert.match(rejected.errors["research.x"]!, /spacexai/);
+  const accepted = parseModelSettings(form({ [modelField("research.x")]: "spacexai/grok-4.7", [effortField("research.x")]: "low" }), DEFAULT_MODELS, catalog);
+  assert.deepEqual(accepted, { ok: true, changes: [{ role: "research.x", setting: { modelId: "spacexai/grok-4.7", effort: "low" } }] });
+});
+
 test("without a catalog only the ID format is checked, and image roles ignore effort", () => {
   const result = parseModelSettings(form({ [modelField("cover.image")]: "google/imagen-9", [effortField("cover.image")]: "high" }), DEFAULT_MODELS);
   assert.deepEqual(result, { ok: true, changes: [{ role: "cover.image", setting: { modelId: "google/imagen-9", effort: null } }] });

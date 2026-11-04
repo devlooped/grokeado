@@ -42,6 +42,7 @@ export type ModelRole =
   | "image.description"
   | "language"
   | "translator"
+  | "research.x"
   | "cover.chooser"
   | "cover.check"
   | "cover.image"
@@ -61,6 +62,8 @@ export interface ModelRoleDefinition {
   configurableEffort: boolean;
   // Gateway catalog tags the role relies on.
   requires: readonly string[];
+  // The only provider whose models can fill the role, when a tool of the role is native to one.
+  provider?: string;
 }
 
 const SEAT = ["tool-use", "vision"] as const;
@@ -86,7 +89,9 @@ export const MODEL_ROLES: readonly ModelRoleDefinition[] = [
   { key: "image.description", group: "Soporte", label: "Descripción de imágenes", description: "Describe y transcribe una sola vez la imagen enviada; el panel trabaja con esa descripción en lugar de la imagen.", kind: "language", defaultId: "openai/gpt-6.1-terra", defaultEffort: "high", configurableEffort: true, requires: ["structured-output", "vision"] },
   { key: "language", group: "Soporte", label: "Detección de idioma", description: "Identifica el idioma del material enviado, incluidas imágenes sin descripción.", kind: "language", defaultId: "anthropic/claude-haiku-5.5", defaultEffort: null, configurableEffort: true, requires: ["structured-output", "vision"] },
   { key: "translator", group: "Soporte", label: "Traductor", description: "Traduce las fuentes descargadas y la evidencia promovida al idioma del caso.", kind: "language", defaultId: "google/gemini-3.5-flash-lite", defaultEffort: null, configurableEffort: true, requires: ["structured-output"] },
-  { key: "cover.chooser", group: "Soporte", label: "Portada: búsqueda", description: "Busca una imagen real para la portada o propone la ilustración. Usa x_search, que solo existe en Grok.", kind: "language", defaultId: "spacexai/grok-4.7", defaultEffort: null, configurableEffort: true, requires: SEAT },
+  // x_search is native to Grok: the analysts and the cover chooser call it through this researcher, whatever their own model.
+  { key: "research.x", group: "Soporte", label: "Búsqueda en X", description: "Investiga en X cuando un analista o la búsqueda de portada usan x_search. La búsqueda nativa en X solo existe en Grok.", kind: "language", defaultId: "spacexai/grok-4.7", defaultEffort: null, configurableEffort: true, requires: ["tool-use"], provider: "spacexai" },
+  { key: "cover.chooser", group: "Soporte", label: "Portada: búsqueda", description: "Busca una imagen real para la portada o propone la ilustración.", kind: "language", defaultId: "spacexai/grok-4.7", defaultEffort: null, configurableEffort: true, requires: SEAT },
   { key: "cover.check", group: "Soporte", label: "Portada: revisión", description: "Mira la imagen real encontrada y la aprueba antes de usarla como portada.", kind: "language", defaultId: "anthropic/claude-haiku-5.5", defaultEffort: null, configurableEffort: true, requires: ["vision"] },
   { key: "cover.image", group: "Soporte", label: "Portada: ilustración", description: "Genera la ilustración cuando no hay una imagen real adecuada.", kind: "image", defaultId: "spacexai/grok-imagine-image-2.0", defaultEffort: null, configurableEffort: false, requires: [] },
   ...(Object.keys(TIER_DEFAULTS) as Counsel[]).flatMap((by) => TIERS.map((tier): ModelRoleDefinition => ({

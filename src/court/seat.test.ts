@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { MockLanguageModelV4 } from "ai/test";
 import { z } from "zod";
-import { JUDGE_MODEL } from "./models.ts";
+import { DEFAULT_MODELS, JUDGE_MODEL } from "./models.ts";
+
+const xResearcher = DEFAULT_MODELS["research.x"];
 import { runSeat } from "./seat.ts";
 import { Rejection, tool } from "./toolset.ts";
 import { conductTurn } from "./turns.ts";
@@ -29,6 +31,7 @@ test("the AI tool loop returns validation and court rejections to the model, the
   await runSeat({
     model: JUDGE_MODEL,
     research: false,
+    xResearcher,
     prompt: "Record exactly one item.",
     done: () => committed === 1,
     tools: { record: tool("Record an item", z.object({ amount: z.number() }), ({ amount }) => {
@@ -50,7 +53,7 @@ test("an image submission is sent as binary image input and the judge can enter 
   const model = new MockLanguageModelV4({ doGenerate: call("enter_claims", { claims: [{ quote: "", text: "Córdoba tiene más habitantes que CABA." }] }) });
   const image = new Uint8Array([137, 80, 78, 71]);
   const outcome = await conductTurn({ submission: { kind: "image", mimeType: "image/png" }, today: "30 de octubre de 2026" }, { kind: "intake" }, [], 0,
-    async ({ prompt, tools, done }) => runSeat({ model: JUDGE_MODEL, research: false, prompt, tools, done, images: [{ data: image, mimeType: "image/png" }] }, model));
+    async ({ prompt, tools, done }) => runSeat({ model: JUDGE_MODEL, xResearcher, research: false, prompt, tools, done, images: [{ data: image, mimeType: "image/png" }] }, model));
   assert(outcome.done);
   assert.equal(outcome.events[0]?.type, "claims_entered");
   const content = model.doGenerateCalls[0].prompt[0].content;
@@ -65,7 +68,7 @@ test("an unfinished agent cannot loop past the seat generation limit", async () 
   let calls = 0;
   const model = new MockLanguageModelV4({ doGenerate: async () => call("again", {}, "call-" + calls++) });
   await runSeat({
-    model: JUDGE_MODEL, research: true, prompt: "Continue", done: () => false,
+    model: JUDGE_MODEL, xResearcher, research: true, prompt: "Continue", done: () => false,
     tools: { again: tool("Continue", z.object({}), () => "Continue") },
   }, model);
   assert.equal(calls, 20);
@@ -75,7 +78,7 @@ test("an unfinished agent cannot loop past the seat generation limit", async () 
 test("a failed provider call leaves a turn unfinished so the court can retry it", async () => {
   const model = new MockLanguageModelV4({ doGenerate: async () => { throw new Error("Gateway unavailable"); } });
   const outcome = await conductTurn({ submission: { kind: "text", text: "Una afirmación verificable para analizar." }, today: "hoy" }, { kind: "intake" }, [], 0,
-    async ({ prompt, tools, done }) => runSeat({ model: JUDGE_MODEL, research: false, prompt, tools, done }, model));
+    async ({ prompt, tools, done }) => runSeat({ model: JUDGE_MODEL, xResearcher, research: false, prompt, tools, done }, model));
   assert.equal(outcome.done, false);
   assert.deepEqual(outcome.events, []);
 });
@@ -89,7 +92,7 @@ test("instruction keeps collecting evidence until the analyst explicitly complet
   ] });
   const outcome = await conductTurn({ submission: { kind: "text", text: "Córdoba tiene más habitantes que CABA." }, today: "hoy" }, { kind: "instruction", counsel: "grok" }, [
     { type: "claims_entered", claims: [{ id: "A1", quote: "", text: "Córdoba tiene más habitantes que CABA." }] },
-  ], 0, async ({ prompt, tools, done }) => runSeat({ model: JUDGE_MODEL, research: true, prompt, tools, done }, model));
+  ], 0, async ({ prompt, tools, done }) => runSeat({ model: JUDGE_MODEL, xResearcher, research: true, prompt, tools, done }, model));
   assert(outcome.done);
   assert.equal(outcome.events.filter((e) => e.type === "evidence_filed").length, 2);
   assert.equal(model.doGenerateCalls.length, 3);
@@ -102,7 +105,7 @@ test("captures complete research tool calls and results without capturing court 
   const record = [{ type: "claims_entered" as const, claims: [{ id: "A1", quote: "", text: submission.text }] }];
   const steps: Array<{ stepNumber: number; content: unknown[] }> = [];
   const outcome = await conductTurn({ submission, today: "hoy", simulated: true }, spec, record, 0,
-    async ({ prompt, tools, done }) => runSeat({ model: JUDGE_MODEL, research: true, prompt, tools, done, mock: { spec, record, submission }, onResearchStep: (step) => steps.push(step) }));
+    async ({ prompt, tools, done }) => runSeat({ model: JUDGE_MODEL, xResearcher, research: true, prompt, tools, done, mock: { spec, record, submission }, onResearchStep: (step) => steps.push(step) }));
   assert.equal(outcome.done, true);
   const content = JSON.stringify(steps);
   assert.match(content, /web_search/);
@@ -120,7 +123,7 @@ test("retains completed research steps if a later model call fails", async () =>
     if (calls++ === 0) return call("web_fetch", { url: "https://example.test/article" });
     throw new Error("Gateway unavailable");
   } });
-  await assert.rejects(runSeat({ model: JUDGE_MODEL, research: true, prompt: "Investigá", tools: {},
+  await assert.rejects(runSeat({ model: JUDGE_MODEL, xResearcher, research: true, prompt: "Investigá", tools: {},
     mock: { spec, record: [], submission }, onResearchStep: (step) => steps.push(step) }, model), /Gateway unavailable/);
   assert.match(JSON.stringify(steps), /Documento de prueba con aportes/);
 });
@@ -135,6 +138,6 @@ test("captures research executed by the gateway provider", async () => {
       { type: "tool-result", toolCallId: "fetch-1", toolName: "web_fetch", result: { content: "Texto devuelto por el proveedor" } },
     ],
   } });
-  await runSeat({ model: JUDGE_MODEL, research: false, prompt: "Leé", tools: {}, onResearchStep: (step) => steps.push(step) }, model);
+  await runSeat({ model: JUDGE_MODEL, xResearcher, research: false, prompt: "Leé", tools: {}, onResearchStep: (step) => steps.push(step) }, model);
   assert.match(JSON.stringify(steps), /Texto devuelto por el proveedor/);
 });

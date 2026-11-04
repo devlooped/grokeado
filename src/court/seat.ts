@@ -12,6 +12,8 @@ export interface SeatImage {
 export interface SeatRun {
   model: CourtModel;
   research: boolean;
+  // The research.x role, which runs x_search for any seat.
+  xResearcher: CourtModel;
   prompt: string;
   tools: Toolset;
   done?(): boolean;
@@ -34,7 +36,7 @@ export async function runSeat(run: SeatRun, model?: LanguageModel): Promise<void
         ...(run.images ?? []).map((image) => ({ type: "file" as const, data: image.data, mediaType: image.mimeType })),
       ],
     }],
-    tools: { ...(mock?.research ?? researchTools(run.research)), ...toAiTools(run.tools) },
+    tools: { ...(mock?.research ?? researchTools(run.research, run.xResearcher)), ...toAiTools(run.tools) },
     onStepEnd: ({ stepNumber, content }) => {
       const research = content.filter((part) =>
         (part.type === "tool-call" || part.type === "tool-result" || part.type === "tool-error") &&
