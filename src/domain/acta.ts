@@ -1,4 +1,4 @@
-import { COUNSEL, JUDGE, MODEL_NAME, project, type CaseRecord, type CourtEvent, type Stage, type Submission, type Verdict } from "./court.ts";
+import { COUNSEL, JUDGE, MODEL_NAME, project, type CaseRecord, type CaseView, type CourtEvent, type Stage, type Submission, type Verdict } from "./court.ts";
 
 export function submissionExcerpt(s: Submission): string {
   if (s.kind === "text") return s.text;
@@ -25,6 +25,13 @@ export const VERDICT_THUMB: Record<Verdict, string> = {
   no_verificable: "❓",
   enganoso: "⚠️",
 };
+
+// The case at a glance: one verdict when every judged claim agrees, "mixto" when they differ.
+export function caseOutcome(view: Pick<CaseView, "claims">): Verdict | "mixto" | undefined {
+  const verdicts = new Set(view.claims.flatMap((c) => (c.judgment ? [c.judgment.verdict] : [])));
+  if (verdicts.size === 0) return undefined;
+  return verdicts.size === 1 ? [...verdicts][0] : "mixto";
+}
 
 export function caseShareMetadata(c: CaseRecord, events: readonly CourtEvent[] = []): { title: string; description: string } {
   const title = "Caso Nº " + c.id + " · CheBot";

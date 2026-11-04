@@ -38,7 +38,7 @@ test("source cards show each reliability vote and decision once, without repeate
       { id: "S2", url: "https://example.org/2", title: "Fuente admitida", contributions: [] },
     ] },
     ...["S1", "S2"].flatMap((sourceId) => COUNSEL.map((by, i): CourtEvent => ({
-      type: "source_review_vote", by, sourceId, veto: sourceId === "S1" && i < 3, reason: "Fundamento único " + sourceId + " " + by,
+      type: "source_review_vote", by, sourceId, veto: sourceId === "S1" && i < 3, reason: "Fundamento único " + sourceId.toLowerCase() + " " + by,
     }))),
     { type: "source_decided", sourceId: "S1", excluded: true },
     { type: "source_decided", sourceId: "S2", excluded: false },
@@ -49,9 +49,9 @@ test("source cards show each reliability vote and decision once, without repeate
   const { document } = parseHTML(html);
   for (const sourceId of ["S1", "S2"]) {
     const card = document.getElementById(sourceId)!;
-    assert.ok(card.querySelector("details summary")?.textContent.includes("Votos y fundamentos sobre la confiabilidad"));
+    assert.ok([...card.querySelectorAll("summary")].some((s) => s.textContent.includes("Votos y fundamentos sobre la confiabilidad")));
     for (const by of COUNSEL) {
-      const reason = "Fundamento único " + sourceId + " " + by;
+      const reason = "Fundamento único " + sourceId.toLowerCase() + " " + by;
       assert.equal(html.split(reason).length - 1, 1, reason);
       assert.ok(card.textContent.includes(reason));
     }
@@ -60,7 +60,7 @@ test("source cards show each reliability vote and decision once, without repeate
   assert.ok(document.getElementById("S2")!.textContent.includes("Admitida"));
   assert.ok(!html.includes("anulada por mayoría (al menos 3 de 4 votos)"));
   assert.ok(!html.includes("admitida; no hubo mayoría para anularla"));
-  assert.equal(document.querySelector("ol")!.children.length, 3, "no empty list entries for the suppressed events");
+  assert.equal(document.querySelectorAll("[data-acta] ol > li").length, 3, "no empty list entries for the suppressed events");
   assert.ok(html.includes("Voto sobre la afirmación."), "claim votes remain in the acta");
 });
 
@@ -88,6 +88,72 @@ test("historical evidence without instruction or stance remains visible and keep
   assert.ok(html.includes('href="#P1"'));
   assert.ok(html.includes("Documento histórico"));
   assert.ok(!html.includes("Anulada"));
+});
+
+test("citations mentioned in an intervention link inline, and only the unmentioned ones remain listed", () => {
+  const html = render([
+    { type: "evidence_unified", sources: ["S1", "S2", "S10"].map((id) => ({ id, url: "https://example.org/" + id, title: "Fuente " + id, contributions: [] })) },
+    { type: "statement", id: "I1", by: "grok", stage: "opening", text: "La salida está probada (S1, S10). Sin orden de prisión, A1 no se sostiene.", evidenceIds: ["S1", "S10", "S2"] },
+    { type: "objection", id: "O1", by: "gemini", against: "I1", grounds: "S10 no dice lo que I1 le atribuye." },
+  ]);
+  const { document } = parseHTML(html);
+  const statement = document.getElementById("I1")!;
+  const text = statement.querySelector("p")!;
+  assert.deepEqual([...text.querySelectorAll("a")].map((a) => a.getAttribute("href")), ["#S1", "#S10"]);
+  assert.ok(text.textContent.includes("(S1, S10)"), "the text reads unchanged around its links");
+  assert.ok(!text.innerHTML.includes('href="#A1"'), "claims are not citations");
+  const rest = [...statement.querySelectorAll("p")].at(-1)!;
+  assert.ok(rest.textContent.startsWith("También cita"));
+  assert.deepEqual([...rest.querySelectorAll("a")].map((a) => a.getAttribute("href")), ["#S2"]);
+  assert.ok(!html.includes("Cita:"));
+  const objection = document.getElementById("O1")!;
+  assert.deepEqual([...objection.querySelectorAll("a")].map((a) => a.getAttribute("href")), ["#I1", "#S10", "#I1"]);
+});
+
+test("the acta folds into stages, each analyst's instruction run up to its close, and debate turns", () => {
+  const evidence = (id: string, by: "grok" | "gemini"): CourtEvent => ({ type: "evidence_filed", evidence: { id, by, claimId: "A1", title: "Doc " + id, url: "https://example.org/" + id, excerpt: "Dato concreto de " + id + ".", stance: "supports" } });
+  const html = render([
+    { type: "claims_entered", claims: [{ id: "A1", quote: "", text: "Afirmación." }] },
+    { type: "instruction_opened" },
+    evidence("P1", "grok"), evidence("P2", "grok"),
+    { type: "instruction_completed", by: "grok", searches: [{ claimId: "A1", supporting: "a favor", opposing: "en contra" }] },
+    evidence("P3", "gemini"),
+    { type: "instruction_completed", by: "gemini", searches: [] },
+    { type: "evidence_unified", sources: [] },
+    { type: "instruction_closed" },
+    { type: "floor_granted", to: "grok", stage: "opening" },
+    { type: "statement", id: "I1", by: "grok", stage: "opening", text: "Mi exposición sobre la afirmación.", evidenceIds: [] },
+    { type: "objection", id: "O1", by: "gemini", against: "I1", grounds: "Sin respaldo." },
+    { type: "objection_reply", by: "grok", objectionId: "O1", text: "Lo tiene." },
+    { type: "ruling", objectionId: "O1", sustained: false, reason: "Tiene respaldo." },
+    { type: "floor_granted", to: "gemini", stage: "closing" },
+    { type: "statement", id: "I2", by: "gemini", stage: "closing", text: "Mi conclusión sobre la afirmación.", evidenceIds: [] },
+    { type: "vote", by: "gemini", claimId: "A1", verdict: "verdadero", rationale: "Probada." },
+    { type: "vote", by: "grok", claimId: "A1", verdict: "verdadero", rationale: "También probada." },
+    { type: "judgment", claimId: "A1", verdict: "verdadero", method: "consensus", reasoning: "" },
+    { type: "session_closed" },
+  ]);
+  const { document } = parseHTML(html);
+  const stages = [...document.querySelectorAll("[data-fold-scope=section] > details")];
+  assert.deepEqual(stages.map((d) => d.querySelector("h3")!.textContent), ["Apertura", "Instrucción", "Crítica de fuentes", "Exposiciones iniciales", "Conclusiones y votos", "Resultado"]);
+  assert.ok(stages.every((d) => d.hasAttribute("open")));
+  assert.equal(document.querySelectorAll("[data-acta] button[aria-label^='Expandir todo']").length, stages.length + 1, "one pair of controls per stage and one for the acta");
+
+  const runs = [...stages[1]!.querySelectorAll("details.fold")];
+  assert.equal(runs.length, 2, "one run per analyst");
+  assert.ok(runs[0]!.querySelector("summary")!.textContent.includes("Grok · aportes de pruebas · 2 pruebas"));
+  assert.ok(runs[0]!.querySelector("#P1") && runs[0]!.querySelector("#P2") && !runs[0]!.querySelector("#P3"));
+  assert.ok(runs[0]!.textContent.includes("Grok cierra sus aportes"), "the run ends with its close");
+  assert.ok(runs[1]!.querySelector("#P3") && runs[1]!.textContent.includes("Gemini cierra sus aportes"));
+
+  const turn = stages[3]!.querySelector("details.fold")!;
+  assert.ok(turn.querySelector("summary")!.textContent.includes("Grok · exposición inicial · I1"));
+  assert.ok(turn.querySelector("#I1") && turn.querySelector("#O1") && turn.textContent.includes("Lo tiene.") && turn.textContent.includes("Objeción rechazada"));
+  const closing = stages[4]!;
+  const closingTurn = closing.querySelector("details.fold")!;
+  assert.ok(closingTurn.textContent.includes("Probada."), "the speaker's vote stays in their turn");
+  assert.ok(!closingTurn.textContent.includes("También probada."), "another analyst's vote does not");
+  assert.ok(closing.textContent.includes("También probada."));
 });
 
 test("the stored simulation flag labels the acta independently of the current AI mode", () => {

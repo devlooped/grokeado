@@ -1,11 +1,50 @@
 import { VERDICT_LABEL } from "@/domain/acta.ts";
-import { COUNSEL, JUDGE, MODEL_NAME, type CaseRecord, type CaseView, type ClaimView } from "@/domain/court.ts";
-import { GavelIcon, JudgeSeal, VERDICT_TEXT, VoteChip } from "./marks.tsx";
+import { COUNSEL, JUDGE, MODEL_NAME, type CaseRecord, type CaseView, type ClaimView, type RecordedEvent } from "@/domain/court.ts";
+import { Cited, citationRefs, type Citations } from "./citations.tsx";
+import { GavelIcon, JudgeSeal, VERDICT_TEXT, VerdictDot, VoteChip } from "./marks.tsx";
 import { VoteRationaleNavigation } from "./vote-rationale-navigation.tsx";
 
-const voteId = (claimId: string, counsel: string) => "voto-" + claimId + "-" + counsel;
+export const voteId = (claimId: string, counsel: string) => "voto-" + claimId + "-" + counsel;
+export const reasonsId = (claimId: string) => "fundamentos-" + claimId;
+
+// The mark after each quoted claim: its conclusion, linked to the claim with its reasons expanded.
+// Hovering or focusing it shows each analyst's vote, linked to that analyst's own reason.
+function ClaimMark({ claim }: { claim: ClaimView }) {
+  const j = claim.judgment;
+  const voted = COUNSEL.some((c) => claim.votes[c]);
+  const label = "Afirmación " + claim.id + (j ? ": " + VERDICT_LABEL[j.verdict] + (j.method === "judge" ? " (desempate del moderador)" : "") : "") + ". Ver fundamentos";
+  return (
+    <span className="group/claim relative ml-1.5 inline-block align-middle">
+      <a
+        href={"#" + reasonsId(claim.id)}
+        title={label}
+        aria-label={label}
+        className="inline-flex items-center gap-1 rounded-full border border-rule bg-paper py-0.5 pr-2 pl-0.5 font-mono text-[11px] leading-none font-medium text-ink-soft no-underline shadow-sm transition hover:border-ink-soft hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-celeste-deep"
+      >
+        {j ? <VerdictDot verdict={j.verdict} /> : <span className="size-4" aria-hidden />}
+        {j?.method === "judge" && <GavelIcon className="size-3 text-seal" />}
+        {claim.id}
+      </a>
+      {voted && (
+        <span className="invisible absolute bottom-full left-1/2 z-20 -translate-x-1/2 pb-2 opacity-0 transition group-focus-within/claim:visible group-focus-within/claim:opacity-100 group-hover/claim:visible group-hover/claim:opacity-100">
+          <span role="group" aria-label={"Votos de los analistas sobre " + claim.id} className="flex gap-1.5 whitespace-nowrap rounded-sm border border-rule bg-paper p-1.5 shadow-md">
+            {COUNSEL.map((c) => claim.votes[c] ? (
+              <a key={c} href={"#" + voteId(claim.id, c)} aria-label={"Ver fundamento de " + MODEL_NAME[c] + ": " + VERDICT_LABEL[claim.votes[c].verdict]} className="rounded-full transition hover:-translate-y-0.5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-celeste-deep">
+                <VoteChip model={c} verdict={claim.votes[c].verdict} size="sm" />
+              </a>
+            ) : <VoteChip key={c} model={c} size="sm" />)}
+          </span>
+        </span>
+      )}
+    </span>
+  );
+}
+
+const bare = (s: string) => s.trim().replace(/[\s.!?…"'«»“”]+$/u, "").replace(/^[\s"'«»“”]+/u, "");
 
 function Highlighted({ text, claims }: { text: string; claims: ClaimView[] }) {
+  // A claim that quotes the whole content only gets its mark: underlining everything adds nothing.
+  const whole = claims.length === 1 && claims[0]!.quote && bare(claims[0]!.quote) === bare(text);
   const marks = claims
     .map((c) => ({ claim: c, start: c.quote ? text.indexOf(c.quote) : -1, length: c.quote.length }))
     .filter((m) => m.start >= 0 && m.length > 0)
@@ -17,21 +56,8 @@ function Highlighted({ text, claims }: { text: string; claims: ClaimView[] }) {
     parts.push(text.slice(at, start));
     parts.push(
       <span key={claim.id}>
-        <mark className="cita">{text.slice(start, start + length)}</mark>
-        <span className="ml-1.5 inline-flex flex-wrap items-center gap-1.5 align-middle">
-          <a
-            href={"#" + claim.id}
-            title={"Afirmación " + claim.id}
-            className="inline-block rounded-sm border border-celeste/40 bg-celeste/15 px-1 py-0.5 font-mono text-[10px] leading-none font-medium text-celeste-deep no-underline transition hover:border-celeste-deep hover:bg-celeste/25"
-          >
-            {claim.id}
-          </a>
-          {COUNSEL.map((c) => claim.votes[c] ? (
-            <a key={c} href={"#" + voteId(claim.id, c)} aria-label={"Ver fundamento de " + MODEL_NAME[c] + ": " + VERDICT_LABEL[claim.votes[c].verdict]} className="rounded-full focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-celeste-deep">
-              <VoteChip model={c} verdict={claim.votes[c].verdict} size="sm" />
-            </a>
-          ) : <VoteChip key={c} model={c} size="sm" />)}
-        </span>
+        {whole ? text.slice(start, start + length) : <mark className="cita" data-verdict={claim.judgment?.verdict}>{text.slice(start, start + length)}</mark>}
+        <ClaimMark claim={claim} />
       </span>
     );
     at = start + length;
@@ -43,12 +69,14 @@ function Highlighted({ text, claims }: { text: string; claims: ClaimView[] }) {
 function Original({ c, claims }: { c: CaseRecord; claims: ClaimView[] }) {
   const s = c.submission;
   return (
-    <figure className="rounded-sm border border-rule bg-paper-deep/40 px-5 py-4 sm:px-6 sm:py-5">
-      <figcaption className="mb-2.5 flex items-center gap-2 font-mono text-[11px] uppercase tracking-widest text-ink-soft">
+    <figure className="border-y border-rule py-6 pl-7 sm:py-8 sm:pl-9">
+      <figcaption className="mb-2 flex items-center gap-2 font-mono text-[11px] uppercase tracking-widest text-ink-soft">
         <span>Contenido</span>
       </figcaption>
       {s.kind === "text" && (
-        <blockquote className="whitespace-pre-line border-l-2 border-celeste/50 pl-4 font-display text-xl leading-relaxed sm:text-2xl">
+        <blockquote className="whitespace-pre-line font-display text-2xl leading-snug sm:text-3xl">
+          {/* Hanging guillemet: the text keeps its left edge. */}
+          <span aria-hidden className="-ml-[0.6em] inline-block w-[0.6em] text-celeste select-none">«</span>
           <Highlighted text={s.text} claims={claims} />
         </blockquote>
       )}
@@ -75,7 +103,7 @@ function ClaimCard({ claim }: { claim: ClaimView }) {
         <p className="font-mono text-xs text-ink-soft">{claim.id}</p>
         <h3 className="mt-1 font-display text-2xl leading-snug">{claim.text}</h3>
         {claim.quote && <p className="mt-1 text-sm italic text-ink-soft">«{claim.quote}»</p>}
-        <details className="group mt-3 text-sm">
+        <details id={reasonsId(claim.id)} className="group mt-3 text-sm">
           <summary className="cursor-pointer select-none text-celeste-deep hover:underline">Fundamentos de cada voto</summary>
           <ul className="mt-2 space-y-2">
             {COUNSEL.map((c) => (
@@ -122,7 +150,11 @@ function ClaimCard({ claim }: { claim: ClaimView }) {
   );
 }
 
-export function CaseResult({ c, view }: { c: CaseRecord; view: CaseView }) {
+export function CaseResult({ c, view, events = [] }: { c: CaseRecord; view: CaseView; events?: readonly RecordedEvent[] }) {
+  // The summary links what it mentions: the claims to their cards, the rest to the record below.
+  const refs = citationRefs(events, view);
+  for (const claim of view.claims) refs.set(claim.id, "#" + claim.id);
+  const citations: Citations = { caseId: c.id, refs };
   return (
     <>
       <VoteRationaleNavigation />
@@ -138,7 +170,7 @@ export function CaseResult({ c, view }: { c: CaseRecord; view: CaseView }) {
             <section className="mt-6">
               <h2 className="font-display text-3xl">Resumen del caso</h2>
               <p className="mt-1 text-xs text-ink-soft">Por el moderador ({MODEL_NAME[JUDGE]})</p>
-              <p className="mt-3 whitespace-pre-line leading-relaxed">{view.summary}</p>
+              <p className="mt-3 whitespace-pre-line leading-relaxed"><Cited text={view.summary} ctx={citations} /></p>
             </section>
           )}
           <section className="mt-4">

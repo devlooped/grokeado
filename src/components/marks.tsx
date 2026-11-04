@@ -79,6 +79,14 @@ export function VerdictGlyph({ verdict, className = "size-3" }: { verdict: Verdi
   );
 }
 
+export function VerdictDot({ verdict, className = "size-4" }: { verdict: Verdict; className?: string }) {
+  return (
+    <span className={"grid shrink-0 place-items-center rounded-full " + verdictGlyphColor(verdict) + " " + VERDICT_COLOR[verdict] + " " + className}>
+      <VerdictGlyph verdict={verdict} className="size-2.5" />
+    </span>
+  );
+}
+
 export function VoteChip({ model, verdict, size = "md" }: { model: Counsel; verdict?: Verdict; size?: "sm" | "md" }) {
   const label = MODEL_NAME[model] + ": " + (verdict ? VERDICT_LABEL[verdict] : "no votó");
   return (

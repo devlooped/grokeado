@@ -88,7 +88,7 @@ export default async function CasePage(props: PageProps<"/caso/[id]">) {
 
       {simulated && <p role="status" className="mt-4 rounded-sm border border-seal/40 bg-seal/5 p-4 text-sm text-seal">Simulación local: las fuentes, respuestas y el resultado son ficticios y solo sirven para probar el flujo.</p>}
 
-      <CaseResult c={c} view={view} />
+      <CaseResult c={c} view={view} events={events} />
 
       <section className="mt-16">
         <div className="rule-double pt-4">

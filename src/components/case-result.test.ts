@@ -38,11 +38,55 @@ test("the moderator summary follows the content and precedes the claims and thei
   assert.ok(html.includes("Fundamentos de cada voto"));
 });
 
-test("each compact vote links to that analyst's own reason, while an absence is not a link", () => {
+test("the summary links the claims, sources and interventions it mentions", () => {
+  const record: CourtEvent[] = [
+    events[0]!,
+    { type: "evidence_unified", sources: [{ id: "S1", url: "https://example.org/1", title: "Fuente", contributions: [] }] },
+    { type: "statement", id: "I3", by: "claude", stage: "rebuttal", text: "Réplica con su fundamento.", evidenceIds: ["S1"] },
+    { type: "case_summary", text: "A1 es falsa según la PF (S1); Claude lo precisó en I3. S9 no existe." },
+  ];
+  const recorded = record.map((e, i) => ({ ...e, seq: i + 1, at: c.createdAt }));
+  const { document } = parseHTML(renderToStaticMarkup(createElement(CaseResult, { c, view: project(recorded), events: recorded })));
+  const summary = [...document.querySelectorAll("section p")].find((p) => p.textContent.includes("según la PF"))!;
+  assert.deepEqual([...summary.querySelectorAll("a")].map((a) => a.getAttribute("href")), ["#A1", "#S1", "#I3"]);
+  assert.ok(summary.textContent.includes("S9 no existe."), "unknown ids stay as text");
+});
+
+test("each quoted claim shows its conclusion, linked to the claim's reasons", () => {
   const { document } = parseHTML(render(events));
   const quote = document.querySelector("blockquote")!;
-  assert.equal(quote.querySelectorAll('a[href="#A1"]').length, 1);
-  assert.equal(quote.querySelectorAll('a[href="#A2"]').length, 1);
+  for (const [id, verdict, label] of [["A1", "falso", "Falso"], ["A2", "insostenible", "Insostenible"]]) {
+    const links = quote.querySelectorAll('a[href="#fundamentos-' + id + '"]');
+    assert.equal(links.length, 1, id);
+    assert.ok(links[0].querySelector(".bg-" + verdict), id + " shows the conclusion, not the votes");
+    assert.ok(!links[0].querySelector(".size-6"), id + " has no vote chips");
+    assert.match(links[0].getAttribute("aria-label") ?? "", new RegExp("Afirmación " + id + ": " + label));
+    const target = document.getElementById("fundamentos-" + id)!;
+    assert.equal(target.tagName, "DETAILS");
+    assert.equal(target.closest("article")?.id, id);
+  }
+  assert.ok(quote.querySelector('a[href="#fundamentos-A2"] svg.text-seal'), "a tiebreak shows the gavel");
+  assert.ok(!quote.querySelector('a[href="#fundamentos-A1"] svg.text-seal'));
+});
+
+test("partial quotes are underlined in their conclusion's color, while a quote of the whole content only gets its mark", () => {
+  const { document } = parseHTML(render(events));
+  assert.deepEqual([...document.querySelectorAll("blockquote mark.cita")].map((m) => m.getAttribute("data-verdict")), ["falso", "no_verificable"]);
+  const whole: CaseRecord = { ...c, submission: { kind: "text", text: "Única afirmación." } };
+  const single = parseHTML(render([
+    { type: "claims_entered", claims: [{ id: "A1", quote: "Única afirmación", text: "Única afirmación examinada" }] },
+    { type: "judgment", claimId: "A1", verdict: "falso", method: "consensus", reasoning: "" },
+  ], whole)).document;
+  const quote = single.querySelector("blockquote")!;
+  assert.ok(!quote.querySelector("mark"));
+  assert.ok(quote.textContent.includes("Única afirmación"));
+  assert.ok(quote.querySelector('a[href="#fundamentos-A1"]'));
+});
+
+test("the conclusion's tooltip links each compact vote to that analyst's own reason, while an absence is not a link", () => {
+  const { document } = parseHTML(render(events));
+  const quote = document.querySelector("blockquote")!;
+  assert.ok(quote.querySelector('[role="group"][aria-label="Votos de los analistas sobre A1"] a[href="#voto-A1-grok"]'));
   for (const by of COUNSEL) {
     const link = quote.querySelector('a[href="#voto-A1-' + by + '"]');
     const target = document.getElementById("voto-A1-" + by);

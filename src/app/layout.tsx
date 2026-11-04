@@ -11,7 +11,7 @@ const archivo = Archivo({ subsets: ["latin"], variable: "--font-archivo" });
 const plexMono = IBM_Plex_Mono({ subsets: ["latin"], weight: ["400", "500"], variable: "--font-plex-mono" });
 
 export const metadata: Metadata = {
-  title: "Che, bot, es cierto...?",
+  title: "Che bot, es cierto?",
   description: "Un panel de inteligencias artificiales investiga, debate y vota. Sin sesgos humanos.",
 };
 
@@ -31,11 +31,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <span className="fi fi-ar"></span>
             <div className="flex items-center gap-2">
               <UserClaimsBadge />
+              <Link href="/metodo" className="rounded-full border border-rule px-3 py-1.5 leading-none text-ink transition hover:bg-paper-deep">
+                Método
+              </Link>
               <ThemeToggle />
             </div>
           </div>
           <Link href="/" className="mt-2 block text-center">
-            <span className="font-display text-6xl leading-none tracking-tight sm:text-7xl">Che, bot, es cierto esto?</span>
+            <span className="font-display text-6xl leading-none tracking-tight sm:text-7xl">Che bot, es cierto?</span>
           </Link>
           <p className="mt-1 text-center font-display text-lg italic text-ink-soft">El panel debate. Un moderador desempata. Ningún humano opina.</p>
           <div className="rule-double mt-4" />

@@ -115,15 +115,57 @@ html[data-theme="dark"] .theme-icon-sun {
   opacity: 0.6;
 }
 
-mark.cita {
-  background: rgb(91 159 214 / 0.14);
-  color: inherit;
-  padding: 0.08em 0.28em;
-  border-radius: 3px;
-  text-decoration: underline;
-  text-decoration-color: rgb(91 159 214 / 0.55);
-  text-decoration-thickness: 1.5px;
-  text-underline-offset: 4px;
-  box-decoration-break: clone;
-  -webkit-box-decoration-break: clone;
+/* Folds of the acta: stages, analyst runs and source cards. */
+.fold-summary {
+  list-style: none;
 }
+
+.fold-summary::-webkit-details-marker {
+  display: none;
+}
+
+details.fold[open] > summary .fold-chevron {
+  transform: rotate(90deg);
+}
+
+.fold-preview {
+  display: none;
+}
+
+details.fold:not([open]) > summary .fold-preview {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+  overflow: hidden;
+}
+
+/* A turn without a closing entry ends its rail with a short tick. */
+.fold-rail-end {
+  position: relative;
+}
+
+.fold-rail-end::after {
+  content: "";
+  position: absolute;
+  left: -1px;
+  bottom: 0;
+  width: 0.5rem;
+  border-top: 1px solid var(--color-rule);
+}
+
+/* A quoted claim within the content, underlined in the color of its conclusion. */
+mark.cita {
+  --cita-color: var(--color-celeste);
+  background: none;
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--cita-color) 75%, transparent);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 0.2em;
+  text-decoration-skip-ink: none;
+}
+
+mark.cita[data-verdict="verdadero"] { --cita-color: var(--color-verdadero); }
+mark.cita[data-verdict="falso"] { --cita-color: var(--color-falso); }
+mark.cita[data-verdict="no_verificable"] { --cita-color: var(--color-insostenible-text); }
+mark.cita[data-verdict="enganoso"] { --cita-color: var(--color-enganoso); }
