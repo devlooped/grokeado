@@ -36,14 +36,22 @@ const RequestForm = z.discriminatedUnion("kind", [
   }),
 ]);
 
-export type RequestState = { error?: string };
+export type RequestField = "text" | "url" | "note" | "image";
+// The field names the input to fix, so the form can mark and focus it.
+export type RequestState = { error?: string; field?: RequestField };
+
+const FIELDS: readonly string[] = ["text", "url", "note", "image"] satisfies RequestField[];
 
 export async function requestFactCheck(_prev: RequestState, formData: FormData): Promise<RequestState> {
   const session = await auth0.getSession();
   const user = session?.user;
   if (!user?.sub || !canRequestCase(user)) return { error: BETA_MESSAGE };
   const parsed = RequestForm.safeParse(Object.fromEntries(formData));
-  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Revisá los datos." };
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0];
+    const field = String(issue?.path[0] ?? "");
+    return { error: issue?.message ?? "Revisá los datos.", field: FIELDS.includes(field) ? (field as RequestField) : undefined };
+  }
 
   let submission: Submission;
   let image: Buffer | undefined;

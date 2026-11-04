@@ -57,7 +57,7 @@ export default function MethodPage() {
         ))}
       </section>
 
-      <section className="mt-12">
+      <section id="resultados" className="mt-12 scroll-mt-6">
         <h2 className="font-display text-3xl">Los cuatro resultados posibles</h2>
         <dl className="mt-5 grid gap-x-8 gap-y-5 sm:grid-cols-2">
           {VERDICTS.map((v) => (

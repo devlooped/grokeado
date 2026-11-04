@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { notFound, permanentRedirect } from "next/navigation";
 import { connection } from "next/server";
 import { Suspended } from "@/components/suspended.tsx";
@@ -7,8 +8,9 @@ import { EvidencePanel } from "@/components/evidence-panel.tsx";
 import { AutoRefresh } from "@/components/auto-refresh.tsx";
 import { GavelIcon } from "@/components/marks.tsx";
 import { CaseResult } from "@/components/case-result.tsx";
+import { SessionProgress } from "@/components/session-progress.tsx";
 import { caseShareMetadata, submissionExcerpt } from "@/domain/acta.ts";
-import { COUNSEL_NAMES, type CaseRecord } from "@/domain/court.ts";
+import { COUNSEL_NAMES, type CaseRecord, type CourtEvent } from "@/domain/court.ts";
 import { project } from "@/domain/court.ts";
 import { displayHistoricalCitations } from "@/domain/historical-citations.ts";
 import { blobConfigured, findEvidenceArchive, hasEvidenceBase } from "@/evidence/blob.ts";
@@ -31,7 +33,17 @@ export async function generateMetadata(props: PageProps<"/caso/[id]">): Promise<
 
 const date = (at: string) => new Date(at).toLocaleString("es-AR", { dateStyle: "long", timeStyle: "short", timeZone: "America/Argentina/Buenos_Aires" });
 
-function InSession({ c }: { c: CaseRecord }) {
+function BackToCases() {
+  return (
+    <nav aria-label="Ruta" className="pt-6 text-sm">
+      <Link href="/" className="text-celeste-deep underline decoration-celeste/40 underline-offset-4 hover:decoration-celeste-deep">
+        ← Casos recientes
+      </Link>
+    </nav>
+  );
+}
+
+function InSession({ c, events }: { c: CaseRecord; events: readonly CourtEvent[] }) {
   return (
     <section className="mx-auto max-w-2xl py-16 text-center">
       <AutoRefresh everyMs={5000} />
@@ -43,7 +55,12 @@ function InSession({ c }: { c: CaseRecord }) {
       </div>
       <h1 className="mt-8 font-display text-5xl sm:text-6xl">El panel está analizando</h1>
       <p className="mx-auto mt-4 max-w-md text-ink-soft">
-        {COUNSEL_NAMES} están investigando y debatiendo tu consulta. Cuando terminen vas a ver el resultado y el registro completo. Esta página se actualiza sola.
+        {COUNSEL_NAMES} están investigando y debatiendo tu consulta. Cuando terminen vas a ver el resultado y el registro completo.
+      </p>
+      <SessionProgress events={events} queued={c.status === "queued"} />
+      <p className="mx-auto mt-6 max-w-md text-xs text-ink-soft">
+        Esta página se actualiza sola. Podés cerrarla: el análisis sigue y el resultado queda en esta misma dirección.{" "}
+        <Link href="/metodo" className="text-celeste-deep underline underline-offset-4">Cómo trabaja el panel</Link>
       </p>
       <p className="mx-auto mt-8 line-clamp-3 max-w-lg font-display text-lg italic text-ink-soft">«{submissionExcerpt(c.submission)}»</p>
       <p className="mt-6 font-mono text-xs text-ink-soft">Caso Nº {c.id}</p>
@@ -60,7 +77,7 @@ export default async function CasePage(props: PageProps<"/caso/[id]">) {
     if (renamed) permanentRedirect("/caso/" + renamed);
     notFound();
   }
-  if (c.status === "queued" || c.status === "in_session") return <InSession c={c} />;
+  if (c.status === "queued" || c.status === "in_session") return <InSession c={c} events={c.status === "queued" ? [] : await getEvents(id)} />;
   if (c.status === "failed") {
     const session = await auth0.getSession();
     return <Suspended c={c} user={session?.user} />;
@@ -74,7 +91,8 @@ export default async function CasePage(props: PageProps<"/caso/[id]">) {
 
   return (
     <>
-      <header className="reveal flex flex-wrap items-end justify-between gap-4 pt-8">
+      <BackToCases />
+      <header className="reveal flex flex-wrap items-end justify-between gap-4 pt-4">
         <div>
           <p className="font-mono text-xs uppercase tracking-widest text-ink-soft">Caso Nº {c.id} · {date(c.createdAt)}</p>
           <h1 className="mt-2 font-display text-5xl">{view.dismissal ? "Caso descartado" : "Resultado"}</h1>

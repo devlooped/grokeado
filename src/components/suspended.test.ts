@@ -29,5 +29,10 @@ test("the failed-case page offers retries only when authorized", () => {
     assert.match(denied, /El análisis se interrumpió/);
     assert.match(denied, /Se interrumpió la sesión/);
     assert.doesNotMatch(denied, /<form|Reintentar|Podés volver a intentarlo/);
+    assert.match(denied, /href="mailto:hola@che\.bot\?subject=Caso%20failed-case%20interrumpido"/);
   }
+  for (const html of [allowed, renderToStaticMarkup(createElement(Suspended, { c: failedCase, user: undefined }))]) {
+    assert.ok(html.includes('href="/"'), "every visitor has a way back");
+  }
+  assert.doesNotMatch(allowed, /mailto:/);
 });

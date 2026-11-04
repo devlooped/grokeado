@@ -182,6 +182,7 @@ export function CaseResult({ c, view, events = [] }: { c: CaseRecord; view: Case
               <span className="inline-flex items-center gap-1"><span className="size-2.5 rounded-full bg-insostenible" /> {VERDICT_LABEL.no_verificable}</span>
               <span className="inline-flex items-center gap-1"><span className="size-2.5 rounded-full bg-enganoso" /> {VERDICT_LABEL.enganoso}</span>
               <span className="inline-flex items-center gap-1 text-seal"><GavelIcon className="size-3.5" /> Sello: desempate del moderador</span>
+              <a href="/metodo#resultados" className="text-celeste-deep underline underline-offset-4">¿Qué significa cada resultado?</a>
             </p>
           </section>
         </>
