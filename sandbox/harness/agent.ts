@@ -185,6 +185,7 @@ try {
       await writeFile(transcriptPath, JSON.stringify({
         at: new Date().toISOString(),
         modelId: task.model,
+        effort: null,
         step: step.stepNumber,
         finishReason: step.finishReason,
         toolCalls: step.toolCalls.map(({ toolName, input }) => ({ toolName, input })),

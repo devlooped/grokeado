@@ -17,12 +17,19 @@ sources:
 generated:
   by: grok
   at: 2026-10-30T12:00:00.000Z
+  modelId: spacexai/grok-4.7
+  effort: null
 page: 3
 reprocess_of: /evidence/base/docs/report.md#p3
 ```
 
 Common fields are `type`, `title`, `description`, `sources`, and
-`generated: { by, at }`. The `evidence` type additionally requires `pages`,
+`generated: { by, at }`. Promoted analyst documents also record the actual
+`generated.modelId` and `generated.effort`; older documents may omit them.
+The host stamps these fields rather than trusting the analyst. `effort: null`
+means no explicit effort was configured (or, for historical records, it is
+unknown); it does not assert a provider's default. Simulated documents use
+`court-fixture` with null effort. The `evidence` type additionally requires `pages`,
 `extraction: { tool, confidence }`, and `tokens`. A `fragment` requires `page`
 and may include `reprocess_of`. An `argument` requires `stage` (`exposicion`,
 `objecion`, or `conclusion`), `supports`, and `refutes`.
@@ -76,10 +83,16 @@ including evidence submissions, source reviews, objections, votes, and decisions
 The closing step also writes `cases/{caseId}/transcript.jsonl` and includes it at
 the ZIP root. It merges sandbox evidence steps (tagged `evidence_step` with
 `seat` and `runId`) and committed debate `statement` events in timestamp
-order. Every entry has a `modelId`: the model used for that evidence step or
-statement. Simulated statements use `court-fixture`. For older records, the
+order. Every entry has a `modelId` and an `effort`: the model and explicitly
+configured effort used for that evidence step or statement. The sandbox harness
+currently requests no explicit effort, independently of the court turn's
+settings. Research step artifacts and session-opening events also record court
+effort; statements retain the effort for their particular turn. Simulated
+statements use `court-fixture` and null effort. For older records, the
 stored session model is used when available; `modelId` is `null` when the
 historical model is unknown rather than guessing from current configuration.
+Historical effort is null unless recorded for that statement or its matching
+session model. It is never inferred for a sandbox run from court settings.
 Statements carry their original sequence and, when an evidence run was
 promoted for that turn, its `evidenceRunId`; those statements are also appended
 to that run's `evidence/{seat}/runs/{runId}/transcript.jsonl`. The export is

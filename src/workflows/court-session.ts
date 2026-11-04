@@ -1,5 +1,5 @@
 import { illustrateCase } from "../court/cover.ts";
-import { COUNSEL_MODELS, JUDGE_MODEL, MOCK_MODEL_ID } from "../court/models.ts";
+import { COUNSEL_MODELS, JUDGE_MODEL, MOCK_MODEL_ID, modelEffort } from "../court/models.ts";
 import { playTurn } from "../court/play.ts";
 import { resolveCaseLanguage } from "../court/language.ts";
 import { holdSession } from "../court/procedure.ts";
@@ -65,7 +65,7 @@ async function play(
 
 export function linkEvidenceRun(outcome: TurnOutcome, runId?: string, simulated = false): TurnOutcome {
   return { ...outcome, events: outcome.events.map((event) => event.type === "statement" ? {
-    ...event, modelId: simulated ? MOCK_MODEL_ID : COUNSEL_MODELS[event.by].id, ...(runId ? { evidenceRunId: runId } : {}),
+    ...event, modelId: simulated ? MOCK_MODEL_ID : COUNSEL_MODELS[event.by].id, effort: simulated ? null : modelEffort(COUNSEL_MODELS[event.by]), ...(runId ? { evidenceRunId: runId } : {}),
   } : event) };
 }
 
@@ -109,6 +109,10 @@ export async function courtSession(caseId: string): Promise<void> {
       models: {
         judge: JUDGE_MODEL.id,
         counsel: { grok: COUNSEL_MODELS.grok.id, gemini: COUNSEL_MODELS.gemini.id, claude: COUNSEL_MODELS.claude.id, chatgpt: COUNSEL_MODELS.chatgpt.id },
+      },
+      efforts: {
+        judge: simulated ? null : modelEffort(JUDGE_MODEL),
+        counsel: { grok: simulated ? null : modelEffort(COUNSEL_MODELS.grok), gemini: simulated ? null : modelEffort(COUNSEL_MODELS.gemini), claude: simulated ? null : modelEffort(COUNSEL_MODELS.claude), chatgpt: simulated ? null : modelEffort(COUNSEL_MODELS.chatgpt) },
       },
       play: async (spec, record, attempt) => {
         const evidence = await prepareEvidence(caseId, spec, simulated, language);

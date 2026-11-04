@@ -2,7 +2,7 @@ import type { CourtEvent } from "../domain/court.ts";
 import { randomUUID } from "node:crypto";
 import { blobConfigured, writeEvidenceTree } from "../evidence/blob.ts";
 import { getImage } from "../store.ts";
-import { COUNSEL_MODELS, JUDGE_MODEL, MOCK_MODEL_ID } from "./models.ts";
+import { COUNSEL_MODELS, JUDGE_MODEL, MOCK_MODEL_ID, modelEffort } from "./models.ts";
 import { runSeat, type SeatImage } from "./seat.ts";
 import { conductTurn, type Docket, type SeatId, type TurnOutcome, type TurnSpec } from "./turns.ts";
 
@@ -40,8 +40,10 @@ export async function playTurn(
     const runId = randomUUID();
     for (const step of research) {
       const path = `evidence/${step.seat}/research/${runId}/step-${String(step.stepNumber).padStart(3, "0")}.json`;
-      const modelId = docket.simulated ? MOCK_MODEL_ID : step.seat === "judge" ? JUDGE_MODEL.id : COUNSEL_MODELS[step.seat].id;
-      await writeEvidenceTree(caseId, new Map([[path, JSON.stringify({ spec, attempt, modelId, ...step })]]));
+      const model = step.seat === "judge" ? JUDGE_MODEL : COUNSEL_MODELS[step.seat];
+      const modelId = docket.simulated ? MOCK_MODEL_ID : model.id;
+      const effort = docket.simulated ? null : modelEffort(model);
+      await writeEvidenceTree(caseId, new Map([[path, JSON.stringify({ spec, attempt, modelId, effort, ...step })]]));
     }
   }
   return outcome;

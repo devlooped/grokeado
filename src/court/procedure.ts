@@ -4,6 +4,7 @@ import type { StampedEvent, TurnOutcome, TurnSpec } from "./turns.ts";
 export interface Bench {
   submission: Submission;
   models: { judge: string; counsel: Record<Counsel, string> };
+  efforts?: { judge: string | null; counsel: Record<Counsel, string | null> };
   simulated?: boolean;
   // One attempt of one seat, given everything on the record so far.
   play(spec: TurnSpec, record: readonly CourtEvent[], attempt: number): Promise<TurnOutcome>;
@@ -92,7 +93,7 @@ export async function holdSession(bench: Bench): Promise<void> {
     }
   }
 
-  note({ type: "session_opened", judgeModel: bench.models.judge, counselModels: bench.models.counsel, ...(bench.simulated ? { simulated: true } : {}) });
+  note({ type: "session_opened", judgeModel: bench.models.judge, counselModels: bench.models.counsel, ...(bench.efforts ? { judgeEffort: bench.efforts.judge, counselEfforts: bench.efforts.counsel } : {}), ...(bench.simulated ? { simulated: true } : {}) });
   await flush();
 
   if (!(await solo({ kind: "intake" }))) throw new Error("El moderador no fijó las afirmaciones.");

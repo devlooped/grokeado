@@ -1,7 +1,7 @@
 import nextEnv from "@next/env";
 import assert from "node:assert/strict";
 import { COUNSEL, project, type CourtEvent } from "../src/domain/court.ts";
-import { COUNSEL_MODELS, JUDGE_MODEL } from "../src/court/models.ts";
+import { COUNSEL_MODELS, JUDGE_MODEL, MOCK_MODEL_ID, modelEffort } from "../src/court/models.ts";
 import { runSeat } from "../src/court/seat.ts";
 import { mockAiEnabled } from "../src/court/mock.ts";
 import { conductTurn, type Docket, type TurnSpec } from "../src/court/turns.ts";
@@ -22,7 +22,7 @@ async function turn(spec: TurnSpec) {
   for (let attempt = 0; attempt < 2; attempt++) {
     const outcome = await conductTurn(docket, spec, record, attempt, async ({ seat, prompt, tools, done }) => {
       const model = seat === "judge" ? JUDGE_MODEL : COUNSEL_MODELS[seat];
-      console.log(spec.kind + " / " + seat + " / " + model.id);
+      console.log(spec.kind + " / " + seat + " / " + (docket.simulated ? MOCK_MODEL_ID : model.id) + " / effort: " + (docket.simulated ? "not applicable" : modelEffort(model) ?? "default"));
       await runSeat({ model, research: spec.kind === "instruction", prompt, tools, done, mock: docket.simulated ? { spec, record: [...record], submission: docket.submission } : undefined });
     });
     record.push(...outcome.events);

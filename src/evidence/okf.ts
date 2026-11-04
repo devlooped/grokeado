@@ -17,6 +17,17 @@ export function serializeEvidenceDocument(document: EvidenceDocument, body = "")
   return `---\n${frontmatter}\n---\n${body.trimStart()}`;
 }
 
+// Stamp trusted execution metadata on newly promoted analyst documents.
+export function annotateEvidenceDocuments(files: Map<string, Uint8Array>, modelId: string, effort: string | null): void {
+  for (const [path, bytes] of files) {
+    if (!path.endsWith(".md") || /^evidence\/[^/]+\/(?:index|timeline|entities)\.md$/.test(path)) continue;
+    const source = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    const document = parseEvidenceDocument(source);
+    const body = source.replace(FRONTMATTER, "");
+    files.set(path, new TextEncoder().encode(serializeEvidenceDocument({ ...document, generated: { ...document.generated, modelId, effort } }) + body));
+  }
+}
+
 export interface IndexedEvidence {
   path: string;
   document: EvidenceDocument;

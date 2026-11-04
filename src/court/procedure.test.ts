@@ -144,8 +144,10 @@ test("a judge who never rules on an objection suspends the session instead of a 
 test("the judge can dismiss a submission with no verifiable claims", async () => {
   const dismiss: Script = (_p, tools) => (tools.includes("dismiss_case") ? [["dismiss_case", { reason: "Es una opinión, no una afirmación fáctica." }]] : []);
   const { bench, events } = makeBench({ judge: dismiss, grok: () => [], gemini: () => [], claude: () => [], chatgpt: () => [] });
+  bench.efforts = { judge: "high", counsel: { grok: "high", gemini: "high", claude: "high", chatgpt: null } };
   await holdSession(bench);
   assert.deepEqual(events.map((e) => e.type), ["session_opened", "dismissed", "session_closed"]);
+  assert.deepEqual(events[0], { type: "session_opened", judgeModel: MODELS.judge, counselModels: MODELS.counsel, judgeEffort: "high", counselEfforts: bench.efforts.counsel, seq: 1, at: events[0].at });
 });
 
 test("an unfinished summary is retried and does not close the case without the moderator's words", async () => {

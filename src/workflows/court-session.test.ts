@@ -10,10 +10,10 @@ test("links only statements to the promoted evidence run for their own attempt",
     { type: "statement", id: "I1", by: "grok", stage: "closing", text: "Argumento", evidenceIds: [], at: "2026-01-01T00:00:00.000Z" },
     { type: "vote", by: "grok", claimId: "A1", verdict: "verdadero", rationale: "Motivo", at: "2026-01-01T00:00:01.000Z" },
   ] };
-  assert.deepEqual(linkEvidenceRun(outcome).events[0], { ...outcome.events[0], modelId: COUNSEL_MODELS.grok.id });
+  assert.deepEqual(linkEvidenceRun(outcome).events[0], { ...outcome.events[0], modelId: COUNSEL_MODELS.grok.id, effort: "high" });
   const linked = linkEvidenceRun(outcome, "run-1");
-  assert.deepEqual(linked.events[0], { ...outcome.events[0], evidenceRunId: "run-1", modelId: COUNSEL_MODELS.grok.id });
-  assert.deepEqual(linkEvidenceRun(outcome, undefined, true).events[0], { ...outcome.events[0], modelId: MOCK_MODEL_ID });
+  assert.deepEqual(linked.events[0], { ...outcome.events[0], evidenceRunId: "run-1", modelId: COUNSEL_MODELS.grok.id, effort: "high" });
+  assert.deepEqual(linkEvidenceRun(outcome, undefined, true).events[0], { ...outcome.events[0], modelId: MOCK_MODEL_ID, effort: null });
   assert.deepEqual(linked.events[1], outcome.events[1]);
   assert.notEqual(linked.events[0], outcome.events[0]);
 });

@@ -10,9 +10,9 @@ function parseLine(line: string, path: string, index: number): Record<string, un
 }
 
 // Annotate at promotion, even when the sandbox snapshot uses an older harness.
-export function annotateEvidenceTranscript(content: Uint8Array, modelId: string): string {
+export function annotateEvidenceTranscript(content: Uint8Array, modelId: string, effort: string | null): string {
   const original = new TextDecoder("utf-8", { fatal: true }).decode(content);
-  const lines = original.split(/\r?\n/).flatMap((line, index) => line.trim() ? [JSON.stringify({ ...parseLine(line, "sandbox transcript", index), modelId })] : []);
+  const lines = original.split(/\r?\n/).flatMap((line, index) => line.trim() ? [JSON.stringify({ ...parseLine(line, "sandbox transcript", index), modelId, effort })] : []);
   return lines.length ? lines.join("\n") + "\n" : "";
 }
 
@@ -22,6 +22,7 @@ export function buildCaseTranscript(files: EvidenceFiles, events: readonly Recor
   const models: Partial<Record<string, string>> = session?.counselModels ?? {};
   const statements = events.filter((event) => event.type === "statement").sort((a, b) => a.seq - b.seq).map((event) => ({
     ...event, modelId: event.modelId ?? (session?.simulated ? MOCK_MODEL_ID : models[event.by]) ?? null,
+    effort: event.effort !== undefined ? event.effort : !session?.simulated && (!event.modelId || event.modelId === models[event.by]) ? session?.counselEfforts?.[event.by] ?? null : null,
   }));
   const entries: Array<{ at: string; order: string; value: object }> = [];
   const updatedRuns = new Map<string, string>();
@@ -39,7 +40,9 @@ export function buildCaseTranscript(files: EvidenceFiles, events: readonly Recor
       // Remove previously appended records before regenerating them.
       if (record.type === "statement" && record.evidenceRunId === runId) continue;
       const modelId = typeof record.modelId === "string" && record.modelId ? record.modelId : models[seat!] ?? null;
-      const enriched = { ...record, modelId };
+      // Sandbox calls have their own provider settings, independent of court turns.
+      const effort = typeof record.effort === "string" && record.effort ? record.effort : null;
+      const enriched = { ...record, modelId, effort };
       lines.push(JSON.stringify(enriched));
       entries.push({ at: typeof record.at === "string" ? record.at : "", order: `${path}:${String(index).padStart(12, "0")}`, value: { ...enriched, type: "evidence_step", seat, runId } });
     }

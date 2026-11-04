@@ -7,7 +7,7 @@ import { parseArgs } from "node:util";
 import { z } from "zod";
 import { AS_OF, CASES } from "../evals/tiers/cases.ts";
 import { assessmentSchema, EVALUATORS, gapRulingSchema, gradingSchema, groundResearch, modelFor, researchSchema, routingSchema, type Evidence, type Observation, type Tier } from "../evals/tiers/core.ts";
-import type { CourtModel } from "../src/court/models.ts";
+import { modelEffort, type CourtModel } from "../src/court/models.ts";
 import type { Counsel } from "../src/domain/court.ts";
 import { generateSubmission } from "../evals/tiers/submission.ts";
 import { adjudicateChallenges, BudgetExceededError, challengedGaps, dossierForPrompt, resolveAssessment, runResearchLoop, type Adjudication, type ChallengedGap, type Dossier, type Effort, type ResearchBatch, type RetrievalIssue, type RoutingTurn } from "../evals/tiers/workflow.ts";
@@ -97,7 +97,7 @@ async function call<T>(key: string, model: CourtModel, prompt: string, schema: z
   const time = performance.now();
   const record: CallRecord = { key, model, prompt, status: "running", elapsedMs: 0, observations: [], steps: [], retrievalIssues: [] };
   await writeJson(path, record);
-  console.log("INICIO " + key + " / " + model.id);
+  console.log("INICIO " + key + " / " + model.id + " / effort: " + (modelEffort(model) ?? "default"));
   try {
     const { output, result } = await generateSubmission({
       model, prompt, schema, research,

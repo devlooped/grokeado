@@ -9,6 +9,8 @@ const common = {
   generated: z.object({
     by: z.enum(authors),
     at: z.iso.datetime(),
+    modelId: z.string().trim().min(1).optional(),
+    effort: z.string().trim().min(1).nullable().optional(),
   }).strict(),
 };
 

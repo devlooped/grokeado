@@ -137,8 +137,8 @@ test("persists the same merged transcript in the run, case blob and ZIP on retri
   assert.deepEqual(extracted.get("acta.jsonl")!.toString().trim().split("\n").map((line) => JSON.parse(line)), [session, event]);
   assert.equal(extracted.get("transcript.jsonl")!.toString(), transcript);
   assert.equal(extracted.get(run)!.toString(), stored.get(run)!.toString());
-  assert.deepEqual(extracted.get(run)!.toString().trim().split("\n").map((line) => JSON.parse(line)), [{ ...step, modelId: "grok-id" }, { ...event, modelId: "grok-id" }]);
-  assert.deepEqual(transcript.trim().split("\n").map((line) => JSON.parse(line)), [{ ...step, modelId: "grok-id", type: "evidence_step", seat: "grok", runId: "run-1" }, { ...event, modelId: "grok-id" }]);
+  assert.deepEqual(extracted.get(run)!.toString().trim().split("\n").map((line) => JSON.parse(line)), [{ ...step, modelId: "grok-id", effort: null }, { ...event, modelId: "grok-id", effort: null }]);
+  assert.deepEqual(transcript.trim().split("\n").map((line) => JSON.parse(line)), [{ ...step, modelId: "grok-id", effort: null, type: "evidence_step", seat: "grok", runId: "run-1" }, { ...event, modelId: "grok-id", effort: null }]);
   await archiveEvidence("case-1", store);
   assert.equal(writes, 1);
   assert.deepEqual(zip, firstZip);

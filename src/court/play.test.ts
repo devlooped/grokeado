@@ -38,7 +38,7 @@ test("persists every returned web research step as part of the evidence tree", a
     const files = [...uploads].filter(([path]) => path.startsWith("cases/case-1/evidence/grok/research/"));
     assert.ok(files.length >= 2);
     const contents = files.map(([, body]) => JSON.parse(body.toString()));
-    assert.ok(contents.every((entry) => entry.modelId === "court-fixture" && entry.seat === "grok" && entry.attempt === 0));
+    assert.ok(contents.every((entry) => entry.modelId === "court-fixture" && entry.effort === null && entry.seat === "grok" && entry.attempt === 0));
     assert.match(JSON.stringify(contents), /Documento de prueba con aportes/);
     for (const [path] of files) assert.ok([...uploads.keys()].some((key) => key.startsWith("cases/case-1/evidence/.sha256/") && key.endsWith(path.slice("cases/case-1/evidence/".length) + ".json")));
   } finally {

@@ -72,7 +72,7 @@ export interface SourceView extends UnifiedSource {
 }
 
 export type CourtEvent =
-  | { type: "session_opened"; judgeModel: string; counselModels: Record<Counsel, string>; simulated?: boolean }
+  | { type: "session_opened"; judgeModel: string; counselModels: Record<Counsel, string>; judgeEffort?: string | null; counselEfforts?: Record<Counsel, string | null>; simulated?: boolean }
   | { type: "claims_entered"; claims: Claim[] }
   | { type: "dismissed"; reason: string }
   | { type: "instruction_opened" }
@@ -83,7 +83,7 @@ export type CourtEvent =
   | { type: "source_decided"; sourceId: string; excluded: boolean }
   | { type: "instruction_closed" }
   | { type: "floor_granted"; to: Counsel; stage: Stage }
-  | { type: "statement"; id: string; by: Counsel; stage: Stage; text: string; evidenceIds: string[]; evidenceRunId?: string; modelId?: string }
+  | { type: "statement"; id: string; by: Counsel; stage: Stage; text: string; evidenceIds: string[]; evidenceRunId?: string; modelId?: string; effort?: string | null }
   | { type: "objection"; id: string; by: Counsel; against: string; grounds: string }
   | { type: "objection_reply"; objectionId: string; by: Counsel; text: string }
   | { type: "ruling"; objectionId: string; sustained: boolean; reason: string }

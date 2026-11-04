@@ -2,7 +2,7 @@ import { Sandbox } from "@vercel/sandbox";
 import { randomUUID } from "node:crypto";
 import { COUNSEL_MODELS } from "../court/models.ts";
 import { evidenceSandboxLaunch, evidenceTaskDocument } from "./broker.ts";
-import { parseEvidenceDocument, createEvidenceIndex } from "./okf.ts";
+import { parseEvidenceDocument, createEvidenceIndex, annotateEvidenceDocuments } from "./okf.ts";
 import { createMockEvidencePromotion } from "./mock.ts";
 import type { EvidenceSeat, EvidenceStage } from "./schema.ts";
 import { blobConfigured, readEvidenceTree, writeEvidenceTree } from "./blob.ts";
@@ -171,7 +171,9 @@ export async function runEvidenceStep(
       promoted.set(path, new Uint8Array(content));
     }
     const transcript = await sandbox.readFileToBuffer({ path: `${WORKSPACE}/transcript.jsonl` });
-    promoted.set(`evidence/${seat}/runs/${runId}/transcript.jsonl`, new TextEncoder().encode(annotateEvidenceTranscript(transcript ? new Uint8Array(transcript) : new Uint8Array(), modelId)));
+    // The current harness passes no provider-specific effort options; older snapshots are unknown.
+    const effort = null;
+    promoted.set(`evidence/${seat}/runs/${runId}/transcript.jsonl`, new TextEncoder().encode(annotateEvidenceTranscript(transcript ? new Uint8Array(transcript) : new Uint8Array(), modelId, effort)));
     promoted.set(`evidence/${seat}/runs/${runId}/result.json`, new TextEncoder().encode(JSON.stringify(result)));
 
     const validationErrors = validatePromotedFiles(seat, original, promoted);
@@ -180,6 +182,7 @@ export async function runEvidenceStep(
       return { status: "partial", ...current };
     }
 
+    annotateEvidenceDocuments(promoted, modelId, effort);
     await translatePromotedEvidence(promoted, runId, seat, language);
     const translatedErrors = validatePromotedFiles(seat, original, promoted);
     if (translatedErrors.length) throw new Error("La evidencia traducida no es válida: " + translatedErrors.join("; "));

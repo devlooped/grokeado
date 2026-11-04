@@ -12,10 +12,10 @@ const path = "evidence/grok/runs/run-1/transcript.jsonl";
 test("merges committed statements into the matching run and chronological case transcript, idempotently", () => {
   const files = new Map([[path, JSON.stringify(step) + "\n"], ["evidence/claude/runs/run-2/transcript.jsonl", ""]]);
   const result = buildCaseTranscript(files, [other, statement, session]);
-  assert.deepEqual(result.updatedRuns.get(path)!.trim().split("\n").map((line) => JSON.parse(line)), [{ ...step, modelId: "grok-id" }, { ...statement, modelId: "grok-id" }]);
+  assert.deepEqual(result.updatedRuns.get(path)!.trim().split("\n").map((line) => JSON.parse(line)), [{ ...step, modelId: "grok-id", effort: null }, { ...statement, modelId: "grok-id", effort: null }]);
   assert.equal(result.updatedRuns.has("evidence/claude/runs/run-2/transcript.jsonl"), false);
   assert.deepEqual(result.transcript.trim().split("\n").map((line) => JSON.parse(line)), [
-    { ...step, modelId: "grok-id", type: "evidence_step", seat: "grok", runId: "run-1" }, { ...statement, modelId: "grok-id" }, { ...other, modelId: "claude-id" },
+    { ...step, modelId: "grok-id", effort: null, type: "evidence_step", seat: "grok", runId: "run-1" }, { ...statement, modelId: "grok-id", effort: null }, { ...other, modelId: "claude-id", effort: null },
   ]);
   for (const [file, content] of result.updatedRuns) files.set(file, content);
   const retried = buildCaseTranscript(files, [statement, other, session]);
@@ -27,7 +27,7 @@ test("does not attach statements to another seat and rejects invalid run JSONL",
   const wrongSeat = { ...statement, by: "gemini" } as RecordedEvent;
   const files = new Map([[path, JSON.stringify(step) + "\n"]]);
   const result = buildCaseTranscript(files, [wrongSeat, session]);
-  assert.deepEqual(JSON.parse(result.updatedRuns.get(path)!.trim()), { ...step, modelId: "grok-id" });
+  assert.deepEqual(JSON.parse(result.updatedRuns.get(path)!.trim()), { ...step, modelId: "grok-id", effort: null });
   assert.equal(result.transcript.trim().split("\n").length, 2);
   assert.throws(() => buildCaseTranscript(new Map([[path, "{bad}\n"]]), []), /Invalid JSONL/);
   assert.throws(() => buildCaseTranscript(new Map([[path, "null\n"]]), []), /Invalid JSONL entry/);
@@ -35,7 +35,7 @@ test("does not attach statements to another seat and rejects invalid run JSONL",
 
 test("uses the actual per-run and statement model IDs, preserving unknown historical IDs as null", () => {
   const input = JSON.stringify({ ...step, modelId: "old-snapshot-id" }) + "\n";
-  const annotated = annotateEvidenceTranscript(Buffer.from(input), "actual-run-id");
+  const annotated = annotateEvidenceTranscript(Buffer.from(input), "actual-run-id", null);
   assert.equal(JSON.parse(annotated).modelId, "actual-run-id");
   const explicit = { ...statement, modelId: "actual-statement-id" };
   const result = buildCaseTranscript(new Map([[path, annotated]]), [session, explicit]);
@@ -46,4 +46,19 @@ test("uses the actual per-run and statement model IDs, preserving unknown histor
   assert.deepEqual(unknown.transcript.trim().split("\n").map((line) => JSON.parse(line).modelId), [null, null]);
   const simulated = buildCaseTranscript(new Map(), [{ ...session, simulated: true }, statement]);
   assert.equal(JSON.parse(simulated.transcript).modelId, "court-fixture");
+});
+
+test("preserves per-call effort, distinguishes sandbox defaults, and never guesses historical effort", () => {
+  const withEffort = { ...session, judgeEffort: "high", counselEfforts: { grok: "high", gemini: "high", claude: "high", chatgpt: null } };
+  const input = JSON.stringify({ ...step, modelId: "grok-id", effort: "medium" }) + "\n";
+  const fallback = { ...statement, modelId: "grok-id" };
+  const mismatch = { ...other, modelId: "different-id" };
+  const result = buildCaseTranscript(new Map([[path, input]]), [withEffort, fallback, mismatch]);
+  const entries = result.transcript.trim().split("\n").map((line) => JSON.parse(line));
+  assert.deepEqual(entries.map((entry) => entry.effort), ["medium", "high", null]);
+  const defaults = buildCaseTranscript(new Map([[path, JSON.stringify(step) + "\n"]]), [withEffort, { ...fallback, effort: null }]);
+  assert.deepEqual(defaults.transcript.trim().split("\n").map((line) => JSON.parse(line).effort), [null, null]);
+  const simulated = buildCaseTranscript(new Map(), [{ ...withEffort, simulated: true }, statement]);
+  assert.equal(JSON.parse(simulated.transcript).effort, null);
+  assert.equal(JSON.parse(annotateEvidenceTranscript(Buffer.from(input), "new-id", null)).effort, null);
 });
