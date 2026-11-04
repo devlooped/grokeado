@@ -9,6 +9,7 @@ const time = (at: string) =>
 
 interface Context extends Citations {
   view: CaseView;
+  sourceAliases: ReadonlyMap<string, string>;
 }
 
 function Speaker({ by, small }: { by: Counsel; small?: boolean }) {
@@ -39,6 +40,7 @@ function Source({ source, ctx }: { source: SourceView; ctx: Context }) {
   return (
     <details open id={source.id} className="fold scroll-mt-24 rounded-sm border border-rule bg-paper/60 px-4 py-3 target:ring-2 target:ring-celeste">
       <summary className="fold-summary flex cursor-pointer items-start gap-2">
+        {ctx.sourceAliases.has(source.id) && <span id={ctx.sourceAliases.get(source.id)} className="scroll-mt-24" />}
         <span className="mt-0.5"><Chevron /></span>
         <span className="min-w-0">
           <span className="block text-xs text-ink-soft">
@@ -422,7 +424,7 @@ function SectionFold({ section, index, ctx }: { section: Section; index: number;
   );
 }
 
-export function Acta({ events, view, caseId }: { events: RecordedEvent[]; view: CaseView; caseId: string }) {
+export function Acta({ events, view, caseId, sourceAliases = new Map() }: { events: RecordedEvent[]; view: CaseView; caseId: string; sourceAliases?: ReadonlyMap<string, string> }) {
   // La tarjeta ya muestra el resumen, los votos y la decisión proyectados; conservar solo
   // eventos que no estén representados allí (por ejemplo, registros incompletos).
   const visible = events.filter((e) => {
@@ -435,7 +437,7 @@ export function Acta({ events, view, caseId }: { events: RecordedEvent[]; view: 
     return true;
   });
   const sections = sectionsOf(visible);
-  const ctx: Context = { view, caseId, refs: citationRefs(events, view) };
+  const ctx: Context = { view, caseId, refs: citationRefs(events, view), sourceAliases };
   return (
     <div data-acta data-fold-scope="acta">
       <FoldNavigation />

@@ -95,7 +95,7 @@ export function composePrompt(input: { seat: SeatId; docket: Docket; record: rea
   const reminder = attempt > 0 ? "No completaste lo pedido con las herramientas habilitadas. Volvé a intentarlo.\n" : "";
   const view = project(record);
   const sources = record.some((e) => e.type === "evidence_unified")
-    ? "Expediente común de fuentes (citá solo los identificadores S; los aportes P originales son antecedentes):\n" +
+    ? "Expediente común de fuentes (citá solo los identificadores de las fuentes unificadas; los aportes P originales son antecedentes):\n" +
       ([...view.sources.values()].map((s) =>
         "[" + s.id + "] " + (s.excluded ? "ANULADA: no puede usarse como prueba" : s.excluded === false ? "ADMITIDA" : "PENDIENTE DE CRÍTICA") + ": " + s.title + " (" + s.url + ")\n" +
         s.contributions.map((e) => "  Aporte de " + MODEL_NAME[e.by] + " sobre " + e.claimId + " (" + EVIDENCE_STANCE_LABEL[e.stance ?? "context"] + "): " + e.excerpt).join("\n")
@@ -168,7 +168,7 @@ export function planTurn(
       "Tu intervención en el debate (" + STAGE_LABEL[stage] + "). Solo una por turno.",
       z.object({
         text: z.string().min(20).describe("Tu intervención, en párrafos breves"),
-        evidenceIds: z.array(z.string()).describe("Fuentes unificadas admitidas que citás (S1, S2, ...); vacío si no hay respaldo"),
+        evidenceIds: z.array(z.string()).describe("Identificadores de las fuentes unificadas admitidas que citás; vacío si no hay respaldo"),
       }),
       ({ text, evidenceIds }) => {
         const existing = statementOf(by, stage);
@@ -259,9 +259,9 @@ export function planTurn(
       const evidence = all().flatMap((e) => e.type === "evidence_filed" ? [e.evidence] : []);
       const normalize = (url: string) => { const parsed = new URL(url); parsed.hash = ""; return parsed.href; };
       return plan(
-        "Unificá las pruebas de la instrucción con unify_evidence. Agrupá los aportes que remiten a la misma URL (ignorá el fragmento #), aunque traten distintas afirmaciones o tengan distinta orientación. Conservá TODAS las pruebas exactamente una vez; no evalúes su confiabilidad ni descartes aportes. Cada grupo será una fuente S compartida, con todos los fragmentos y sus autores originales. URLs distintas deben permanecer separadas. Si no hay aportes, registrá groups vacío.",
+        "Unificá las pruebas de la instrucción con unify_evidence. Agrupá los aportes que remiten a la misma URL (ignorá el fragmento #), aunque traten distintas afirmaciones o tengan distinta orientación. Conservá TODAS las pruebas exactamente una vez; no evalúes su confiabilidad ni descartes aportes. Cada grupo será una fuente E compartida, con todos los fragmentos y sus autores originales. URLs distintas deben permanecer separadas. Si no hay aportes, registrá groups vacío.",
         { unify_evidence: tool(
-          "Unifica los aportes P por URL sin perder autores, afirmaciones ni fragmentos. Devuelve los identificadores S definitivos.",
+          "Unifica los aportes P por URL sin perder autores, afirmaciones ni fragmentos. Devuelve los identificadores E definitivos.",
           z.object({ groups: z.array(z.object({ evidenceIds: z.array(z.string()).min(1) })) }),
           ({ groups }) => {
             if (unified()) throw new Rejection("La evidencia ya está unificada.");
@@ -276,7 +276,7 @@ export function planTurn(
               if (contributions.some((e) => normalize(e.url) !== url) || urls.has(url))
                 throw new Rejection("Agrupá todos los aportes de la misma URL en una única fuente, sin mezclar URLs distintas.");
               urls.add(url);
-              return { id: "S" + (i + 1), title: first.title, url, contributions };
+              return { id: "E" + (i + 1), title: first.title, url, contributions };
             });
             emit({ type: "evidence_unified", sources });
             return "Expediente común: " + sources.map((s) => s.id + " (" + s.contributions.map((e) => e.id).join(", ") + ")").join("; ");
@@ -290,7 +290,7 @@ export function planTurn(
       const sources = [...project(all()).sources.values()];
       const reviewed = () => sources.every((s) => all().some((e) => e.type === "source_review_vote" && e.by === by && e.sourceId === s.id));
       return plan(
-        "Turno de crítica de fuentes. Revisá la confiabilidad de CADA fuente S del expediente común, incluso las que aportaste vos. Podés leer sus URLs para verificar autoría, metodología, trazabilidad y autenticidad. Usá review_sources para votar una vez por fuente: veto=true si no es confiable, veto=false si no corresponde vetarla, siempre con un motivo concreto. Una fuente contraria a tu evaluación no es por eso poco confiable. Tres de los cuatro analistas deben vetarla para anularla; ausencias y empates no son mayoría. No presentes pruebas nuevas ni argumentes sobre el veredicto.",
+        "Turno de crítica de fuentes. Revisá la confiabilidad de CADA fuente del expediente común, incluso las que aportaste vos. Podés leer sus URLs para verificar autoría, metodología, trazabilidad y autenticidad. Usá review_sources para votar una vez por fuente: veto=true si no es confiable, veto=false si no corresponde vetarla, siempre con un motivo concreto. Una fuente contraria a tu evaluación no es por eso poco confiable. Tres de los cuatro analistas deben vetarla para anularla; ausencias y empates no son mayoría. No presentes pruebas nuevas ni argumentes sobre el veredicto.",
         { review_sources: tool(
           "Vota sobre la confiabilidad de todas las fuentes unificadas, con el motivo de cada voto.",
           z.object({ votes: z.array(z.object({ sourceId: z.string(), veto: z.boolean(), reason: z.string().min(10) })) }),
@@ -298,7 +298,7 @@ export function planTurn(
             if (reviewed()) throw new Rejection("Ya registraste tu crítica de fuentes.");
             const ids = votes.map((v) => v.sourceId);
             if (ids.length !== sources.length || new Set(ids).size !== ids.length || sources.some((s) => !ids.includes(s.id)))
-              throw new Rejection("Votá exactamente una vez por cada fuente S del expediente común.");
+              throw new Rejection("Votá exactamente una vez por cada fuente del expediente común.");
             for (const vote of votes) emit({ type: "source_review_vote", by, ...vote });
             return "Votos y motivos registrados.";
           }
@@ -310,8 +310,8 @@ export function planTurn(
       const { counsel: by, stage } = spec;
       const instruction =
         stage === "opening"
-          ? "Tenés la palabra para tu exposición inicial: evaluá cada afirmación usando las fuentes S admitidas del expediente común para apoyar o refutar posiciones, sin importar quién las aportó. La instrucción está cerrada: no agregues pruebas ni uses fuentes anuladas. Terminá con make_statement."
-          : "Tenés la palabra para tu réplica: respondé a tus colegas con las fuentes S admitidas, señalá errores o coincidencias y corregí tu postura si corresponde. No agregues pruebas ni uses fuentes anuladas. Terminá con make_statement.";
+          ? "Tenés la palabra para tu exposición inicial: evaluá cada afirmación usando las fuentes admitidas del expediente común para apoyar o refutar posiciones, sin importar quién las aportó. La instrucción está cerrada: no agregues pruebas ni uses fuentes anuladas. Terminá con make_statement."
+          : "Tenés la palabra para tu réplica: respondé a tus colegas con las fuentes admitidas, señalá errores o coincidencias y corregí tu postura si corresponde. No agregues pruebas ni uses fuentes anuladas. Terminá con make_statement.";
       const tools: Toolset = { make_statement: statementTool(by, stage) };
       return plan(instruction, tools, () => statementOf(by, stage) !== undefined);
     }

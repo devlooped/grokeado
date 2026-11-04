@@ -4,6 +4,7 @@ import { parseHTML } from "linkedom";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { COUNSEL, project, type CourtEvent, type RecordedEvent } from "../domain/court.ts";
+import { displayHistoricalCitations } from "../domain/historical-citations.ts";
 import { Acta } from "./acta.tsx";
 
 function render(events: CourtEvent[]) {
@@ -90,24 +91,39 @@ test("historical evidence without instruction or stance remains visible and keep
   assert.ok(!html.includes("Anulada"));
 });
 
+test("historical unified citations display E and retain old inbound anchors", () => {
+  const original: CourtEvent[] = [
+    { type: "evidence_unified", sources: [{ id: "S1", url: "https://example.org/old", title: "Fuente histórica", contributions: [] }] },
+    { type: "statement", id: "I1", by: "grok", stage: "opening", text: "La fuente S1 respalda mi evaluación.", evidenceIds: ["S1"] },
+  ];
+  const recorded = original.map((e, i) => ({ ...e, seq: i + 1, at: "2026-10-30T14:00:00.000Z" }));
+  const { events, aliases } = displayHistoricalCitations(recorded);
+  const html = renderToStaticMarkup(createElement(Acta, { events, view: project(events), caseId: "fixture", sourceAliases: aliases }));
+  assert.ok(html.includes('id="E1"'));
+  assert.ok(html.includes('id="S1"'));
+  assert.ok(html.includes('href="#E1"'));
+  assert.ok(html.includes("La fuente "));
+  assert.ok(!html.includes('href="#S1"'));
+});
+
 test("citations mentioned in an intervention link inline, and only the unmentioned ones remain listed", () => {
   const html = render([
-    { type: "evidence_unified", sources: ["S1", "S2", "S10"].map((id) => ({ id, url: "https://example.org/" + id, title: "Fuente " + id, contributions: [] })) },
-    { type: "statement", id: "I1", by: "grok", stage: "opening", text: "La salida está probada (S1, S10). Sin orden de prisión, A1 no se sostiene.", evidenceIds: ["S1", "S10", "S2"] },
-    { type: "objection", id: "O1", by: "gemini", against: "I1", grounds: "S10 no dice lo que I1 le atribuye." },
+    { type: "evidence_unified", sources: ["E1", "E2", "E10"].map((id) => ({ id, url: "https://example.org/" + id, title: "Fuente " + id, contributions: [] })) },
+    { type: "statement", id: "I1", by: "grok", stage: "opening", text: "La salida está probada (E1, E10). Sin orden de prisión, A1 no se sostiene.", evidenceIds: ["E1", "E10", "E2"] },
+    { type: "objection", id: "O1", by: "gemini", against: "I1", grounds: "E10 no dice lo que I1 le atribuye." },
   ]);
   const { document } = parseHTML(html);
   const statement = document.getElementById("I1")!;
   const text = statement.querySelector("p")!;
-  assert.deepEqual([...text.querySelectorAll("a")].map((a) => a.getAttribute("href")), ["#S1", "#S10"]);
-  assert.ok(text.textContent.includes("(S1, S10)"), "the text reads unchanged around its links");
+  assert.deepEqual([...text.querySelectorAll("a")].map((a) => a.getAttribute("href")), ["#E1", "#E10"]);
+  assert.ok(text.textContent.includes("(E1, E10)"), "the text reads unchanged around its links");
   assert.ok(!text.innerHTML.includes('href="#A1"'), "claims are not citations");
   const rest = [...statement.querySelectorAll("p")].at(-1)!;
   assert.ok(rest.textContent.startsWith("También cita"));
-  assert.deepEqual([...rest.querySelectorAll("a")].map((a) => a.getAttribute("href")), ["#S2"]);
+  assert.deepEqual([...rest.querySelectorAll("a")].map((a) => a.getAttribute("href")), ["#E2"]);
   assert.ok(!html.includes("Cita:"));
   const objection = document.getElementById("O1")!;
-  assert.deepEqual([...objection.querySelectorAll("a")].map((a) => a.getAttribute("href")), ["#I1", "#S10", "#I1"]);
+  assert.deepEqual([...objection.querySelectorAll("a")].map((a) => a.getAttribute("href")), ["#I1", "#E10", "#I1"]);
 });
 
 test("the acta folds into stages, each analyst's instruction run up to its close, and debate turns", () => {

@@ -71,6 +71,7 @@ test("mock moderator unification produces shared sources with all original autho
   assert.equal(outcome.done, true);
   const shared = [...project([...filed, ...outcome.events]).sources.values()];
   assert.equal(shared.length, 3);
+  assert.deepEqual(shared.map((s) => s.id), ["E1", "E2", "E3"]);
   assert.ok(shared.every((s) => s.contributions.length === 4));
 });
 

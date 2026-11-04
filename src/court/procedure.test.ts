@@ -38,7 +38,7 @@ const lastId = (prompt: string, prefix: string) => [...prompt.matchAll(new RegEx
 
 function counsel(name: Counsel, votes: Record<string, string> | null): Script {
   return (prompt, tools) => {
-    if (tools.includes("review_sources")) return [["review_sources", { votes: [{ sourceId: "S1", veto: false, reason: "Documento oficial con metodología publicada." }] }]];
+    if (tools.includes("review_sources")) return [["review_sources", { votes: [{ sourceId: "E1", veto: false, reason: "Documento oficial con metodología publicada." }] }]];
     if (tools.includes("object")) return name === "claude" && /intervención I1 de/.test(prompt) ? [["object", { grounds: "La cifra citada no aparece en la fuente." }]] : [["pass", {}]];
     if (tools.includes("reply_objection")) return [["reply_objection", { text: "La cifra está en la tabla 3 del informe." }]];
     if (tools.includes("cast_votes")) {
@@ -47,7 +47,7 @@ function counsel(name: Counsel, votes: Record<string, string> | null): Script {
       return [statement, ["cast_votes", { votes: Object.entries(votes).map(([claimId, verdict]) => ({ claimId, verdict, rationale: "Según la evidencia del registro." })) }]];
     }
     if (tools.includes("make_statement")) {
-      const p = lastId(prompt, "S") ?? "S1";
+      const p = lastId(prompt, "E") ?? "E1";
       if (name === "gemini" && /tu exposición inicial/.test(prompt)) {
         return [
           ["make_statement", { text: "Cito una evidencia que no está en el registro.", evidenceIds: ["P99"] }],
@@ -182,7 +182,7 @@ test("instruction finishes before opening and only an absolute majority can annu
       const scripts = Object.fromEntries(names.map((name, i) => {
         const base = counsel(name === "claude" ? "grok" : name, { A1: "falso", A2: "falso" });
         const script: Script = (prompt, tools) => {
-          if (tools.includes("review_sources")) return absent && name === "chatgpt" ? [] : [["review_sources", { votes: [{ sourceId: "S1", veto: i < vetoCount, reason: "Evalué la autoría y la metodología de esta fuente." }] }]];
+          if (tools.includes("review_sources")) return absent && name === "chatgpt" ? [] : [["review_sources", { votes: [{ sourceId: "E1", veto: i < vetoCount, reason: "Evalué la autoría y la metodología de esta fuente." }] }]];
           if (tools.includes("make_statement")) return base(prompt, tools).map(([tool, input]) => tool === "make_statement" ? [tool, { ...input, evidenceIds: [] }] : [tool, input]);
           return base(prompt, tools);
         };
@@ -190,7 +190,7 @@ test("instruction finishes before opening and only an absolute majority can annu
       })) as Record<Counsel, Script>;
       const { bench, events, prompts } = makeBench({ judge: judgeScript, ...scripts });
       await holdSession(bench);
-      const source = project(events).sources.get("S1")!;
+      const source = project(events).sources.get("E1")!;
       assert.equal(source.excluded, excluded);
       assert.equal(source.contributions.length, 4, "deduplicated source retains all four authors");
       assert.equal(Object.keys(source.votes).length, absent ? 3 : 4);
@@ -202,7 +202,7 @@ test("instruction finishes before opening and only an absolute majority can annu
       assert.ok(events.filter((e) => e.type === "evidence_filed").every((e) => e.seq < events[unified].seq));
       for (const name of names) {
         const prompt = prompts[name].find((p) => /Tenés la palabra para tu exposición inicial/.test(p))!;
-        assert.match(prompt, excluded ? /\[S1\] ANULADA/ : /\[S1\] ADMITIDA/);
+        assert.match(prompt, excluded ? /\[E1\] ANULADA/ : /\[E1\] ADMITIDA/);
         for (const author of ["Grok", "Gemini", "Claude", "ChatGPT"]) assert.ok(prompt.includes("Aporte de " + author));
       }
       if (absent) {

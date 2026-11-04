@@ -4,6 +4,7 @@ import { parseHTML } from "linkedom";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { COUNSEL, project, type CaseRecord, type CourtEvent } from "../domain/court.ts";
+import { displayHistoricalCitations } from "../domain/historical-citations.ts";
 import { CaseResult } from "./case-result.tsx";
 
 const c: CaseRecord = {
@@ -50,6 +51,19 @@ test("the summary links the claims, sources and interventions it mentions", () =
   const summary = [...document.querySelectorAll("section p")].find((p) => p.textContent.includes("según la PF"))!;
   assert.deepEqual([...summary.querySelectorAll("a")].map((a) => a.getAttribute("href")), ["#A1", "#S1", "#I3"]);
   assert.ok(summary.textContent.includes("S9 no existe."), "unknown ids stay as text");
+});
+
+test("the displayed historical summary links rewritten source references", () => {
+  const record: CourtEvent[] = [
+    events[0]!,
+    { type: "evidence_unified", sources: [{ id: "S1", url: "https://example.org/1", title: "Fuente", contributions: [] }] },
+    { type: "case_summary", text: "El resumen se apoya en S1." },
+  ];
+  const recorded = record.map((e, i) => ({ ...e, seq: i + 1, at: c.createdAt }));
+  const { events: displayed } = displayHistoricalCitations(recorded);
+  const html = renderToStaticMarkup(createElement(CaseResult, { c, view: project(displayed), events: displayed }));
+  assert.ok(html.includes('href="#E1"'));
+  assert.ok(!html.includes('href="#S1"'));
 });
 
 test("each quoted claim shows its conclusion, linked to the claim's reasons", () => {

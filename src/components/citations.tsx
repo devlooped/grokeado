@@ -6,7 +6,7 @@ export function evidenceHref(caseId: string, citation: string): string {
   return `/caso/${encodeURIComponent(caseId)}/evidencia/${encodedPath}${anchor ? `#${encodeURIComponent(anchor)}` : ""}`;
 }
 
-// What free text of the case can point to: the sources (S), contributions (P),
+// What free text of the case can point to: the unified sources (E, or S in historical records), contributions (P),
 // interventions (I) and objections (O) of the record, and the OKF evidence pages.
 export interface Citations {
   caseId: string;

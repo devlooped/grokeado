@@ -10,6 +10,7 @@ import { CaseResult } from "@/components/case-result.tsx";
 import { caseShareMetadata, submissionExcerpt } from "@/domain/acta.ts";
 import { COUNSEL_NAMES, type CaseRecord } from "@/domain/court.ts";
 import { project } from "@/domain/court.ts";
+import { displayHistoricalCitations } from "@/domain/historical-citations.ts";
 import { blobConfigured, findEvidenceArchive, hasEvidenceBase } from "@/evidence/blob.ts";
 import { auth0 } from "@/lib/auth0.ts";
 import { findCaseAlias, getCase, getEvents } from "@/store.ts";
@@ -65,7 +66,7 @@ export default async function CasePage(props: PageProps<"/caso/[id]">) {
     return <Suspended c={c} user={session?.user} />;
   }
 
-  const events = await getEvents(id);
+  const { events, aliases } = displayHistoricalCitations(await getEvents(id));
   const hasEvidence = blobConfigured() && Boolean(await findEvidenceArchive(id) || await hasEvidenceBase(id));
   const simulated = events.some((e) => e.type === "session_opened" && e.simulated);
   const view = project(events);
@@ -96,7 +97,7 @@ export default async function CasePage(props: PageProps<"/caso/[id]">) {
           <p className="mt-1 text-sm text-ink-soft">Todo lo que pasó en el debate, completo y en orden.</p>
         </div>
         <div className="mt-8">
-          <Acta events={events} view={view} caseId={id} />
+          <Acta events={events} view={view} caseId={id} sourceAliases={aliases} />
         </div>
       </section>
 
