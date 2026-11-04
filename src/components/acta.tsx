@@ -70,7 +70,7 @@ function Source({ source, ctx }: { source: SourceView; ctx: Context }) {
         <ul className="mt-2 space-y-2 text-sm">
           {source.contributions.map((e) => (
             <li key={e.id} className={source.excluded ? "struck text-ink-soft" : "text-ink-soft"}>
-              <span className="font-semibold">{MODEL_NAME[e.by]} · {e.claimId} · {EVIDENCE_STANCE_LABEL[e.stance ?? "context"]}:</span> {e.excerpt}
+              <span className="font-semibold">{MODEL_NAME[e.by]} · <Cited text={e.claimId} ctx={ctx} /> · {EVIDENCE_STANCE_LABEL[e.stance ?? "context"]}:</span> {e.excerpt}
               <OriginalEvidence evidence={e} />
             </li>
           ))}
@@ -98,7 +98,8 @@ function Statement({ e, ctx }: { e: Extract<RecordedEvent, { type: "statement" }
   // Citations the analyst declared without mentioning them in the text keep a discreet link.
   const unmentioned = e.evidenceIds.filter((id) => !mentioned.has(id));
   return (
-    <div id={e.id} className="scroll-mt-24">
+    <div id={e.id} className="scroll-mt-24 target:ring-2 target:ring-celeste">
+      <p className="mb-1"><CitationLink id={e.id} href={"#" + e.id} /></p>
       <p className={"whitespace-pre-line font-display text-lg leading-snug " + (struck ? "struck" : "")}><Cited text={e.text} ctx={ctx} /></p>
       {unmentioned.length > 0 && (
         <p className="mt-1 text-xs text-ink-soft">
@@ -127,7 +128,7 @@ function Entry({ e, ctx }: { e: RecordedEvent; ctx: Context }) {
           <div>
             <p className="text-sm font-semibold">El moderador fija las afirmaciones a examinar</p>
             <ol className="mt-1 space-y-1 text-sm">
-              {e.claims.map((c) => <li key={c.id}><span className="font-mono text-xs text-ink-soft">{c.id}</span> {c.text}</li>)}
+              {e.claims.map((c) => <li key={c.id}><Cited text={c.id} ctx={ctx} /> <Cited text={c.text} ctx={ctx} /></li>)}
             </ol>
           </div>
         </div>
@@ -136,7 +137,7 @@ function Entry({ e, ctx }: { e: RecordedEvent; ctx: Context }) {
       return (
         <div className="flex gap-3">
           <span className="grid size-9 shrink-0 place-items-center rounded-full bg-seal text-paper"><GavelIcon className="size-4" /></span>
-          <p className="text-sm"><span className="font-semibold">El moderador descarta el caso.</span> {e.reason}</p>
+          <p className="text-sm"><span className="font-semibold">El moderador descarta el caso.</span> <Cited text={e.reason} ctx={ctx} /></p>
         </div>
       );
     case "evidence_filed":
@@ -145,7 +146,7 @@ function Entry({ e, ctx }: { e: RecordedEvent; ctx: Context }) {
           <div className="flex items-center gap-2 text-xs text-ink-soft">
             <span className="font-mono font-medium text-ink">{e.evidence.id}</span>
             <ModelMark model={e.evidence.by} className="size-3.5" />
-            <span>Aporte de {MODEL_NAME[e.evidence.by]} sobre {e.evidence.claimId}{e.evidence.stance && " · " + EVIDENCE_STANCE_LABEL[e.evidence.stance]}</span>
+            <span>Aporte de {MODEL_NAME[e.evidence.by]} sobre <Cited text={e.evidence.claimId} ctx={ctx} />{e.evidence.stance && " · " + EVIDENCE_STANCE_LABEL[e.evidence.stance]}</span>
           </div>
           <a href={e.evidence.url} target="_blank" rel="noreferrer noopener" className="mt-1 block font-medium text-celeste-deep underline decoration-celeste/40 underline-offset-2 hover:decoration-celeste-deep">
             {e.evidence.title}
@@ -161,7 +162,7 @@ function Entry({ e, ctx }: { e: RecordedEvent; ctx: Context }) {
         <details className="text-sm text-ink-soft">
           <summary className="cursor-pointer">{MODEL_NAME[e.by]} cierra sus aportes · búsquedas en ambos sentidos</summary>
           <ul className="mt-2 space-y-2">
-            {e.searches.map((s) => <li key={s.claimId}><span className="font-mono">{s.claimId}</span><p>A favor: {s.supporting}</p><p>En contra: {s.opposing}</p></li>)}
+            {e.searches.map((s) => <li key={s.claimId}><Cited text={s.claimId} ctx={ctx} /><p>A favor: <Cited text={s.supporting} ctx={ctx} /></p><p>En contra: <Cited text={s.opposing} ctx={ctx} /></p></li>)}
           </ul>
         </details>
       );
@@ -186,8 +187,8 @@ function Entry({ e, ctx }: { e: RecordedEvent; ctx: Context }) {
       return <Statement e={e} ctx={ctx} />;
     case "objection":
       return (
-        <div id={e.id} className="scroll-mt-24 border-l-4 border-seal pl-4">
-          <p className="font-display text-xl italic text-seal">Objeción <span className="font-mono text-xs not-italic text-ink-soft">{e.id}</span></p>
+        <div id={e.id} className="scroll-mt-24 border-l-4 border-seal pl-4 target:ring-2 target:ring-celeste">
+          <p className="font-display text-xl italic text-seal">Objeción <span className="not-italic"><CitationLink id={e.id} href={"#" + e.id} /></span></p>
           <p className="text-sm">
             <span className="font-semibold">{MODEL_NAME[e.by]}</span> objeta <a href={"#" + e.against} className="font-mono text-celeste-deep hover:underline">{e.against}</a>: <Cited text={e.grounds} ctx={ctx} />
           </p>
@@ -196,7 +197,7 @@ function Entry({ e, ctx }: { e: RecordedEvent; ctx: Context }) {
     case "objection_reply":
       return (
         <div className="pl-5 text-sm">
-          <span className="font-semibold">{MODEL_NAME[e.by]}</span> responde: <span className="text-ink-soft"><Cited text={e.text} ctx={ctx} /></span>
+          <span className="font-semibold">{MODEL_NAME[e.by]}</span> responde a <Cited text={e.objectionId} ctx={ctx} />: <span className="text-ink-soft"><Cited text={e.text} ctx={ctx} /></span>
         </div>
       );
     case "ruling":
@@ -204,7 +205,7 @@ function Entry({ e, ctx }: { e: RecordedEvent; ctx: Context }) {
         <div className="flex items-start gap-2 pl-5 text-sm">
           <GavelIcon className="mt-0.5 size-4 shrink-0 text-seal" />
           <p>
-            <span className={"font-bold uppercase tracking-wide " + (e.sustained ? "text-seal" : "text-ink")}>{e.sustained ? "Objeción aceptada" : "Objeción rechazada"}.</span>{" "}
+            <span className={"font-bold uppercase tracking-wide " + (e.sustained ? "text-seal" : "text-ink")}>{e.sustained ? "Objeción aceptada" : "Objeción rechazada"}</span> (<Cited text={e.objectionId} ctx={ctx} />).{" "}
             <span className="text-ink-soft"><Cited text={e.reason} ctx={ctx} /></span>
           </p>
         </div>
@@ -214,7 +215,7 @@ function Entry({ e, ctx }: { e: RecordedEvent; ctx: Context }) {
         <div className="flex items-start gap-2 text-sm">
           <ModelMark model={e.by} className="mt-0.5 size-4 shrink-0" />
           <p>
-            <span className="font-semibold">{MODEL_NAME[e.by]}</span> vota <span className={"font-semibold " + VERDICT_TEXT[e.verdict]}>{VERDICT_LABEL[e.verdict]}</span> sobre {e.claimId}. <span className="text-ink-soft"><Cited text={e.rationale} ctx={ctx} /></span>
+            <span className="font-semibold">{MODEL_NAME[e.by]}</span> vota <span className={"font-semibold " + VERDICT_TEXT[e.verdict]}>{VERDICT_LABEL[e.verdict]}</span> sobre <Cited text={e.claimId} ctx={ctx} />. <span className="text-ink-soft"><Cited text={e.rationale} ctx={ctx} /></span>
           </p>
         </div>
       );
@@ -223,21 +224,21 @@ function Entry({ e, ctx }: { e: RecordedEvent; ctx: Context }) {
         <div className="flex items-start gap-4 rounded-sm border border-seal/40 bg-seal/5 p-4">
           <JudgeSeal verdict={e.verdict} judge={ctx.models.judge} />
           <p className="text-sm">
-            <span className="font-semibold">Desempate del moderador sobre {e.claimId}: </span>
+            <span className="font-semibold">Desempate del moderador sobre <Cited text={e.claimId} ctx={ctx} />: </span>
             <span className={"font-semibold " + VERDICT_TEXT[e.verdict]}>{VERDICT_LABEL[e.verdict]}.</span> <span className="text-ink-soft"><Cited text={e.reasoning} ctx={ctx} /></span>
           </p>
         </div>
       ) : (
         <p className="flex items-center justify-center gap-2 text-sm">
           <span className={VERDICT_TEXT[e.verdict]}><VerdictGlyph verdict={e.verdict} className="size-4" /></span>
-          Resultado de {e.claimId}: <span className={"font-semibold " + VERDICT_TEXT[e.verdict]}>{VERDICT_LABEL[e.verdict]}</span>, por mayoría.
+          Resultado de <Cited text={e.claimId} ctx={ctx} />: <span className={"font-semibold " + VERDICT_TEXT[e.verdict]}>{VERDICT_LABEL[e.verdict]}</span>, por mayoría.
         </p>
       );
     case "case_summary":
       return (
         <div className="text-sm">
           <p className="font-semibold">Resumen del moderador</p>
-          <p className="mt-1 whitespace-pre-line text-ink-soft">{e.text}</p>
+          <p className="mt-1 whitespace-pre-line text-ink-soft"><Cited text={e.text} ctx={ctx} /></p>
         </div>
       );
     case "absence":
@@ -376,7 +377,7 @@ function groupTitle(group: Group, ctx: Context): React.ReactNode {
     <>
       <span className="font-semibold">{MODEL_NAME[group.by]}</span>
       <span className="text-ink-soft"> · {STAGE_LABEL[group.stage]}</span>
-      {statement && <span className="font-mono text-xs text-ink-soft"> · {statement.id}</span>}
+      {statement && <span className="text-xs"> · <CitationLink id={statement.id} href={"#" + statement.id} /></span>}
       {statement && ctx.view.struck.has(statement.id) && <span className="ml-2 rounded-sm bg-seal px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-paper">Anulado</span>}
     </>
   );
@@ -390,7 +391,7 @@ function GroupFold({ group, ctx }: { group: Group; ctx: Context }) {
         <Speaker by={group.by} />
         <span className="min-w-0 flex-1">
           <span className="block text-sm">{groupTitle(group, ctx)}</span>
-          {statement && <span className="fold-preview text-sm text-ink-soft">{statement.text}</span>}
+          {statement && <span className="fold-preview text-sm text-ink-soft"><Cited text={statement.text} ctx={ctx} /></span>}
         </span>
         <Chevron />
       </summary>

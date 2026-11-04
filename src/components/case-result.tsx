@@ -97,7 +97,7 @@ function Original({ c, claims, models, combined = false }: { c: CaseRecord; clai
   );
 }
 
-function ClaimCard({ claim, models, children }: { claim: ClaimView; models: SeatModels; children?: React.ReactNode }) {
+function ClaimCard({ claim, models, citations, children }: { claim: ClaimView; models: SeatModels; citations: Citations; children?: React.ReactNode }) {
   const j = claim.judgment;
   const agreeing = j ? COUNSEL.filter((c) => claim.votes[c]?.verdict === j.verdict).length : 0;
   return (
@@ -105,7 +105,7 @@ function ClaimCard({ claim, models, children }: { claim: ClaimView; models: Seat
       {children ? <div className="min-w-0 sm:col-span-2">{children}</div> : (
         <div className="min-w-0 sm:col-span-2 lg:col-span-1">
           <p className="font-mono text-[11px] text-ink-soft">{claim.id}</p>
-          <h3 className="mt-1 break-words font-display text-xl leading-snug">{claim.text}</h3>
+          <h3 className="mt-1 break-words font-display text-xl leading-snug"><Cited text={claim.text} ctx={citations} /></h3>
         </div>
       )}
       <div className="flex items-center gap-3">
@@ -135,14 +135,14 @@ function ClaimCard({ claim, models, children }: { claim: ClaimView; models: Seat
               {claim.votes[c] ? (
                 <>
                   <span className={"font-semibold " + VERDICT_TEXT[claim.votes[c].verdict]}>{VERDICT_LABEL[claim.votes[c].verdict]}.</span>{" "}
-                  <span className="text-ink-soft">{claim.votes[c].rationale}</span>
+                  <span className="text-ink-soft"><Cited text={claim.votes[c].rationale} ctx={citations} /></span>
                 </>
               ) : <span className="text-ink-soft">no votó.</span>}
             </li>
           ))}
           {j?.method === "judge" && (
             <li className="border-l-2 border-seal pl-3">
-              <span className="font-semibold text-seal">Moderador:</span> <span className="text-ink-soft">{j.reasoning}</span>
+              <span className="font-semibold text-seal">Moderador:</span> <span className="text-ink-soft"><Cited text={j.reasoning} ctx={citations} /></span>
             </li>
           )}
         </ul>
@@ -152,10 +152,7 @@ function ClaimCard({ claim, models, children }: { claim: ClaimView; models: Seat
 }
 
 export function CaseResult({ c, view, events = [], models = seatModels(c, events) }: { c: CaseRecord; view: CaseView; events?: readonly RecordedEvent[]; models?: SeatModels }) {
-  // The summary links what it mentions: the claims to their cards, the rest to the record below.
-  const refs = citationRefs(events, view);
-  for (const claim of view.claims) refs.set(claim.id, "#" + claim.id);
-  const citations: Citations = { caseId: c.id, refs };
+  const citations: Citations = { caseId: c.id, refs: citationRefs(events, view) };
   const outcome = caseOutcome(view);
   const combinedClaim = !view.dismissal && c.submission.kind === "text" && view.claims.length === 1 && bare(c.submission.text) === bare(view.claims[0]!.text) ? view.claims[0] : undefined;
   return (
@@ -164,7 +161,7 @@ export function CaseResult({ c, view, events = [], models = seatModels(c, events
       <div data-case-overview className="mt-6 space-y-4">
         <div className="grid items-start gap-4 lg:has-[section]:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
           {combinedClaim ? (
-            <ClaimCard claim={combinedClaim} models={models}>
+            <ClaimCard claim={combinedClaim} models={models} citations={citations}>
               <Original c={c} claims={view.claims} models={models} combined />
             </ClaimCard>
           ) : <Original c={c} claims={view.claims} models={models} />}
@@ -193,7 +190,7 @@ export function CaseResult({ c, view, events = [], models = seatModels(c, events
                 </div>
               )}
             </div>
-            {view.claims.map((claim) => <ClaimCard key={claim.id} claim={claim} models={models} />)}
+            {view.claims.map((claim) => <ClaimCard key={claim.id} claim={claim} models={models} citations={citations} />)}
             <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-rule py-4 text-[11px] text-ink-soft">
               <span>Cada círculo es un voto:</span>
               <span className="inline-flex items-center gap-1"><span className="size-2.5 rounded-full bg-verdadero" /> {VERDICT_LABEL.verdadero}</span>

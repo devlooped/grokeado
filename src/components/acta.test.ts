@@ -130,16 +130,16 @@ test("citations mentioned in an intervention link inline, and only the unmention
   ]);
   const { document } = parseHTML(html);
   const statement = document.getElementById("I1")!;
-  const text = statement.querySelector("p")!;
+  const text = statement.querySelectorAll("p")[1]!;
   assert.deepEqual([...text.querySelectorAll("a")].map((a) => a.getAttribute("href")), ["#E1", "#E10"]);
   assert.ok(text.textContent.includes("(E1, E10)"), "the text reads unchanged around its links");
-  assert.ok(!text.innerHTML.includes('href="#A1"'), "claims are not citations");
+  assert.ok(!text.innerHTML.includes('href="#A1"'), "unknown claims remain plain text");
   const rest = [...statement.querySelectorAll("p")].at(-1)!;
   assert.ok(rest.textContent.startsWith("También cita"));
   assert.deepEqual([...rest.querySelectorAll("a")].map((a) => a.getAttribute("href")), ["#E2"]);
   assert.ok(!html.includes("Cita:"));
   const objection = document.getElementById("O1")!;
-  assert.deepEqual([...objection.querySelectorAll("a")].map((a) => a.getAttribute("href")), ["#I1", "#E10", "#I1"]);
+  assert.deepEqual([...objection.querySelectorAll("a")].map((a) => a.getAttribute("href")), ["#O1", "#I1", "#E10", "#I1"]);
 });
 
 test("the acta folds into stages, each analyst's instruction run up to its close, and debate turns", () => {

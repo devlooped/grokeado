@@ -6,6 +6,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { COUNSEL, project, type CaseRecord, type CourtEvent } from "../domain/court.ts";
 import { displayHistoricalCitations } from "../domain/historical-citations.ts";
 import { CaseResult } from "./case-result.tsx";
+import { Acta } from "./acta.tsx";
 
 const c: CaseRecord = {
   id: "fixture", createdAt: "2026-10-30T14:00:00.000Z", status: "resolved",
@@ -170,6 +171,55 @@ test("the summary links the claims, sources and interventions it mentions", () =
   const summary = [...document.querySelectorAll("section p")].find((p) => p.textContent.includes("según la PF"))!;
   assert.deepEqual([...summary.querySelectorAll("a")].map((a) => a.getAttribute("href")), ["#A1", "#S1", "#I3"]);
   assert.ok(summary.textContent.includes("S9 no existe."), "unknown ids stay as text");
+});
+
+test("claim, intervention and objection references link consistently across the result and folded record", () => {
+  const record: CourtEvent[] = [
+    events[0]!,
+    { type: "instruction_opened" },
+    { type: "evidence_filed", evidence: { id: "P1", by: "grok", claimId: "A2", title: "Prueba", url: "https://example.org", excerpt: "Dato." } },
+    { type: "instruction_completed", by: "grok", searches: [{ claimId: "A2", supporting: "Sobre [A2] y I1.", opposing: "Sobre O1." }] },
+    { type: "statement", id: "I1", by: "grok", stage: "opening", text: "[A2] remite a I2 y O1; A99 es desconocida.", evidenceIds: [] },
+    { type: "objection", id: "O1", by: "gemini", against: "I1", grounds: "[A2] no prueba I2." },
+    { type: "objection_reply", objectionId: "O1", by: "grok", text: "I1 se refiere a [A2]." },
+    { type: "ruling", objectionId: "O1", sustained: false, reason: "I2 respalda [A2]." },
+    { type: "statement", id: "I2", by: "claude", stage: "rebuttal", text: "Respuesta a O1 sobre A2.", evidenceIds: [] },
+    { type: "vote", by: "grok", claimId: "A1", verdict: "falso", rationale: "[A2] y O1 apoyan I1." },
+    { type: "judgment", claimId: "A1", verdict: "falso", method: "judge", reasoning: "I2 responde a O1 sobre [A2]." },
+    { type: "case_summary", text: "[A2] se debatió en I1 e I2 y en O1. URL: https://example.org/A2/I1." },
+  ];
+  const recorded = record.map((e, i) => ({ ...e, seq: i + 1, at: c.createdAt }));
+  const view = project(recorded);
+  const html = renderToStaticMarkup(createElement("main", null,
+    createElement(CaseResult, { c, view, events: recorded }),
+    createElement(Acta, { events: recorded, view, caseId: c.id }),
+  ));
+  const { document } = parseHTML(html);
+  for (const id of ["A1", "A2", "I1", "I2", "O1"]) {
+    assert.equal(document.querySelectorAll(`[id="${id}"]`).length, 1, id + " has one target");
+    assert.ok(document.querySelector(`a[href="#${id}"]`), id + " is linked");
+  }
+  for (const id of ["I1", "I2", "O1"]) {
+    const target = document.getElementById(id)!;
+    assert.ok(target.closest("[data-acta]"));
+    assert.ok(target.closest("details"), "the target is inside a fold");
+    assert.ok(target.querySelector(`a[href="#${id}"]`), "the entry has its own permalink");
+  }
+  const statement = document.getElementById("I1")!;
+  assert.ok(statement.textContent.includes("[A2] remite a I2 y O1; A99 es desconocida."));
+  assert.deepEqual([...statement.querySelectorAll("a")].map((a) => a.getAttribute("href")), ["#I1", "#A2", "#I2", "#O1"]);
+  assert.equal(statement.querySelector("a[href=\"#A2\"]")?.textContent, "A2");
+  assert.ok(!document.querySelector('a[href="#A99"]'));
+  const summary = document.querySelector('[aria-labelledby="case-summary-title"]')!;
+  assert.deepEqual([...summary.querySelectorAll("a")].map((a) => a.getAttribute("href")), ["#A2", "#I1", "#I2", "#O1"]);
+  assert.ok(summary.textContent.includes("https://example.org/A2/I1."), "case-like IDs in URLs remain untouched");
+  const vote = document.getElementById("voto-A1-grok")!;
+  assert.deepEqual([...vote.querySelectorAll("a")].map((a) => a.getAttribute("href")), ["#A2", "#O1", "#I1"]);
+  const moderator = document.querySelector("#fundamentos-A1 li.border-l-2")!;
+  assert.deepEqual([...moderator.querySelectorAll("a")].map((a) => a.getAttribute("href")), ["#I2", "#O1", "#A2"]);
+  const acta = document.querySelector("[data-acta]")!;
+  assert.ok(acta.querySelectorAll('a[href="#A2"]').length >= 6, "claim references are linked throughout the record");
+  assert.ok(acta.querySelectorAll('a[href="#O1"]').length >= 4, "the reply and ruling identify their objection");
 });
 
 test("the displayed historical summary links rewritten source references", () => {

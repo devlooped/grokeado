@@ -6,8 +6,8 @@ export function evidenceHref(caseId: string, citation: string): string {
   return `/c/${encodeURIComponent(caseId)}/evidence/${encodedPath}${anchor ? `#${encodeURIComponent(anchor)}` : ""}`;
 }
 
-// What free text of the case can point to: the unified sources (E, or S in historical records), contributions (P),
-// interventions (I) and objections (O) of the record, and the OKF evidence pages.
+// What free text of the case can point to: claims (A), unified sources (E, or S in historical records),
+// contributions (P), interventions (I), objections (O), and the OKF evidence pages.
 export interface Citations {
   caseId: string;
   refs: ReadonlyMap<string, string>;
@@ -19,11 +19,13 @@ export function citationRefs(events: readonly RecordedEvent[], view: CaseView): 
     if (e.type === "statement" || e.type === "objection") refs.set(e.id, "#" + e.id);
     if (e.type === "evidence_filed") refs.set(e.evidence.id, "#" + e.evidence.id);
   }
+  for (const claim of view.claims) refs.set(claim.id, "#" + claim.id);
   for (const id of view.sources.keys()) refs.set(id, "#" + id);
   return refs;
 }
 
-const MENTION = /\/evidence\/[^\s)\]},;]+|\b[A-Z]\d{1,3}\b/g;
+// Treat external URLs as whole tokens so an ID in a URL is not mistaken for a case reference.
+const MENTION = /https?:\/\/[^\s<>"']+|\/evidence\/[^\s)\]},;]+|\b[A-Z]\d{1,3}\b/g;
 
 export function citationHref(token: string, ctx: Citations): string | undefined {
   return token.startsWith("/evidence/") ? evidenceHref(ctx.caseId, token) : ctx.refs.get(token);
