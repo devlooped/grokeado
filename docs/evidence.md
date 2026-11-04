@@ -68,6 +68,12 @@ The requested language is Detectar, Español, or Inglés. Automatic detection
 uses the submitted text, extracted linked content, or the submitted image;
 when no usable content is available it falls back to Spanish. Spanish means
 Latin American Spanish. The resolved language is saved for retries. Analyst
+filed titles and excerpts, including quotations, are translated before they enter
+the record and are unified for source criticism. Their original text is retained
+in the event record and can be inspected in the acta. Translation failure stops
+the case instead of silently publishing an untranslated contribution. Each
+instruction attempt also completes the archival download/translation described
+above before source criticism begins; these downloads are not fed to the review.
 Markdown documents downloaded from the sandbox are translated when necessary;
 their originals are retained under the run's `originals/` directory. Model
 translation can introduce errors and is not a substitute for the original.

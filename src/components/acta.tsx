@@ -1,5 +1,5 @@
 import { ABSENCE_LABEL, EVIDENCE_STANCE_LABEL, STAGE_LABEL, VERDICT_LABEL } from "@/domain/acta.ts";
-import { COUNSEL, MODEL_NAME, seatModels, type CaseView, type Counsel, type RecordedEvent, type SeatModels, type SourceView, type Stage } from "@/domain/court.ts";
+import { COUNSEL, MODEL_NAME, seatModels, type CaseView, type Counsel, type Evidence, type RecordedEvent, type SeatModels, type SourceView, type Stage } from "@/domain/court.ts";
 import { FoldButtons, FoldNavigation } from "./acta-folding.tsx";
 import { CitationLink, Cited, citationHref, citationRefs, mentions, type Citations } from "./citations.tsx";
 import { GavelIcon, JudgeSeal, ModelMark, VERDICT_TEXT, VerdictGlyph } from "./marks.tsx";
@@ -35,6 +35,17 @@ function Clerk({ children }: { children: React.ReactNode }) {
   return <p className="py-1 text-center font-mono text-[11px] uppercase tracking-[0.18em] text-ink-soft">{children}</p>;
 }
 
+function OriginalEvidence({ evidence }: { evidence: Evidence }) {
+  if (!evidence.translation) return null;
+  return (
+    <details className="mt-1 text-xs text-ink-soft">
+      <summary className="cursor-pointer text-celeste-deep">Traducción automática · ver original aportado</summary>
+      <p className="mt-1 font-semibold">{evidence.translation.original.title}</p>
+      <p>{evidence.translation.original.excerpt}</p>
+    </details>
+  );
+}
+
 function Source({ source, ctx }: { source: SourceView; ctx: Context }) {
   const contributors = COUNSEL.filter((c) => source.contributions.some((e) => e.by === c));
   const vetoes = COUNSEL.filter((c) => source.votes[c]?.veto).length;
@@ -60,6 +71,7 @@ function Source({ source, ctx }: { source: SourceView; ctx: Context }) {
           {source.contributions.map((e) => (
             <li key={e.id} className={source.excluded ? "struck text-ink-soft" : "text-ink-soft"}>
               <span className="font-semibold">{MODEL_NAME[e.by]} · {e.claimId} · {EVIDENCE_STANCE_LABEL[e.stance ?? "context"]}:</span> {e.excerpt}
+              <OriginalEvidence evidence={e} />
             </li>
           ))}
         </ul>
@@ -139,6 +151,7 @@ function Entry({ e, ctx }: { e: RecordedEvent; ctx: Context }) {
             {e.evidence.title}
           </a>
           <p className="mt-1 text-sm text-ink-soft">{e.evidence.excerpt}</p>
+          <OriginalEvidence evidence={e.evidence} />
         </div>
       );
     case "instruction_opened":

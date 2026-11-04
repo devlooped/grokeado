@@ -12,6 +12,22 @@ function render(events: CourtEvent[]) {
   return renderToStaticMarkup(createElement(Acta, { events: recorded, view: project(recorded), caseId: "fixture" }));
 }
 
+test("the acta labels translated contributions and retains their originals in both stages", () => {
+  const evidence = { id: "P1", by: "grok" as const, claimId: "A1", title: "Informe oficial", url: "https://example.org/report", excerpt: "El investigado no entregó los documentos.", stance: "opposes" as const, translation: { language: "es", original: { title: "Relatório oficial", excerpt: "O investigado não entregou os documentos." } } };
+  const html = render([
+    { type: "instruction_opened" },
+    { type: "evidence_filed", evidence },
+    { type: "evidence_unified", sources: [{ id: "E1", title: evidence.title, url: evidence.url, contributions: [evidence] }] },
+  ]);
+  const { document } = parseHTML(html);
+  for (const id of ["P1", "E1"]) {
+    const card = document.getElementById(id)!;
+    assert.ok(card.textContent.includes(evidence.excerpt));
+    assert.ok(card.textContent.includes(evidence.translation.original.excerpt));
+    assert.ok(card.textContent.includes("Traducción automática"));
+  }
+});
+
 test("the acta displays shared attribution, bilateral searches, all reliability votes and the exclusion warning", () => {
   const url = "https://example.org/report";
   const html = render([

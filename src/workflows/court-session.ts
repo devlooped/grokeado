@@ -10,6 +10,7 @@ import { languageInstruction } from "../domain/language.ts";
 import { collectEvidenceBase } from "../evidence/collect.ts";
 import { imageDescriber } from "../evidence/describe.ts";
 import { liveContributionDeps, saveContributedSources } from "../evidence/contributions.ts";
+import { translateFiledEvidence, translatorFor } from "../evidence/translate.ts";
 import { archiveEvidence } from "../evidence/archive.ts";
 import { blobConfigured } from "../evidence/blob.ts";
 import { runEvidenceStep, type EvidenceStepResult } from "../evidence/sandbox.ts";
@@ -43,6 +44,11 @@ async function determineLanguage(caseId: string, submission: Submission, context
 async function collectSources(caseId: string, events: CourtEvent[], language: string, translator: CourtModel): Promise<void> {
   "use step";
   if (blobConfigured()) await saveContributedSources(caseId, events, language, liveContributionDeps(translator));
+}
+
+async function translateContributions(outcome: TurnOutcome, language: string, translator: CourtModel): Promise<TurnOutcome> {
+  "use step";
+  return { ...outcome, events: await translateFiledEvidence(outcome.events, language, translatorFor(translator)) };
 }
 
 async function archive(caseId: string): Promise<void> {
@@ -130,8 +136,11 @@ export async function courtSession(caseId: string): Promise<void> {
       },
       play: async (spec, record, attempt) => {
         const evidence = await prepareEvidence(caseId, spec, simulated, language, models);
-        const outcome = await play(caseId, docket, spec, record, attempt, evidence);
-        if (!simulated && spec.kind === "instruction") await collectSources(caseId, outcome.events, language, models.translator);
+        let outcome = await play(caseId, docket, spec, record, attempt, evidence);
+        if (!simulated && spec.kind === "instruction") {
+          outcome = await translateContributions(outcome, language, models.translator);
+          await collectSources(caseId, outcome.events, language, models.translator);
+        }
         return outcome;
       },
       commit: (events: readonly RecordedEvent[]) => saveEvents(caseId, [...events]),

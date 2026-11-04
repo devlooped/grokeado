@@ -4,6 +4,7 @@ import { project, type Counsel, type CourtEvent, type RecordedEvent } from "../d
 import { holdSession, type Bench } from "./procedure.ts";
 import { conductTurn, type Converse, type Docket, type SeatId } from "./turns.ts";
 import { toAiTools } from "./toolset.ts";
+import { translateFiledEvidence } from "../evidence/translate.ts";
 
 type Call = [tool: string, args: Record<string, unknown>];
 type Script = (prompt: string, tools: string[]) => Call[];
@@ -77,6 +78,51 @@ const judgeScript: Script = (prompt, tools) => {
   if (tools.includes("summarize_case")) return [["summarize_case", { text: "Los analistas debatieron el alcance de las cifras y discreparon sobre la segunda afirmación." }]];
   return [];
 };
+
+test("translated contributions reach unification and source review, including after an incomplete instruction attempt", async () => {
+  let instructionAttempts = 0;
+  const grok: Script = (prompt, tools) => {
+    if (tools.includes("file_evidence")) {
+      instructionAttempts++;
+      if (instructionAttempts === 1) return [["file_evidence", { claimId: "A1", title: "Relatório oficial", url: "https://www.indec.gob.ar/", excerpt: "O investigado não entregou os documentos.", stance: "opposes" }]];
+      return [["finish_instruction", { searches: ["A1", "A2"].map((claimId) => ({ claimId, supporting: "Busqué documentos a favor de la afirmación.", opposing: "Busqué documentos en contra de la afirmación." })) }]];
+    }
+    return counsel("grok", { A1: "falso", A2: "falso" })(prompt, tools);
+  };
+  const { bench, events, prompts } = makeBench({ judge: judgeScript, grok, gemini: counsel("gemini", { A1: "falso", A2: "falso" }), claude: counsel("grok", { A1: "falso", A2: "falso" }), chatgpt: counsel("chatgpt", { A1: "falso", A2: "falso" }) });
+  const play = bench.play;
+  bench.play = async (spec, record, attempt) => {
+    const outcome = await play(spec, record, attempt);
+    if (spec.kind !== "instruction") return outcome;
+    return { ...outcome, events: await translateFiledEvidence(outcome.events, "es", async (input) => input.title === "Relatório oficial"
+      ? { changed: true, title: "Informe oficial", description: "", body: "El investigado no entregó los documentos." }
+      : { changed: false, ...input }) };
+  };
+  await holdSession(bench);
+  const filed = events.find((e) => e.type === "evidence_filed" && e.evidence.translation);
+  assert.ok(filed && filed.type === "evidence_filed");
+  assert.equal(filed.evidence.translation?.original.excerpt, "O investigado não entregou os documentos.");
+  assert.equal(project(events).sources.get("E1")!.contributions.find((e) => e.by === "grok")?.excerpt, "El investigado no entregó los documentos.");
+  const unification = prompts.judge.find((p) => p.includes("Unificá las pruebas de la instrucción"))!;
+  const review = prompts.grok.find((p) => p.includes("Turno de crítica de fuentes."))!;
+  for (const prompt of [unification, review]) {
+    assert.ok(prompt.includes("El investigado no entregó los documentos."));
+    assert.ok(!prompt.includes("O investigado não entregou os documentos."));
+  }
+  assert.equal(instructionAttempts, 2);
+});
+
+test("a failed contribution translation stops the session before unification and source review", async () => {
+  const { bench, events } = makeBench({ judge: judgeScript, grok: counsel("grok", null), gemini: counsel("gemini", null), claude: counsel("claude", null), chatgpt: counsel("chatgpt", null) });
+  const play = bench.play;
+  bench.play = async (spec, record, attempt) => {
+    const outcome = await play(spec, record, attempt);
+    if (spec.kind !== "instruction") return outcome;
+    return { ...outcome, events: await translateFiledEvidence(outcome.events, "es", async () => { throw new Error("translator unavailable"); }) };
+  };
+  await assert.rejects(holdSession(bench), /translator unavailable/);
+  assert.ok(!events.some((e) => e.type === "evidence_unified" || e.type === "source_review_vote"));
+});
 
 test("a full session reaches consensus where 3 of 4 agree and sends a split to the judge", async () => {
   const { bench, results, prompts, events } = makeBench({

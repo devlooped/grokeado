@@ -104,6 +104,8 @@ export interface Evidence {
   excerpt: string;
   // Optional only for records created before the instruction stage existed.
   stance?: "supports" | "opposes" | "context";
+  // The filed text remains available when the displayed text was translated.
+  translation?: { language: string; original: { title: string; excerpt: string } };
 }
 
 export interface InstructionSearch {
