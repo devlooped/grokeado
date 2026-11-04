@@ -22,7 +22,8 @@ is collected; language detection and cover review use
 `anthropic/claude-haiku-5.5`, cover search `spacexai/grok-4.7` and the cover
 illustration `spacexai/grok-imagine-image-2.0`. Every role (seats, image
 description, language detection, translator, cover search, review and
-illustration, and the tier-eval models)
+illustration, and the tier-eval models, including the tier evaluator that
+routes each claim)
 has its default in `src/court/models.ts` and can be overridden by a user with
 the exact `Admin` role at `/admin`, linked from the session badge. Overrides are
 stored in the `model_settings` table and validated against the public Gateway

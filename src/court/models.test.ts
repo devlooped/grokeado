@@ -34,6 +34,13 @@ test("translations have their own role, defaulting to Gemini Flash Lite", () => 
   assert.equal(new Set(MODEL_ROLES.map((role) => role.key)).size, MODEL_ROLES.length);
 });
 
+test("the tier evaluator is its own configurable role, defaulting to Terra at medium effort", () => {
+  assert.deepEqual(DEFAULT_MODELS["tier.evaluator"], { id: "openai/gpt-6.1-terra", providerOptions: { openai: { reasoningEffort: "medium" } } });
+  const models = resolveModels([{ role: "tier.evaluator", modelId: "spacexai/grok-4.7", effort: "medium" }]);
+  assert.deepEqual(models["tier.evaluator"], { id: "spacexai/grok-4.7", providerOptions: { xai: { reasoningEffort: "medium" } } });
+  assert.equal(MODEL_ROLES.find((role) => role.key === "tier.evaluator")?.label, "Evaluador de nivel");
+});
+
 test("courtModel maps effort to the option of each provider and round-trips through modelEffort", () => {
   for (const id of ["spacexai/a", "google/b", "anthropic/c", "openai/d"]) assert.equal(modelEffort(courtModel(id, "low")), "low");
   assert.deepEqual(courtModel("mistral/x", "high"), { id: "mistral/x" });

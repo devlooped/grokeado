@@ -154,4 +154,19 @@ export function modelFor(by: Counsel, tier: Tier, effort: "medium" | "high" = ti
   return courtModel(models[`tier.${by}.${tier}`].id, effort);
 }
 
+// The tier evaluator (moderator) runs at its configured effort; an escalation
+// turn runs the same model at high effort.
+export function moderatorModel(effort: "medium" | "high" = "medium", base: CourtModel = DEFAULT_MODELS["tier.evaluator"]): CourtModel {
+  return effort === "high" ? courtModel(base.id, "high") : base;
+}
+
+// "openai/gpt-6.1-terra@medium" → the model at that effort; without "@", the provider default.
+export function parseModerator(spec: string): CourtModel {
+  const [id, effort, extra] = spec.trim().split("@");
+  if (!id || !/^[a-z0-9][a-z0-9-]*\/[a-z0-9][a-z0-9._-]*$/i.test(id) || extra !== undefined || (effort !== undefined && !/^[a-z]{1,16}$/.test(effort))) {
+    throw new Error("Moderador no válido: " + spec + ". Usá proveedor/modelo o proveedor/modelo@esfuerzo.");
+  }
+  return courtModel(id, effort || null);
+}
+
 export const EVALUATORS = COUNSEL;

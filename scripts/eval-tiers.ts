@@ -6,16 +6,16 @@ import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { z } from "zod";
 import { AS_OF, CASES } from "../evals/tiers/cases.ts";
-import { assessmentSchema, describeError, EVALUATORS, gapRulingSchema, gradingSchema, groundResearch, modelFor as tierModelFor, researchSchema, routingSchema, type Evidence, type Observation, type Tier } from "../evals/tiers/core.ts";
+import { assessmentSchema, describeError, EVALUATORS, gapRulingSchema, gradingSchema, groundResearch, modelFor as tierModelFor, moderatorModel, parseModerator, researchSchema, routingSchema, type Evidence, type Observation, type Tier } from "../evals/tiers/core.ts";
 import { loadModels } from "../src/court/model-config.ts";
 import { modelEffort, type CourtModel } from "../src/court/models.ts";
 import type { Counsel } from "../src/domain/court.ts";
 import { generateSubmission } from "../evals/tiers/submission.ts";
 import { adjudicateChallenges, BudgetExceededError, challengedGaps, dossierForPrompt, resolveAssessment, runResearchLoop, type Adjudication, type ChallengedGap, type Dossier, type Effort, type ResearchBatch, type RetrievalIssue, type RoutingTurn } from "../evals/tiers/workflow.ts";
 import { assessmentPrompt, dataBoundary, gapRulingPrompt, moderatorPrompt, researchPrompt } from "../evals/tiers/prompts.ts";
-import { renderReport, renderSufficiencyReport, type AssessmentReport, type CaseReport } from "../evals/tiers/report.ts";
+import { renderReport, renderSufficiencyReport, summarizeModerators, type AssessmentReport, type CaseReport } from "../evals/tiers/report.ts";
 import { EXPERIMENT_VERSION, validateResume } from "../evals/tiers/experiment.ts";
-import { evaluateSufficiency, SUFFICIENCY_CASES, type SufficiencyReport } from "../evals/tiers/sufficiency-cases.ts";
+import { evaluateSufficiency, SUFFICIENCY_CASES, type ModeratorCall, type SufficiencyError, type SufficiencyReport } from "../evals/tiers/sufficiency-cases.ts";
 
 nextEnv.loadEnvConfig(process.cwd(), true);
 
@@ -24,6 +24,8 @@ const { values } = parseArgs({ options: {
   "retry-failed": { type: "boolean", default: false }, "max-usd": { type: "string", default: "8" },
   "max-research-rounds": { type: "string", default: "2" },
   suite: { type: "string", default: "claims" },
+  // Tier evaluators to compare, "provider/model@effort" separated by commas; default: the configured role.
+  moderators: { type: "string" }, repeat: { type: "string", default: "1" }, concurrency: { type: "string", default: "1" },
 } });
 const suite = values.suite;
 if (suite !== "claims" && suite !== "sufficiency") throw new Error("Suite desconocida. Elegí claims o sufficiency.");
@@ -35,31 +37,43 @@ const maxUsd = Number(values["max-usd"]);
 if (!Number.isFinite(maxUsd) || maxUsd <= 0) throw new Error("--max-usd debe ser un número positivo.");
 const maxResearchRounds = Number(values["max-research-rounds"]);
 if (!Number.isInteger(maxResearchRounds) || maxResearchRounds < 0 || maxResearchRounds > 5) throw new Error("--max-research-rounds debe ser un entero entre 0 y 5.");
+const repeat = Number(values.repeat), concurrency = Number(values.concurrency);
+if (!Number.isInteger(repeat) || repeat < 1 || repeat > 10) throw new Error("--repeat debe ser un entero entre 1 y 10.");
+if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 8) throw new Error("--concurrency debe ser un entero entre 1 y 8.");
+if (suite === "claims" && (repeat > 1 || concurrency > 1)) throw new Error("--repeat y --concurrency solo aplican a la suite sufficiency.");
 const outputDir = resolve(values.out ?? "test-results/tier-evals/" + new Date().toISOString().replace(/[:.]/g, "-"));
 await mkdir(outputDir, { recursive: true });
 const manifestPath = resolve(outputDir, "run.json");
 const existing = await readJson(manifestPath);
 if (existing && !values.resume) throw new Error("El directorio ya contiene una corrida. Usá --resume para evitar llamadas pagadas duplicadas.");
 if (!existing && values.resume) throw new Error("No se encontró run.json para reanudar.");
-if (existing) validateResume(existing, maxResearchRounds, maxUsd, suite);
 if (process.env.COURT_AI_MODE === "mock") throw new Error("Este eval requiere AI Gateway real; quitá COURT_AI_MODE=mock.");
 if (!process.env.AI_GATEWAY_API_KEY && !process.env.VERCEL_OIDC_TOKEN) throw new Error("Falta la credencial de AI Gateway; ver README.md.");
-if (existing) await writeJson(resolve(outputDir, "run-before-resume-" + Date.now() + ".json"), existing);
-const started = existing?.started ?? new Date().toISOString();
-const before = await gateway.getCredits();
-const initialUsed = Number(existing?.initialUsed ?? before.totalUsed);
-const manifest = { version: EXPERIMENT_VERSION, suite, started, asOf: AS_OF, initialUsed, maxUsd, maxResearchRounds, purpose: "evidence sufficiency pilot, not a statistically powered benchmark" };
-await writeJson(manifestPath, manifest);
-console.log("Artefactos: " + outputDir);
 
 // Tier models follow the settings saved from /admin when a database is configured.
 const tierModels = await loadModels();
 const modelFor = (by: Counsel, tier: Tier, effort?: "medium" | "high") => tierModelFor(by, tier, effort, tierModels);
+// The tier evaluator role, unless --moderators names the ones to compare.
+const moderators = values.moderators ? values.moderators.split(",").map(parseModerator) : [tierModels["tier.evaluator"]];
+const moderatorLabel = (m: CourtModel) => m.id.slice(m.id.indexOf("/") + 1) + "@" + (modelEffort(m) ?? "default");
+const labels = moderators.map(moderatorLabel);
+if (new Set(labels).size !== labels.length) throw new Error("--moderators repite un evaluador: " + labels.join(", "));
+if (suite === "claims" && moderators.length > 1) throw new Error("La suite claims usa un solo evaluador de nivel; compará varios con --suite sufficiency.");
+const setup = { moderators: labels, repeat };
+if (existing) validateResume(existing, maxResearchRounds, maxUsd, suite, setup);
+if (existing) await writeJson(resolve(outputDir, "run-before-resume-" + Date.now() + ".json"), existing);
+const started = existing?.started ?? new Date().toISOString();
+const before = await gateway.getCredits();
+const initialUsed = Number(existing?.initialUsed ?? before.totalUsed);
+const manifest = { version: EXPERIMENT_VERSION, suite, started, asOf: AS_OF, initialUsed, maxUsd, maxResearchRounds, setup, purpose: "evidence sufficiency pilot, not a statistically powered benchmark" };
+await writeJson(manifestPath, manifest);
+console.log("Artefactos: " + outputDir);
+console.log("Evaluadores de nivel: " + labels.join(", "));
 
 // Fail before spending on inference if a configured model is absent from Gateway.
 const catalog = await gateway.getAvailableModels();
-const modelIds = suite === "sufficiency" ? [modelFor("grok", "assessment").id]
-  : [...new Set(EVALUATORS.flatMap((by) => (["fact", "comparison", "assessment"] as const).map((t) => modelFor(by, t).id)))];
+const modelIds = suite === "sufficiency" ? [...new Set(moderators.map((m) => m.id))]
+  : [...new Set([moderators[0].id, ...EVALUATORS.flatMap((by) => (["fact", "comparison", "assessment"] as const).map((t) => modelFor(by, t).id))])];
 for (const id of modelIds) if (!catalog.models.some((m) => m.id === id)) throw new Error("Modelo no disponible en Gateway: " + id);
 await writeJson(resolve(outputDir, "models.json"), catalog.models.filter((m) => modelIds.includes(m.id)));
 
@@ -70,8 +84,19 @@ type CallRecord = {
 };
 const caseReports: Record<string, CaseReport> = existing?.caseReports ?? {};
 const sufficiencyReports: Record<string, SufficiencyReport> = existing?.sufficiencyReports ?? {};
+const sufficiencyErrors: SufficiencyError[] = [];
 const failures: string[] = [];
 const completedCalls = new Map<string, CallRecord>();
+// List prices from the catalog, per token; cache discounts are ignored.
+const prices = new Map(catalog.models.map((m) => [m.id, m.pricing ? { input: Number(m.pricing.input), output: Number(m.pricing.output) } : undefined]));
+function callStats(record: CallRecord): ModeratorCall {
+  const usage = record.usage as { inputTokens?: number; outputTokens?: number } | undefined;
+  const inputTokens = usage?.inputTokens ?? 0, outputTokens = usage?.outputTokens ?? 0, price = prices.get(record.model.id);
+  return { elapsedMs: record.elapsedMs, inputTokens, outputTokens, costUsd: price ? inputTokens * price.input + outputTokens * price.output : null };
+}
+// Parallel runs share one manifest file: write it one at a time.
+let manifestWrite = Promise.resolve();
+const saveManifest = (value: unknown) => (manifestWrite = manifestWrite.then(() => writeJson(manifestPath, value)));
 
 async function readJson(path: string): Promise<any> {
   try { return JSON.parse(await readFile(path, "utf8")); }
@@ -145,14 +170,32 @@ async function call<T>(key: string, model: CourtModel, prompt: string, schema: z
   }
 }
 
-if (suite === "sufficiency") for (const entry of sufficiencyCases) {
-  try {
-    sufficiencyReports[entry.id] = await evaluateSufficiency(entry, async (dossier, effort) =>
-      (await call(`${entry.id}-moderator-${effort}`, modelFor("grok", "assessment", effort),
-        "Este es un expediente ficticio controlado. Evaluá solo los documentos provistos; no uses recuerdos sobre el mundo real.\n" + moderatorPrompt(dossier), routingSchema)).output);
-    await writeJson(resolve(outputDir, entry.id + "-report.json"), sufficiencyReports[entry.id]);
-  } catch (error) { failures.push(entry.id + ": " + safeError(error)); }
-  await writeJson(manifestPath, { ...manifest, sufficiencyReports, failures });
+if (suite === "sufficiency") {
+  // Repetition, then case, then evaluator: an interrupted run still compares every evaluator on the same cases.
+  const runs = Array.from({ length: repeat }, (_, i) => i + 1).flatMap((repetition) =>
+    sufficiencyCases.flatMap((entry) => moderators.map((moderator, index) => ({ repetition, entry, moderator, label: labels[index] }))));
+  let next = 0;
+  await Promise.all(Array.from({ length: Math.min(concurrency, runs.length) }, async () => {
+    while (next < runs.length) {
+      const { repetition, entry, moderator, label } = runs[next++];
+      const id = `${label}/${entry.id}/r${repetition}`;
+      const calls: ModeratorCall[] = [];
+      try {
+        const report = await evaluateSufficiency(entry, async (dossier, effort) => {
+          const result = await call(`${entry.id}-moderator-${label}-r${repetition}-${effort}`, moderatorModel(effort, moderator),
+            "Este es un expediente ficticio controlado. Evaluá solo los documentos provistos; no uses recuerdos sobre el mundo real.\n" + moderatorPrompt(dossier), routingSchema);
+          calls.push(callStats(result.record));
+          return result.output;
+        });
+        sufficiencyReports[id] = { ...report, moderator: label, repetition, expectedTier: entry.expectedTier, calls };
+      } catch (error) {
+        if (error instanceof BudgetExceededError) { failures.push(safeError(error)); next = runs.length; break; }
+        failures.push(id + ": " + safeError(error));
+        sufficiencyErrors.push({ moderator: label, id: entry.id, repetition, error: safeError(error) });
+      }
+      await saveManifest({ ...manifest, sufficiencyReports, sufficiencyErrors, failures });
+    }
+  }));
 }
 
 if (suite === "claims") for (const entry of cases) {
@@ -183,7 +226,7 @@ if (suite === "claims") for (const entry of cases) {
       return batch;
     };
     const moderate = async (dossier: Dossier, effort: Effort, round: number) => (await call(`${entry.id}-moderator-${round}-${effort}`,
-      modelFor("grok", "assessment", effort), moderatorPrompt(dossier), routingSchema)).output;
+      moderatorModel(effort, moderators[0]), moderatorPrompt(dossier), routingSchema)).output;
     const onUpdate = async (dossier: Dossier, history: RoutingTurn[]) => {
       await writeJson(resolve(outputDir, entry.id + "-dossier.json"), dossier);
       await writeJson(resolve(outputDir, entry.id + "-routing.json"), history);
@@ -214,7 +257,7 @@ if (suite === "claims") for (const entry of cases) {
     if (challenged.length) {
       try {
         const adjudicated = await adjudicateChallenges({ outcome, gaps: challenged, maxResearchRounds, research, moderate, onUpdate,
-          rule: async (dossier, gaps) => (await call(`${entry.id}-gap-ruling`, modelFor("grok", "assessment", "medium"), gapRulingPrompt(dossier, gaps), gapRulingSchema)).output.rulings });
+          rule: async (dossier, gaps) => (await call(`${entry.id}-gap-ruling`, moderatorModel("medium", moderators[0]), gapRulingPrompt(dossier, gaps), gapRulingSchema)).output.rulings });
         outcome = adjudicated.outcome; adjudication = adjudicated.adjudication;
         evaluationBudgetExhausted = outcome.stopReason === "budget_exhausted";
         const rulingOf = (gap: ChallengedGap) => adjudication!.rulings.find((r) => r.gap === adjudication!.gaps.indexOf(gap))!;
@@ -265,14 +308,15 @@ if (suite === "claims") for (const entry of cases) {
   await writeJson(manifestPath, { ...manifest, caseReports, failures });
 }
 
+await manifestWrite;
 const after = await gateway.getCredits();
-const summary = { ...manifest, completed: new Date().toISOString(), caseReports, sufficiencyReports, failures,
+const summary = { ...manifest, completed: new Date().toISOString(), caseReports, sufficiencyReports, sufficiencyErrors, failures,
   gatewayAccountDeltaUsd: Number(after.totalUsed) - initialUsed,
   spendCaveat: "Account-wide balance delta includes concurrent account activity, retries and tools; spend guard is checked between calls, not a hard provider spending cap.",
   calls: [...completedCalls.values()].map((r) => ({ key: r.key, model: r.model, status: r.status, elapsedMs: r.elapsedMs, usage: r.usage })),
 };
 await writeJson(manifestPath, summary);
-await writeFile(resolve(outputDir, "report.md"), suite === "sufficiency" ? renderSufficiencyReport(sufficiencyReports, failures)
+await writeFile(resolve(outputDir, "report.md"), suite === "sufficiency" ? renderSufficiencyReport(sufficiencyReports, failures, { moderators: labels, errors: sufficiencyErrors })
   : renderReport(caseReports, { asOf: AS_OF, started, deltaUsd: summary.gatewayAccountDeltaUsd, failures }));
 const routingFailures = Object.values(caseReports).flatMap((c) => c.routing).filter((r) => !r.tierCorrect).length;
 const researchFailures = Object.values(caseReports).flatMap((c) => c.researchChecks).filter((r) => !r.passed).length;
@@ -282,4 +326,7 @@ const incompleteCases = Object.values(caseReports).filter((c) => c.stopReason !=
 const sufficiencyFailures = Object.values(sufficiencyReports).filter((c) => !c.passed).length;
 if (suite === "claims") console.log(`Casos: ${Object.keys(caseReports).length}; desvíos de complejidad: ${routingFailures}; investigaciones con fallos: ${researchFailures}; citas inválidas: ${citationFailures}; etiquetas incorrectas: ${verdictFailures}; casos incompletos: ${incompleteCases}; errores de ejecución: ${failures.length}.`);
 if (suite === "sufficiency") console.log(`Expedientes controlados: ${Object.keys(sufficiencyReports).length}; desvíos: ${sufficiencyFailures}; errores: ${failures.length}.`);
+if (suite === "sufficiency") for (const s of summarizeModerators(Object.values(sufficiencyReports), sufficiencyErrors, labels)) {
+  console.log(`${s.moderator}: ${s.passed}/${s.runs} correctos; nivel ${s.tierCorrect}/${s.runs}; suficiencia ${s.statusCorrect}/${s.runs}; errores ${s.errors}; costo aprox. USD ${s.costUsd?.toFixed(4) ?? "?"}.`);
+}
 if (failures.length || routingFailures || researchFailures || citationFailures || verdictFailures || incompleteCases || sufficiencyFailures) process.exitCode = 1;

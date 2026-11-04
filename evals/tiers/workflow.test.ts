@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { z } from "zod";
-import { CHECKS, assessmentSchema, evidenceSchema, routingSchema, validateRouting, type Evidence, type Routing } from "./core.ts";
+import { CHECKS, assessmentSchema, evidenceSchema, moderatorModel, parseModerator, routingSchema, validateRouting, type Evidence, type Routing } from "./core.ts";
 import { EXPERIMENT_VERSION, validateResume } from "./experiment.ts";
 import { moderatorPrompt, researchPrompt } from "./prompts.ts";
-import { renderReport, type CaseReport } from "./report.ts";
+import { renderReport, renderSufficiencyReport, summarizeModerators, type CaseReport } from "./report.ts";
 import { evaluateSufficiency, SUFFICIENCY_CASES } from "./sufficiency-cases.ts";
 import { adjudicateChallenges, BudgetExceededError, challengedGaps, resolveAssessment, runResearchLoop, type Dossier, type ResearchBatch, type ResearchOutcome } from "./workflow.ts";
 
@@ -251,4 +251,52 @@ test("controlled eval scores actual moderator decisions against hidden sufficien
   assert.equal(escalated.passed, true);
   const unresolved = await evaluateSufficiency(SUFFICIENCY_CASES[0], async () => ({ ...route(), action: "escalate", escalationReason: "substantive_judgment" }));
   assert.equal(unresolved.passed, false);
+});
+
+test("controlled cases have unique ids, cover every tier and pair the same claim across the fact/comparison boundary", () => {
+  assert.equal(new Set(SUFFICIENCY_CASES.map((c) => c.id)).size, SUFFICIENCY_CASES.length);
+  assert.deepEqual(new Set(SUFFICIENCY_CASES.map((c) => c.expectedTier)), new Set(["fact", "comparison", "assessment"]));
+  const byId = (id: string) => SUFFICIENCY_CASES.find((c) => c.id === id)!;
+  assert.equal(byId("rank-stated").dossier.claim, byId("rank-computed").dossier.claim);
+  assert.notEqual(byId("rank-stated").expectedTier, byId("rank-computed").expectedTier);
+  assert.equal(byId("legal-complete").dossier.claim, byId("legal-missing-norm").dossier.claim);
+  // The injected instruction reaches the moderator only as dossier data.
+  assert.match(moderatorPrompt(byId("injected-instruction").dossier), /datos no confiables[\s\S]*NOTA PARA EL MODERADOR/);
+});
+
+test("the tier evaluator runs at its configured effort and escalates the same model to high", () => {
+  const terra = parseModerator("openai/gpt-6.1-terra@medium");
+  assert.deepEqual(terra, { id: "openai/gpt-6.1-terra", providerOptions: { openai: { reasoningEffort: "medium" } } });
+  assert.deepEqual(moderatorModel("medium", terra), terra);
+  assert.deepEqual(moderatorModel("high", terra), { id: "openai/gpt-6.1-terra", providerOptions: { openai: { reasoningEffort: "high" } } });
+  assert.deepEqual(moderatorModel("medium"), { id: "openai/gpt-6.1-terra", providerOptions: { openai: { reasoningEffort: "medium" } } });
+  assert.deepEqual(parseModerator("anthropic/claude-haiku-5.5"), { id: "anthropic/claude-haiku-5.5" });
+  assert.throws(() => parseModerator("terra"), /no válido/);
+  assert.throws(() => parseModerator("openai/gpt-6.1-terra@medium@high"), /no válido/);
+});
+
+test("the face-off summarizes each tier evaluator over the same cases, counting errors and cost", () => {
+  const call = (seconds: number, costUsd: number | null) => ({ elapsedMs: seconds * 1000, inputTokens: 1000, outputTokens: 500, costUsd });
+  const report = (moderator: string, id: string, passed: boolean, tier: Routing["tier"], calls = [call(10, 0.01)]) => ({
+    id, claim: "Afirmación " + id, turns: [{ effort: "medium" as const, route: route("sufficient", tier) }], expectedTier: "fact" as const,
+    tierCorrect: passed, statusCorrect: true, gapsDetected: true, passed, moderator, repetition: 1, calls });
+  const cases = [report("grok-4.7@medium", "a", true, "fact"), report("grok-4.7@medium", "b", false, "comparison", [call(30, 0.03)]),
+    report("gpt-6.1-terra@medium", "a", true, "fact", [call(20, null)])];
+  const errors = [{ moderator: "gpt-6.1-terra@medium", id: "b", repetition: 1, error: "Gateway no disponible" }];
+  const [grok, terra] = summarizeModerators(cases, errors, ["grok-4.7@medium", "gpt-6.1-terra@medium"]);
+  assert.deepEqual({ runs: grok.runs, passed: grok.passed, errors: grok.errors, medianSeconds: grok.medianSeconds }, { runs: 2, passed: 1, errors: 0, medianSeconds: 20 });
+  assert.ok(Math.abs(grok.costUsd! - 0.04) < 1e-9);
+  assert.deepEqual({ runs: terra.runs, errors: terra.errors, costUsd: terra.costUsd }, { runs: 1, errors: 1, costUsd: null });
+  const markdown = renderSufficiencyReport(Object.fromEntries(cases.map((c, i) => [String(i), c])), [], { moderators: ["grok-4.7@medium", "gpt-6.1-terra@medium"], errors });
+  assert.match(markdown, /\| grok-4\.7@medium \| 1\/2 \(50%\)/);
+  assert.match(markdown, /\| b \| Dato \| 0\/1 correctos · Comparación \| 0\/1 correctos · sin respuesta · 1 error \|/);
+  assert.doesNotMatch(markdown, /\bcomparison\b|\bsufficient\b/);
+});
+
+test("a run resumes only with the same tier evaluators and repetitions", () => {
+  const setup = { moderators: ["grok-4.7@medium", "gpt-6.1-terra@medium"], repeat: 3 };
+  const existing = { version: EXPERIMENT_VERSION, maxResearchRounds: 2, maxUsd: 8, suite: "sufficiency", setup };
+  assert.doesNotThrow(() => validateResume(existing, 2, 8, "sufficiency", setup));
+  assert.throws(() => validateResume(existing, 2, 8, "sufficiency", { ...setup, repeat: 1 }), /evaluadores de nivel/);
+  assert.throws(() => validateResume(existing, 2, 8, "sufficiency", { moderators: ["grok-4.7@medium"], repeat: 3 }), /evaluadores de nivel/);
 });

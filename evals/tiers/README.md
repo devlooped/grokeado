@@ -94,6 +94,9 @@ npm run eval:tiers -- --case sme-exports --max-research-rounds 1 --max-usd 8 --o
 # Pagado: suficiencia aislada, sin búsquedas ni evaluadores finales.
 npm run eval:tiers -- --suite sufficiency --out test-results/tier-evals/controlled-v2
 
+# Pagado: comparar evaluadores de nivel sobre los mismos dossiers, tres veces cada uno.
+npm run eval:tiers -- --suite sufficiency --moderators spacexai/grok-4.7@medium,openai/gpt-6.1-terra@medium --repeat 3 --concurrency 4 --out test-results/tier-evals/moderator-faceoff
+
 # Reanudar v2 con la misma suite y límites.
 npm run eval:tiers -- --out test-results/tier-evals/sufficiency-v2 --resume
 ```
@@ -104,10 +107,25 @@ Las afirmaciones reales conservan corte **2026-10-30**. Sus IDs actuales son
 nunca entran en los prompts de los sujetos. Brasil sigue sin veredicto jurídico
 binario predeterminado.
 
-La suite `sufficiency` mide siete dossiers ficticios: dato completo, primario
-inaccesible, períodos incompatibles, unidades incompatibles, conflicto sin
-resolver, comparación completa y dossier vacío. Contrasta tier, suficiencia y
-controles faltantes con referencias ocultas al moderador. Admite
+El moderador es el rol **Evaluador de nivel** (`tier.evaluator`), configurable
+desde `/admin`: por defecto `openai/gpt-6.1-terra` en esfuerzo `medium`. Decide
+tier y suficiencia, resuelve vacíos cuestionados y, solo si pide escalar, repite
+con el mismo modelo en `high`. `--moderators` reemplaza el rol en esa corrida
+(`proveedor/modelo@esfuerzo`, separados por comas; la suite `claims` acepta uno).
+`--repeat` (1 a 10) y `--concurrency` (1 a 8) aplican solo a `sufficiency`;
+el informe agrega una tabla por evaluador (aciertos, latencia, tokens y costo
+estimado con precios de lista) y una matriz por caso.
+
+La suite `sufficiency` mide diecinueve dossiers ficticios. Los siete originales:
+dato completo, primario inaccesible, períodos incompatibles, unidades
+incompatibles, conflicto sin resolver, comparación completa y dossier vacío.
+Los doce agregados el 04/11/2026 separan evaluadores: pares con la misma
+afirmación a ambos lados del límite dato/comparación (ranking y tasa explícitos
+frente a calculables), una cita textual, un extracto oficial explícito con PDF
+inaccesible, un dato provisorio rotulado, una causalidad con solo correlación,
+un caso normativo completo y otro sin la norma, una instrucción inyectada en
+una fuente y una comparación con fuente secundaria anónima. Contrasta tier,
+suficiencia y controles faltantes con referencias ocultas al moderador. Admite
 `--case period-mismatch`, por ejemplo. No utiliza web ni accede a los dominios `.test`.
 No demuestra por sí sola capacidad general.
 

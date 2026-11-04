@@ -46,6 +46,7 @@ export type ModelRole =
   | "cover.chooser"
   | "cover.check"
   | "cover.image"
+  | "tier.evaluator"
   | `tier.${Counsel}.${TierName}`;
 
 export type ModelKind = "language" | "image";
@@ -94,6 +95,8 @@ export const MODEL_ROLES: readonly ModelRoleDefinition[] = [
   { key: "cover.chooser", group: "Soporte", label: "Portada: búsqueda", description: "Busca una imagen real para la portada o propone la ilustración.", kind: "language", defaultId: "spacexai/grok-4.7", defaultEffort: null, configurableEffort: true, requires: SEAT },
   { key: "cover.check", group: "Soporte", label: "Portada: revisión", description: "Mira la imagen real encontrada y la aprueba antes de usarla como portada.", kind: "language", defaultId: "anthropic/claude-haiku-5.5", defaultEffort: null, configurableEffort: true, requires: ["vision"] },
   { key: "cover.image", group: "Soporte", label: "Portada: ilustración", description: "Genera la ilustración cuando no hay una imagen real adecuada.", kind: "image", defaultId: "spacexai/grok-imagine-image-2.0", defaultEffort: null, configurableEffort: false, requires: [] },
+  // The moderator of the tier eval: it routes each claim and is the role its face-off compares.
+  { key: "tier.evaluator", group: "Evaluación por niveles", label: "Evaluador de nivel", description: "Decide el nivel de cada afirmación (hechos, comparación o evaluación) y si la evidencia alcanza, y resuelve los vacíos cuestionados. Solo cuando pide escalar pasa a esfuerzo alto.", kind: "language", defaultId: "openai/gpt-6.1-terra", defaultEffort: "medium", configurableEffort: true, requires: ["structured-output"] },
   ...(Object.keys(TIER_DEFAULTS) as Counsel[]).flatMap((by) => TIERS.map((tier): ModelRoleDefinition => ({
     key: `tier.${by}.${tier}`,
     group: "Evaluación por niveles",

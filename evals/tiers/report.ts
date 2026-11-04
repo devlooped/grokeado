@@ -2,7 +2,7 @@ import type { z } from "zod";
 import { CHECKS, type assessmentSchema, type Tier } from "./core.ts";
 import { actionLabels, checkLabels, checkStatusLabels, effortLabels, evidenceLabels, stopLabels, tierLabels, verdictLabels } from "./presentation.ts";
 import type { Adjudication, ResearchCheck, ResearchOutcome, RoutingTurn, resolveAssessment } from "./workflow.ts";
-import type { SufficiencyReport } from "./sufficiency-cases.ts";
+import type { SufficiencyError, SufficiencyReport } from "./sufficiency-cases.ts";
 
 export interface AssessmentReport extends ReturnType<typeof resolveAssessment> {
   candidate: string; by: string; tier: Tier; result: z.infer<typeof assessmentSchema>;
@@ -79,11 +79,66 @@ export function renderReport(cases: Record<string, CaseReport>, metadata: { asOf
   return lines.join("\n") + "\n";
 }
 
-export function renderSufficiencyReport(cases: Record<string, SufficiencyReport>, failures: string[]) {
+export interface ModeratorSummary {
+  moderator: string; runs: number; errors: number; passed: number; tierCorrect: number; statusCorrect: number; gapsDetected: number;
+  escalations: number; medianSeconds: number | null; meanOutputTokens: number | null; costUsd: number | null;
+}
+
+function median(values: number[]): number | null {
+  if (!values.length) return null;
+  const sorted = [...values].sort((a, b) => a - b), mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+// One row per tier evaluator; errors count runs that produced no decision.
+export function summarizeModerators(cases: SufficiencyReport[], errors: SufficiencyError[], moderators: string[]): ModeratorSummary[] {
+  return moderators.map((moderator) => {
+    const own = cases.filter((c) => c.moderator === moderator);
+    const calls = own.flatMap((c) => c.calls ?? []);
+    const costs = calls.map((c) => c.costUsd);
+    const count = (key: "passed" | "tierCorrect" | "statusCorrect" | "gapsDetected") => own.filter((c) => c[key]).length;
+    return { moderator, runs: own.length, errors: errors.filter((e) => e.moderator === moderator).length,
+      passed: count("passed"), tierCorrect: count("tierCorrect"), statusCorrect: count("statusCorrect"), gapsDetected: count("gapsDetected"),
+      escalations: own.filter((c) => c.turns.some((t) => t.route.action === "escalate")).length,
+      medianSeconds: median(calls.map((c) => c.elapsedMs / 1000)),
+      meanOutputTokens: calls.length ? calls.reduce((sum, c) => sum + c.outputTokens, 0) / calls.length : null,
+      costUsd: costs.length && costs.every((c) => c !== null) ? costs.reduce((sum, c) => sum! + c!, 0) : null };
+  });
+}
+
+function faceoffLines(cases: SufficiencyReport[], errors: SufficiencyError[], moderators: string[]) {
+  const pct = (n: number, of: number) => of ? `${n}/${of} (${Math.round(100 * n / of)}%)` : "—";
+  const lines = ["", "## Comparación de evaluadores de nivel", "",
+    "| Evaluador | Correctos | Nivel | Suficiencia | Vacíos esperados | Escaladas | Errores | Latencia mediana | Tokens de salida, media | Costo aprox. |",
+    "|---|---|---|---|---|---:|---:|---:|---:|---:|"];
+  for (const s of summarizeModerators(cases, errors, moderators)) {
+    lines.push(`| ${s.moderator} | ${pct(s.passed, s.runs)} | ${pct(s.tierCorrect, s.runs)} | ${pct(s.statusCorrect, s.runs)} | ${pct(s.gapsDetected, s.runs)} | ${s.escalations} | ${s.errors} | ${s.medianSeconds === null ? "—" : s.medianSeconds.toFixed(1) + " s"} | ${s.meanOutputTokens === null ? "—" : Math.round(s.meanOutputTokens)} | ${s.costUsd === null ? "—" : "USD " + s.costUsd.toFixed(4)} |`);
+  }
+  lines.push("", "Costo estimado con los precios de lista del catálogo Gateway (tokens de entrada y salida, sin descuentos de caché).", "",
+    "| Caso | Nivel esperado | " + moderators.join(" | ") + " |", "|---|---|" + moderators.map(() => "---").join("|") + "|");
+  const ids = [...new Set(cases.map((c) => c.id))];
+  for (const id of ids) {
+    const expected = cases.find((c) => c.id === id)?.expectedTier;
+    const cells = moderators.map((moderator) => {
+      const own = cases.filter((c) => c.id === id && c.moderator === moderator);
+      const failed = errors.filter((e) => e.id === id && e.moderator === moderator).length;
+      const tiers = Object.entries(own.reduce<Record<string, number>>((acc, c) => {
+        const tier = tierLabels[c.turns[c.turns.length - 1].route.tier]; acc[tier] = (acc[tier] ?? 0) + 1; return acc;
+      }, {})).map(([tier, n]) => tier + (n > 1 ? " ×" + n : "")).join(", ");
+      return `${own.filter((c) => c.passed).length}/${own.length + failed} correctos · ${tiers || "sin respuesta"}${failed ? ` · ${failed} error${failed > 1 ? "es" : ""}` : ""}`;
+    });
+    lines.push(`| ${id} | ${expected ? tierLabels[expected] : "—"} | ${cells.join(" | ")} |`);
+  }
+  return lines;
+}
+
+export function renderSufficiencyReport(cases: Record<string, SufficiencyReport>, failures: string[], faceoff?: { moderators: string[]; errors: SufficiencyError[] }) {
   const lines = ["# Evaluación de suficiencia con expedientes controlados", "",
-    "Documentos y municipio ficticios. No se consultó la web; las referencias esperadas se ocultaron al moderador. Una muestra por caso no valida una política universal."];
+    "Documentos y municipio ficticios. No se consultó la web; las referencias esperadas se ocultaron al moderador. Pocas muestras por caso no validan una política universal."];
+  if (faceoff) lines.push(...faceoffLines(Object.values(cases), faceoff.errors, faceoff.moderators));
   for (const c of Object.values(cases)) {
-    lines.push("", "## " + c.claim, "", `Resultado: ${c.passed ? "Correcto" : "Desvío"}. Complejidad: ${c.tierCorrect ? "correcta" : "distinta"}; suficiencia: ${c.statusCorrect ? "correcta" : "distinta"}; vacíos esperados: ${c.gapsDetected ? "detectados" : "omitidos"}.`);
+    const who = c.moderator ? ` — ${c.moderator}${c.repetition ? ", repetición " + c.repetition : ""}` : "";
+    lines.push("", "## " + c.claim + who, "", `Resultado: ${c.passed ? "Correcto" : "Desvío"}. Complejidad: ${c.tierCorrect ? "correcta" : "distinta"}; suficiencia: ${c.statusCorrect ? "correcta" : "distinta"}; vacíos esperados: ${c.gapsDetected ? "detectados" : "omitidos"}.`);
     for (const turn of c.turns) {
       lines.push("", `Esfuerzo ${effortLabels[turn.effort]}: ${tierLabels[turn.route.tier]}, ${evidenceLabels[turn.route.evidence.status]}, ${actionLabels[turn.route.action]}.`, turn.route.reason);
       for (const key of CHECKS) {
