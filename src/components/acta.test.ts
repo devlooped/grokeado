@@ -152,7 +152,7 @@ test("the acta folds into stages, each analyst's instruction run up to its close
   const { document } = parseHTML(html);
   const stages = [...document.querySelectorAll("[data-fold-scope=section] > details")];
   assert.deepEqual(stages.map((d) => d.querySelector("h3")!.textContent), ["Apertura", "Instrucción", "Crítica de fuentes", "Exposiciones iniciales", "Conclusiones y votos", "Resultado"]);
-  assert.ok(stages.every((d) => d.hasAttribute("open")));
+  assert.ok(stages.every((d) => !d.hasAttribute("open")), "stages start collapsed");
   assert.equal(document.querySelectorAll("[data-acta] button[aria-label^='Expandir todo']").length, stages.length + 1, "one pair of controls per stage and one for the acta");
 
   const runs = [...stages[1]!.querySelectorAll("details.fold")];

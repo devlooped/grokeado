@@ -27,17 +27,22 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body className="min-h-screen font-sans antialiased">
         <header className="mx-auto max-w-5xl px-5 pt-6">
-          <div className="flex items-baseline justify-between gap-4 text-[11px] uppercase tracking-[0.2em] text-ink-soft">
-            <span className="fi fi-ar"></span>
+          <div className="flex items-center justify-between gap-4 text-[11px] uppercase tracking-[0.2em] text-ink-soft">
+            <div className="flex items-center gap-2">
+              <Link href="/" aria-label="Volver al inicio" title="Volver al inicio" className="grid size-8 shrink-0 place-items-center rounded-full border border-rule text-ink transition hover:bg-paper-deep">
+                <svg className="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <path d="m3 10 9-7 9 7v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+                  <path d="M9 21v-7h6v7" />
+                </svg>
+              </Link>
+              <span className="fi fi-ar"></span>
+            </div>
             <div className="flex items-center gap-2">
               <UserClaimsBadge />
               <Link href="/metodo" className="rounded-full border border-rule px-3 py-1.5 leading-none text-ink transition hover:bg-paper-deep">
                 Método
               </Link>
               <ThemeToggle />
-              <Link href="/" aria-label="Volver al inicio" title="Volver al inicio" className="grid size-8 shrink-0 place-items-center rounded-full border border-rule text-base tracking-normal transition hover:bg-paper-deep">
-                <span aria-hidden>🏠</span>
-              </Link>
             </div>
           </div>
           <Link href="/" className="mt-2 block text-center">

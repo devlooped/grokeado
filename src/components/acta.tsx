@@ -399,7 +399,7 @@ function SectionFold({ section, index, ctx }: { section: Section; index: number;
   const items = itemsOf(section);
   return (
     <div data-fold-scope="section" className="relative">
-      <details open id={"etapa-" + (index + 1)} className="fold scroll-mt-24">
+      <details id={"etapa-" + (index + 1)} className="fold scroll-mt-24">
         <summary className="fold-summary flex cursor-pointer items-center gap-3 border-b border-rule pb-2 pr-20">
           <Chevron />
           <span className="min-w-0">
