@@ -3,12 +3,11 @@ import { connection } from "next/server";
 import { submissionExcerpt, VERDICT_LABEL } from "@/domain/acta.ts";
 import { caseCardImageUrl } from "@/domain/case-card.ts";
 import { COUNSEL, JUDGE, MODEL_NAME, project, type CaseRecord, type ClaimView } from "@/domain/court.ts";
-import { GavelIcon, ModelMark, VERDICT_TEXT, VoteChip } from "@/components/marks.tsx";
+import { GavelIcon, VERDICT_TEXT, VoteChip } from "@/components/marks.tsx";
 import { voteId } from "@/components/case-result.tsx";
 import { auth0 } from "@/lib/auth0.ts";
-import { canDeleteCase, canRequestCase } from "@/lib/case-access.ts";
-import { BetaNotice } from "@/components/beta-notice.tsx";
-import { RequestForm } from "@/components/request-form.tsx";
+import { canDeleteCase } from "@/lib/case-access.ts";
+import { REQUEST_PANEL_ID } from "@/lib/request-panel.ts";
 import { CaseLinkStatus } from "@/components/case-link-status.tsx";
 import { DeleteCaseButton } from "@/components/delete-case-button.tsx";
 import { coverVersions, getEvents, listCases } from "@/store.ts";
@@ -131,46 +130,25 @@ export default async function Home() {
   const [cases, session] = await Promise.all([listCases(24), auth0.getSession()]);
   const covers = await coverVersions(cases.map((c) => c.id));
   return (
-    <>
-      <section className="grid gap-10 pt-10 md:grid-cols-[1.1fr_1fr] md:items-start">
-        <div className="reveal">
-          <h1 className="font-display text-5xl leading-[1.02] sm:text-6xl">
-            ¿Es cierto lo que leíste? <em className="text-celeste-deep">Que lo chequeen.</em>
-          </h1>
-          <p className="mt-5 max-w-md text-lg leading-relaxed text-ink-soft">
-            Presentá un texto, un enlace o una imagen. Cuatro inteligencias artificiales lo investigan, lo debaten y votan. Nadie edita, nadie opina, todo queda en el registro público.
-          </p>
-          <div className="mt-6 flex flex-wrap items-center gap-3">
-            {COUNSEL.map((c) => (
-              <span key={c} title={MODEL_NAME[c]} className="grid size-11 place-items-center rounded-full border border-rule bg-paper/70">
-                <ModelMark model={c} className="size-6" />
-              </span>
-            ))}
-            <Link href="/metodo" className="ml-2 text-sm text-celeste-deep underline decoration-celeste/40 underline-offset-4 hover:decoration-celeste-deep">
-              Cómo trabaja el panel →
-            </Link>
-          </div>
-        </div>
-        <div className="reveal [animation-delay:80ms]">
-          {canRequestCase(session?.user) ? <RequestForm /> : <BetaNotice signedIn={!!session?.user.sub} />}
-        </div>
-      </section>
-
-      <section className="mt-16">
-        <div className="rule-double flex flex-wrap items-baseline justify-between gap-2 pt-4">
-          <h2 className="font-display text-4xl">Casos recientes</h2>
-          <p className="text-xs text-ink-soft">Tocá el voto de cada IA para leer su fundamento.</p>
-        </div>
-        {cases.length === 0 ? (
-          <p className="mt-4 text-ink-soft">Todavía no hay casos. Pedí el primero.</p>
-        ) : (
-          <ul className="mt-6 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-            {cases.map((c, i) => (
-              <CaseCard key={c.id} c={c} cover={covers.get(c.id)} index={i} admin={canDeleteCase(session?.user)} />
-            ))}
-          </ul>
-        )}
-      </section>
-    </>
+    <section className="pt-8">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h1 className="font-display text-4xl">Casos recientes</h1>
+        <p className="text-xs text-ink-soft">Tocá el voto de cada IA para leer su fundamento.</p>
+      </div>
+      {cases.length === 0 ? (
+        <p className="mt-4 text-ink-soft">
+          Todavía no hay casos.{" "}
+          <button type="button" popoverTarget={REQUEST_PANEL_ID} className="text-celeste-deep underline underline-offset-4">
+            Pedí el primero.
+          </button>
+        </p>
+      ) : (
+        <ul className="mt-6 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          {cases.map((c, i) => (
+            <CaseCard key={c.id} c={c} cover={covers.get(c.id)} index={i} admin={canDeleteCase(session?.user)} />
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }

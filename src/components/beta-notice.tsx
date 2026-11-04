@@ -1,7 +1,6 @@
 export function BetaNotice({ signedIn }: { signedIn: boolean }) {
   return (
-    <div className="relative rounded-sm border border-ink/80 bg-paper p-5 shadow-[6px_6px_0_0_var(--color-ink)] sm:p-7">
-      <h2 className="font-display text-3xl leading-none">Pedí un chequeo</h2>
+    <div>
       <p className="mt-5 leading-relaxed text-ink-soft">
         Che.bot está en beta. Para pedir un chequeo, enviá un correo a{" "}
         <a href="mailto:hola@che.bot" className="font-medium text-celeste-deep underline">hola@che.bot</a>.

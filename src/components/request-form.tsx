@@ -139,13 +139,7 @@ export function RequestForm() {
       onSubmit={onSubmit}
       onPaste={onPaste}
       aria-busy={pending}
-      className="relative rounded-sm border border-ink/80 bg-paper p-5 shadow-[6px_6px_0_0_var(--color-ink)] sm:p-7"
     >
-      <div className="flex items-end justify-between gap-4">
-        <h2 className="font-display text-3xl leading-none">Pedí un chequeo</h2>
-        <span className="font-mono text-[11px] uppercase tracking-widest text-ink-soft">Formulario Nº 1</span>
-      </div>
-
       <div className="mt-5">
         <label htmlFor={ids.language} className={label}>Idioma del caso</label>
         <select id={ids.language} name="language" defaultValue="auto" aria-invalid={invalid("language")} aria-describedby={describedBy("language")} className={field}>
@@ -175,6 +169,7 @@ export function RequestForm() {
         <label htmlFor={ids.text} className={label}>Texto a chequear</label>
         <textarea
           id={ids.text}
+          data-autofocus
           name="text"
           rows={6}
           required
@@ -197,7 +192,7 @@ export function RequestForm() {
       <fieldset hidden={kind !== "link"} disabled={kind !== "link"} className="mt-4 space-y-4">
         <div>
           <label htmlFor={ids.url} className={label}>Enlace</label>
-          <input id={ids.url} name="url" type="url" required inputMode="url" placeholder="https://..." aria-invalid={invalid("url")} aria-describedby={describedBy("url")} className={field} />
+          <input id={ids.url} data-autofocus name="url" type="url" required inputMode="url" placeholder="https://..." aria-invalid={invalid("url")} aria-describedby={describedBy("url")} className={field} />
         </div>
         <div>
           <label htmlFor={ids.linkNote} className={label}>
@@ -222,6 +217,7 @@ export function RequestForm() {
           <input
             ref={fileRef}
             id={ids.image}
+            data-autofocus
             name="image"
             type="file"
             accept={IMAGE_TYPES.join(",")}

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { VERDICT_LABEL } from "@/domain/acta.ts";
 import { COUNSEL, COUNSEL_NAMES, JUDGE, MODEL_NAME, VERDICTS, type Verdict } from "@/domain/court.ts";
 import { GavelIcon, ModelMark, VERDICT_TEXT, VerdictGlyph } from "@/components/marks.tsx";
+import { REQUEST_PANEL_ID } from "@/lib/request-panel.ts";
 
 export const metadata: Metadata = {
   title: "Método · Che bot, es cierto?",
@@ -29,10 +30,18 @@ export default function MethodPage() {
       <header className="reveal pt-10">
         <p className="font-mono text-xs uppercase tracking-widest text-ink-soft">Método</p>
         <h1 className="mt-2 max-w-3xl font-display text-5xl leading-[1.02] sm:text-6xl">
-          Cuatro analistas, un moderador, <em className="text-celeste-deep">cero opiniones humanas.</em>
+          ¿Es cierto lo que leíste? <em className="text-celeste-deep">Que lo chequeen.</em>
         </h1>
+        <p className="mt-4 max-w-3xl font-display text-2xl leading-snug text-ink-soft sm:text-3xl">
+          Cuatro analistas, un moderador, cero opiniones humanas.
+        </p>
         <p className="mt-5 max-w-2xl text-lg leading-relaxed text-ink-soft">
-          Presentás un texto, un enlace o una imagen. Las inteligencias artificiales del panel lo investigan en equipo: reúnen evidencia, la critican, la debaten y votan. Nadie edita, nadie opina, todo queda en el registro público.
+          Presentá un texto, un enlace o una imagen. Las inteligencias artificiales del panel lo investigan en equipo: reúnen evidencia, la critican, la debaten y votan. Nadie edita, nadie opina, todo queda en el registro público.
+        </p>
+        <p className="mt-6">
+          <button type="button" popoverTarget={REQUEST_PANEL_ID} className="btn-primary">
+            Pedir un chequeo
+          </button>
         </p>
         <div className="mt-6 flex flex-wrap items-center gap-3">
           {COUNSEL.map((c) => (

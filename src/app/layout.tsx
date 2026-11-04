@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Archivo, IBM_Plex_Mono, Instrument_Serif } from "next/font/google";
+import { RequestPanel } from "@/components/request-panel.tsx";
 import { ThemeToggle } from "@/components/theme-toggle.tsx";
 import { UserClaimsBadge } from "@/components/user-claims-badge.tsx";
 import { COUNSEL_NAMES, JUDGE, MODEL_NAME } from "@/domain/court.ts";
@@ -39,9 +40,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </div>
             <div className="flex items-center gap-2">
               <UserClaimsBadge />
-              <Link href="/metodo" className="rounded-full border border-rule px-3 py-1.5 leading-none text-ink transition hover:bg-paper-deep">
+              <Link href="/metodo" title="¿Cómo debaten las 4 superinteligencias más potentes?" className="rounded-full border border-rule px-3 py-1.5 leading-none text-ink transition hover:bg-paper-deep">
                 Método
               </Link>
+              <RequestPanel />
               <ThemeToggle />
             </div>
           </div>
