@@ -14,11 +14,20 @@ export interface StoredImage {
 let pool: Pool | undefined;
 let schema: Promise<void> | undefined;
 
+// pg already treats prefer, require and verify-ca as verify-full, and warns on
+// every cold start that the next major will weaken them to libpq semantics.
+// Naming the mode it uses keeps today's verification and silences the warning;
+// a URL that opts into uselibpqcompat keeps its own semantics.
+export function pinSslMode(connectionString: string): string {
+  if (/[?&]uselibpqcompat=/i.test(connectionString)) return connectionString;
+  return connectionString.replace(/([?&]sslmode=)(?:prefer|require|verify-ca)(?=&|#|$)/i, "$1verify-full");
+}
+
 function connect(): Pool {
   if (pool) return pool;
   const connectionString = process.env.DATABASE_URL ?? process.env.POSTGRES_URL;
   if (!connectionString) throw new Error("DATABASE_URL is not set");
-  pool = new Pool({ connectionString, max: 5 });
+  pool = new Pool({ connectionString: pinSslMode(connectionString), max: 5 });
   attachDatabasePool(pool);
   return pool;
 }
