@@ -53,5 +53,15 @@
     "tailwindcss": "^4.3.3",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2"
+  },
+  "overrides": {
+    "zod": "$zod",
+    "minimatch": "^11.0.4",
+    "@workflow/world-local": {
+      "undici": "7.30.1"
+    },
+    "@workflow/world-vercel": {
+      "undici": "7.30.1"
+    }
   }
 }

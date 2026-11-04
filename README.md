@@ -174,6 +174,13 @@ record as it stands, including any historical absences. If overriding
 `WORKFLOW_LOCAL_DATA_DIR`, use the same value for the server and test command.
 
 Offline checks: `npm test`, `npm run typecheck`, and `npm run build`.
+The dependency overrides in `package.json` address the Zod collection-validation
+DoS (GHSA-mrhx-c7xc-m3w5), Undici 7.30.0 advisories, and the Minimatch glob
+amplification DoS (GHSA-g3hv-75wg-m249). Some upstream packages pin affected
+versions; remove the overrides when they adopt patched releases. The Minimatch
+override crosses major versions, so check the dependent tooling and workflow
+build when changing it.
+
 The separate [verification tier pilot](evals/tiers/README.md) runs three curated
 cases through real Gateway research, medium moderation with substantive escalation,
 bounded follow-up research and all four evaluators. It separates task complexity
