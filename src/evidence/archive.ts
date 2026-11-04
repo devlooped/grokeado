@@ -1,7 +1,7 @@
 import { deflateRaw } from "node:zlib";
 import { promisify } from "node:util";
 import { getEvents } from "../store.ts";
-import { findEvidenceArchive, hasEvidenceBase, readEvidenceTree, writeCaseTranscript, writeEvidenceArchive, writeEvidenceTree, type EvidenceArchive } from "./blob.ts";
+import { findCompleteEvidenceArchive, findLegacyEvidenceArchive, hasEvidenceBase, readEvidenceTree, writeCaseTranscript, writeEvidenceArchive, writeEvidenceTree, type EvidenceArchive } from "./blob.ts";
 import { buildCaseTranscript } from "./transcript.ts";
 import { normalizeEvidenceBytes, type EvidenceFiles } from "./validate.ts";
 
@@ -32,7 +32,7 @@ export async function createEvidenceArchive(files: EvidenceFiles): Promise<Buffe
   const directory: Buffer[] = [];
   let offset = 0;
   for (const [path, content] of [...files].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)) {
-    const bytes = path === "transcript.jsonl" ? (typeof content === "string" ? Buffer.from(content) : content) : normalizeEvidenceBytes(path, content);
+    const bytes = path === "transcript.jsonl" || path === "acta.jsonl" ? (typeof content === "string" ? Buffer.from(content) : content) : normalizeEvidenceBytes(path, content);
     if (/[:\x00-\x1f]/.test(path)) throw new Error(`Invalid archive path: ${path}`);
     const name = Buffer.from(path, "utf8");
     if (name.length > 0xffff) throw new Error(`Archive path is too long: ${path}`);
@@ -93,9 +93,11 @@ type ArchiveStore = {
 
 export async function archiveEvidence(caseId: string, store: ArchiveStore = { readEvidenceTree, getEvents, writeEvidenceTree, writeCaseTranscript, writeEvidenceArchive }): Promise<EvidenceArchive> {
   const files = await store.readEvidenceTree(caseId);
-  const { transcript, updatedRuns } = buildCaseTranscript(files, await store.getEvents(caseId));
+  const events = await store.getEvents(caseId);
+  const { transcript, updatedRuns } = buildCaseTranscript(files, events);
   for (const [path, content] of updatedRuns) files.set(path, new TextEncoder().encode(content));
   files.set("transcript.jsonl", new TextEncoder().encode(transcript));
+  files.set("acta.jsonl", new TextEncoder().encode(events.map((event) => JSON.stringify(event)).join("\n") + (events.length ? "\n" : "")));
   const zip = await createEvidenceArchive(files);
   if (updatedRuns.size) await store.writeEvidenceTree(caseId, updatedRuns);
   await store.writeCaseTranscript(caseId, transcript);
@@ -103,15 +105,16 @@ export async function archiveEvidence(caseId: string, store: ArchiveStore = { re
 }
 
 type ArchiveLookup = {
-  findEvidenceArchive: typeof findEvidenceArchive;
+  findCompleteEvidenceArchive: typeof findCompleteEvidenceArchive;
+  findLegacyEvidenceArchive: typeof findLegacyEvidenceArchive;
   hasEvidenceBase: typeof hasEvidenceBase;
   archiveEvidence: typeof archiveEvidence;
 };
 
-// Cases resolved before ZIP export was introduced are archived on first download.
-export async function getOrCreateEvidenceArchive(caseId: string, store: ArchiveLookup = { findEvidenceArchive, hasEvidenceBase, archiveEvidence }): Promise<EvidenceArchive | undefined> {
-  const existing = await store.findEvidenceArchive(caseId);
+// Rebuild older archives from the stored evidence and events without overwriting them.
+export async function getOrCreateEvidenceArchive(caseId: string, store: ArchiveLookup = { findCompleteEvidenceArchive, findLegacyEvidenceArchive, hasEvidenceBase, archiveEvidence }): Promise<EvidenceArchive | undefined> {
+  const existing = await store.findCompleteEvidenceArchive(caseId);
   if (existing) return existing;
-  if (!await store.hasEvidenceBase(caseId)) return undefined;
+  if (!await store.hasEvidenceBase(caseId)) return store.findLegacyEvidenceArchive(caseId);
   return store.archiveEvidence(caseId);
 }

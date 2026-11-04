@@ -15,6 +15,8 @@ export function isWritablePath(path: string, seat: EvidenceSeat): boolean {
 export function isVisibleInStage(path: string, seat: EvidenceSeat, stage: EvidenceStage): boolean {
   if (path === "scratch" || path.startsWith("scratch/")) return true;
   if (!path.startsWith("evidence/")) return false;
+  // Raw court research is an export artifact, not promoted sandbox evidence.
+  if (/^evidence\/[^/]+\/research\//.test(path)) return false;
   const namespace = path.split("/")[1] ?? "";
   if (namespace === "base" || namespace === seat) return true;
   if (stage === "exposicion") return false;

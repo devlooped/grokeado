@@ -3,6 +3,7 @@ import { normalizeEvidenceBytes, sha256, type EvidenceFiles } from "./validate.t
 
 const ROOT = (caseId: string) => `cases/${encodeURIComponent(caseId)}/evidence/`;
 const ARCHIVE = (caseId: string) => `cases/${encodeURIComponent(caseId)}/expediente.zip`;
+const COMPLETE_ARCHIVE = (caseId: string) => `cases/${encodeURIComponent(caseId)}/expediente-completo-v2.zip`;
 const TRANSCRIPT = (caseId: string) => `cases/${encodeURIComponent(caseId)}/transcript.jsonl`;
 const HASHES = ".sha256/";
 const BLOB_ACCESS = "public" as const;
@@ -148,6 +149,15 @@ async function findBlob(pathname: string) {
 }
 
 export async function findEvidenceArchive(caseId: string): Promise<EvidenceArchive | undefined> {
+  return await findCompleteEvidenceArchive(caseId) ?? findLegacyEvidenceArchive(caseId);
+}
+
+export async function findCompleteEvidenceArchive(caseId: string): Promise<EvidenceArchive | undefined> {
+  const blob = await findBlob(COMPLETE_ARCHIVE(caseId));
+  return blob && { downloadUrl: blob.downloadUrl, etag: blob.etag };
+}
+
+export async function findLegacyEvidenceArchive(caseId: string): Promise<EvidenceArchive | undefined> {
   const blob = await findBlob(ARCHIVE(caseId));
   return blob && { downloadUrl: blob.downloadUrl, etag: blob.etag };
 }
@@ -157,7 +167,7 @@ export async function hasEvidenceBase(caseId: string): Promise<boolean> {
 }
 
 export async function writeEvidenceArchive(caseId: string, bytes: Uint8Array): Promise<EvidenceArchive> {
-  const blob = await put(ARCHIVE(caseId), Buffer.from(bytes), {
+  const blob = await put(COMPLETE_ARCHIVE(caseId), Buffer.from(bytes), {
     access: BLOB_ACCESS,
     addRandomSuffix: false,
     allowOverwrite: true,

@@ -49,7 +49,11 @@ const files: EvidenceFiles = new Map<string, Uint8Array | string>([
   ["evidence/base/entities.md", "Entidades"],
   ["evidence/base/docs/submission.md", "Texto"],
   ["evidence/base/raw/original.pdf", Uint8Array.of(0, 255, 17, 128)],
+  ["evidence/base/tables/original.csv", "a,b\n1,2\n"],
   ["evidence/grok/ámbito.md", "Aporte del analista"],
+  ["evidence/grok/research/run/step-000.json", '{"content":"contenido web completo"}'],
+  ["evidence/gemini/argument.md", "Argumento de Gemini"],
+  ["evidence/chatgpt/fragment.md", "Fragmento de ChatGPT"],
   ["evidence/claude/runs/1/transcript.jsonl", ""],
   ["evidence/base/raw/checksum.txt", "123456789"],
 ]);
@@ -87,8 +91,9 @@ test("reads the final tree and uploads it, propagating read or write errors", as
   });
   assert.deepEqual(result, expected);
   assert.ok(saved);
-  assert.equal(unzip(saved).size, files.size + 1);
+  assert.equal(unzip(saved).size, files.size + 2);
   assert.equal(unzip(saved).get("transcript.jsonl")!.toString(), transcript);
+  assert.equal(unzip(saved).get("acta.jsonl")!.toString(), "");
   await assert.rejects(archiveEvidence("case-1", {
     ...dependencies,
     readEvidenceTree: async () => { throw new Error("read failed"); },
@@ -129,6 +134,7 @@ test("persists the same merged transcript in the run, case blob and ZIP on retri
   await archiveEvidence("case-1", store);
   const firstZip = zip;
   const extracted = unzip(zip);
+  assert.deepEqual(extracted.get("acta.jsonl")!.toString().trim().split("\n").map((line) => JSON.parse(line)), [session, event]);
   assert.equal(extracted.get("transcript.jsonl")!.toString(), transcript);
   assert.equal(extracted.get(run)!.toString(), stored.get(run)!.toString());
   assert.deepEqual(extracted.get(run)!.toString().trim().split("\n").map((line) => JSON.parse(line)), [{ ...step, modelId: "grok-id" }, { ...event, modelId: "grok-id" }]);
@@ -138,13 +144,15 @@ test("persists the same merged transcript in the run, case blob and ZIP on retri
   assert.deepEqual(zip, firstZip);
 });
 
-test("reuses existing archives and backfills old resolved cases only when evidence exists", async () => {
+test("reuses complete archives and rebuilds legacy archives when the evidence exists", async () => {
   const existing = { downloadUrl: "https://blob.test/expediente.zip?download=1", etag: "v1" };
+  const legacy = { downloadUrl: "https://blob.test/legacy.zip?download=1", etag: "old" };
   let archived = 0;
   let hasBase = true;
   let found: typeof existing | undefined = existing;
   const store = {
-    findEvidenceArchive: async () => found,
+    findCompleteEvidenceArchive: async () => found,
+    findLegacyEvidenceArchive: async () => legacy,
     hasEvidenceBase: async () => hasBase,
     archiveEvidence: async (id: string) => { assert.equal(id, "old-case"); archived++; return existing; },
   };
@@ -154,7 +162,7 @@ test("reuses existing archives and backfills old resolved cases only when eviden
   assert.deepEqual(await getOrCreateEvidenceArchive("old-case", store), existing);
   assert.equal(archived, 1);
   hasBase = false;
-  assert.equal(await getOrCreateEvidenceArchive("old-case", store), undefined);
+  assert.deepEqual(await getOrCreateEvidenceArchive("old-case", store), legacy);
   assert.equal(archived, 1);
 });
 

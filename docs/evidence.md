@@ -37,9 +37,15 @@ Public Blob storage is the canonical source. Objects are written with
 `access: "public"` and stable pathnames, so anyone with the URL can read them.
 When a case completes, the complete `evidence/` tree (including originals,
 catalogs, extractions, analyst files, and run artifacts) is compressed and
-stored separately at `cases/{caseId}/expediente.zip` before the case is marked
+stored separately at `cases/{caseId}/expediente-completo-v2.zip` before the case is marked
 resolved. A storage error prevents the case from being marked resolved. The
-closing step also writes `cases/{caseId}/transcript.jsonl` and includes it at
+ZIP includes every stored file under `evidence/`, including raw court research
+tool calls and their complete returned results under
+`evidence/{seat}/research/{runId}/` (including `judge` when applicable). These
+JSON files are export artifacts, not promoted or citable sandbox evidence.
+The ZIP also contains `acta.jsonl`, the complete committed event record,
+including evidence submissions, source reviews, objections, votes, and decisions.
+The closing step also writes `cases/{caseId}/transcript.jsonl` and includes it at
 the ZIP root. It merges sandbox evidence steps (tagged `evidence_step` with
 `seat` and `runId`) and committed debate `statement` events in timestamp
 order. Every entry has a `modelId`: the model used for that evidence step or
@@ -50,13 +56,21 @@ Statements carry their original sequence and, when an evidence run was
 promoted for that turn, its `evidenceRunId`; those statements are also appended
 to that run's `evidence/{seat}/runs/{runId}/transcript.jsonl`. The export is
 rebuilt on retries without duplicating statements. Statements without a
-promoted run still appear in the case transcript. Existing ZIPs are not
-rewritten; older cases without an archive get a transcript on first download,
-but historical statements cannot be matched to runs without a recorded run ID.
+promoted run still appear in the case transcript. On first download, older cases
+with stored base evidence get a new complete ZIP built from the available tree
+and event record; their original ZIP is not overwritten. If the base is no
+longer available, the original ZIP is offered as-is. Research tool results that
+were never stored cannot be recovered, and historical statements cannot be
+matched to runs without a recorded run ID.
 The transcript, like the rest of the Blob store, is publicly readable.
 The case page offers a single ZIP download; individual files remain available for
 citations. Resolved cases created before ZIP export was introduced create and
 store the archive on their first download, if their base evidence exists.
+Research capture is limited to responses actually returned by the tools; it does
+not reconstruct material the providers did not return. These responses and the
+full event record are public, like the rest of the evidence store. Each research
+step is subject to the 8 MiB per-file evidence limit; oversized results fail the
+case rather than being silently truncated.
 Sandbox workspaces are rebuilt
 from Blob for each attempt; the sandbox never receives Blob credentials.
 The base collector preserves text and uploaded images, and downloads http(s)
@@ -125,7 +139,7 @@ each one has passed:
    Reads fetch the public blob URL with no token. An unauthenticated `GET` of
    `/caso/{id}/evidencia/...` returns the file when the case exists.
    After a case resolves, download `/caso/{id}/expediente` and verify that the
-   ZIP stored at `cases/{caseId}/expediente.zip` contains the complete tree.
+   ZIP stored at `cases/{caseId}/expediente-completo-v2.zip` contains the complete tree.
 2. `npm run evidence:snapshot` prints a snapshot id. Set it as
    `EVIDENCE_SANDBOX_SNAPSHOT_ID`.
 3. `EVIDENCE_AI_GATEWAY_API_KEY` is a different key from `AI_GATEWAY_API_KEY`,

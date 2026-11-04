@@ -17,6 +17,7 @@ export interface SeatRun {
   done?(): boolean;
   images?: SeatImage[];
   mock?: MockTurn;
+  onResearchStep?(step: { stepNumber: number; content: unknown[] }): void;
 }
 
 // One stateless conversation per durable workflow step. Court tools only mutate
@@ -34,6 +35,12 @@ export async function runSeat(run: SeatRun, model?: LanguageModel): Promise<void
       ],
     }],
     tools: { ...(mock?.research ?? researchTools(run.research)), ...toAiTools(run.tools) },
+    onStepEnd: ({ stepNumber, content }) => {
+      const research = content.filter((part) =>
+        (part.type === "tool-call" || part.type === "tool-result" || part.type === "tool-error") &&
+        ["web_fetch", "web_search", "x_search"].includes(part.toolName));
+      if (research.length) run.onResearchStep?.({ stepNumber, content: research });
+    },
     // Decision turns must call a court tool; a prose answer never enters the
     // record. Instruction ends only after the analyst explicitly closes it.
     toolChoice: run.done ? "required" : "auto",

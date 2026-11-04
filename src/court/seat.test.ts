@@ -95,3 +95,46 @@ test("instruction keeps collecting evidence until the analyst explicitly complet
   assert.equal(model.doGenerateCalls.length, 3);
   assert.deepEqual(model.doGenerateCalls[0].toolChoice, { type: "required" });
 });
+
+test("captures complete research tool calls and results without capturing court tools", async () => {
+  const submission = { kind: "text" as const, text: "Una afirmación verificable para analizar." };
+  const spec = { kind: "instruction" as const, counsel: "grok" as const };
+  const record = [{ type: "claims_entered" as const, claims: [{ id: "A1", quote: "", text: submission.text }] }];
+  const steps: Array<{ stepNumber: number; content: unknown[] }> = [];
+  const outcome = await conductTurn({ submission, today: "hoy", simulated: true }, spec, record, 0,
+    async ({ prompt, tools, done }) => runSeat({ model: JUDGE_MODEL, research: true, prompt, tools, done, mock: { spec, record, submission }, onResearchStep: (step) => steps.push(step) }));
+  assert.equal(outcome.done, true);
+  const content = JSON.stringify(steps);
+  assert.match(content, /web_search/);
+  assert.match(content, /web_fetch/);
+  assert.match(content, /Documento de prueba con aportes/);
+  assert.doesNotMatch(content, /file_evidence|finish_instruction/);
+});
+
+test("retains completed research steps if a later model call fails", async () => {
+  const submission = { kind: "text" as const, text: "Una afirmación verificable para analizar." };
+  const spec = { kind: "instruction" as const, counsel: "grok" as const };
+  const steps: unknown[] = [];
+  let calls = 0;
+  const model = new MockLanguageModelV4({ doGenerate: async () => {
+    if (calls++ === 0) return call("web_fetch", { url: "https://example.test/article" });
+    throw new Error("Gateway unavailable");
+  } });
+  await assert.rejects(runSeat({ model: JUDGE_MODEL, research: true, prompt: "Investigá", tools: {},
+    mock: { spec, record: [], submission }, onResearchStep: (step) => steps.push(step) }, model), /Gateway unavailable/);
+  assert.match(JSON.stringify(steps), /Documento de prueba con aportes/);
+});
+
+test("captures research executed by the gateway provider", async () => {
+  const steps: unknown[] = [];
+  const response = call("web_fetch", { url: "https://example.test/article" }, "fetch-1");
+  const model = new MockLanguageModelV4({ doGenerate: {
+    ...response,
+    content: [
+      { ...response.content[0]!, providerExecuted: true },
+      { type: "tool-result", toolCallId: "fetch-1", toolName: "web_fetch", result: { content: "Texto devuelto por el proveedor" } },
+    ],
+  } });
+  await runSeat({ model: JUDGE_MODEL, research: false, prompt: "Leé", tools: {}, onResearchStep: (step) => steps.push(step) }, model);
+  assert.match(JSON.stringify(steps), /Texto devuelto por el proveedor/);
+});
