@@ -1,6 +1,6 @@
 import { Sandbox } from "@vercel/sandbox";
 import { randomUUID } from "node:crypto";
-import { COUNSEL_MODELS } from "../court/models.ts";
+import { COUNSEL_MODELS, type CourtModel } from "../court/models.ts";
 import { evidenceSandboxLaunch, evidenceTaskDocument } from "./broker.ts";
 import { parseEvidenceDocument, createEvidenceIndex, annotateEvidenceDocuments } from "./okf.ts";
 import { createMockEvidencePromotion } from "./mock.ts";
@@ -8,7 +8,7 @@ import type { EvidenceSeat, EvidenceStage } from "./schema.ts";
 import { blobConfigured, readEvidenceTree, writeEvidenceTree } from "./blob.ts";
 import { validateEvidenceTree, validatePromotedFiles } from "./validate.ts";
 import { annotateEvidenceTranscript } from "./transcript.ts";
-import { translatePromotedEvidence } from "./translate.ts";
+import { translatePromotedEvidence, translatorFor } from "./translate.ts";
 import { assembleWorkspace, citationAuthors, citationsFor, readOnlyHashesFor, workspaceIndex } from "./workspace.ts";
 
 const WORKSPACE = "/workspace";
@@ -52,7 +52,8 @@ export async function runEvidenceStep(
   stage: EvidenceStage,
   task: string,
   simulated = false,
-  language = "es"
+  language = "es",
+  models?: { seat: CourtModel; translator: CourtModel }
 ): Promise<EvidenceStepResult> {
   "use step";
   const empty: EvidenceStepResult = { status: "partial", index: "", citations: [] };
@@ -85,7 +86,7 @@ export async function runEvidenceStep(
 
   const deadlineAt = new Date(Date.now() + 180_000).toISOString();
   const runId = randomUUID();
-  const modelId = COUNSEL_MODELS[seat].id;
+  const modelId = (models?.seat ?? COUNSEL_MODELS[seat]).id;
   const workspace = assembleWorkspace(original, seat, stage);
   const readOnlyHashes = readOnlyHashesFor(workspace);
   const sandbox = await Sandbox.create({
@@ -183,7 +184,7 @@ export async function runEvidenceStep(
     }
 
     annotateEvidenceDocuments(promoted, modelId, effort);
-    await translatePromotedEvidence(promoted, runId, seat, language);
+    await translatePromotedEvidence(promoted, runId, seat, language, translatorFor(models?.translator));
     const translatedErrors = validatePromotedFiles(seat, original, promoted);
     if (translatedErrors.length) throw new Error("La evidencia traducida no es válida: " + translatedErrors.join("; "));
 

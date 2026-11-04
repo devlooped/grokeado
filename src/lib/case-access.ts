@@ -6,6 +6,11 @@ export function canRequestCase(user: CaseUser | null | undefined): boolean {
   return !!user?.sub && user.email_verified === true && user.email?.toLowerCase() === "daniel@cazzulino.com";
 }
 
-export function canDeleteCase(user: CaseUser | null | undefined): boolean {
+// The exact Admin role, as issued; never a case-insensitive or partial match.
+export function isAdmin(user: CaseUser | null | undefined): user is CaseUser & { sub: string } {
   return !!user?.sub && Array.isArray(user.roles) && user.roles.includes("Admin");
+}
+
+export function canDeleteCase(user: CaseUser | null | undefined): boolean {
+  return isAdmin(user);
 }

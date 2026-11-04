@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { describe, EVIDENCE_STANCE_LABEL, STAGE_LABEL } from "../domain/acta.ts";
 import { COUNSEL, JUDGE, MODEL_NAME, VERDICTS, project, type Claim, type Counsel, type CourtEvent, type Stage, type Submission, type SubmissionContext, type UnifiedSource } from "../domain/court.ts";
+import type { ModelConfig } from "./models.ts";
 import { Rejection, tool, type Toolset } from "./toolset.ts";
 import { languageInstruction } from "../domain/language.ts";
 
@@ -40,6 +41,8 @@ export interface Docket {
   simulated?: boolean;
   language?: string;
   submissionContext?: SubmissionContext;
+  // Snapshot of the configured models, taken once when the session opens.
+  models?: ModelConfig;
 }
 
 const OBJECTION_GROUNDS =

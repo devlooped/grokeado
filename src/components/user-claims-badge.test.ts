@@ -44,4 +44,11 @@ test("UserClaimsPopover renders a shield button when closed and a claims table w
   assert.match(openHtml, /email_verified/);
   assert.match(openHtml, /\[&quot;admin&quot;,&quot;beta&quot;\]/);
   assert.ok(openHtml.includes('href="/auth/logout"'));
+  assert.ok(!openHtml.includes('href="/admin"'), "lowercase admin is not the Admin role");
+});
+
+test("UserClaimsPopover links to /admin only for the exact Admin role", () => {
+  const render = (roles: unknown) => renderToStaticMarkup(createElement(UserClaimsPopover, { claims: { sub: "auth0|1", roles }, open: true, onToggle: () => {} }));
+  assert.ok(render(["beta", "Admin"]).includes('href="/admin"'));
+  for (const roles of [["ADMIN"], ["superadmin"], "Admin", undefined]) assert.ok(!render(roles).includes('href="/admin"'));
 });

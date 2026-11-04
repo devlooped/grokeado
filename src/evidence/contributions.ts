@@ -2,7 +2,8 @@ import type { CourtEvent } from "../domain/court.ts";
 import { writeEvidenceTree } from "./blob.ts";
 import { downloadUrl, sniffExtension, type DownloadResult } from "./download.ts";
 import { defaultRecognize, extractHtml, extractPdf, renderMarkedPages } from "./extract.ts";
-import { translateSourceText } from "./translate.ts";
+import type { CourtModel } from "../court/models.ts";
+import { translateSourceText, translatorFor } from "./translate.ts";
 import { sha256 } from "./validate.ts";
 
 type Dependencies = {
@@ -25,10 +26,14 @@ async function extract(download: Extract<DownloadResult, { ok: true }>, extensio
   if (["txt", "csv", "md"].includes(extension)) return new TextDecoder().decode(download.bytes);
 }
 
+export function liveContributionDeps(translator?: CourtModel): Dependencies {
+  return { download: downloadUrl, translate: (text, language) => translateSourceText(text, language, translatorFor(translator)), write: writeEvidenceTree };
+}
+
 // Capture the URLs filed by each analyst. Original bytes and extracted text are
 // retained; the translation is a separate, explicitly labelled derivative.
 // A failed translation never fails the case: the source is kept untranslated.
-export async function saveContributedSources(caseId: string, events: readonly CourtEvent[], language: string, deps: Dependencies = { download: downloadUrl, translate: translateSourceText, write: writeEvidenceTree }): Promise<void> {
+export async function saveContributedSources(caseId: string, events: readonly CourtEvent[], language: string, deps: Dependencies = liveContributionDeps()): Promise<void> {
   const sources = new Map<string, { by: string; url: string }>();
   for (const event of events) {
     if (event.type !== "evidence_filed") continue;

@@ -13,8 +13,15 @@ are not deleted by this feature and may retain step data under the workflow
 backend’s retention policy. Do not run `cases:regenerate-ids -- --apply`
 concurrently with case deletion.
 
-The moderator and Grok analyst use `spacexai/grok-4.7`; the other analysts use
-`google/gemini-4-argon`, `anthropic/claude-opus-5.5`, and `openai/gpt-5.5`.
+By default the moderator and Grok analyst use `spacexai/grok-4.7`; the other
+analysts use `google/gemini-4-argon`, `anthropic/claude-opus-5.5`, and
+`openai/gpt-5.5`. Translations of sources and promoted evidence use a separate
+translator role, `google/gemini-3.5-flash-lite`. Every role (seats, language
+detection, translator, cover search and illustration, and the tier-eval models)
+has its default in `src/court/models.ts` and can be overridden by a user with
+the exact `Admin` role at `/admin`, linked from the session badge. Overrides are
+stored in the `model_settings` table and validated against the public Gateway
+catalog; each case snapshots the configuration when its session opens.
 `npm run models` lists the current Gateway catalog.
 
 All analysts have Gateway's Parallel web search and Browserbase page fetch.
@@ -88,9 +95,9 @@ revision-history design before offering a way to revisit resolved cases.
 3. For deployment, keep your Postgres and Auth0 variables configured and either
    use Vercel's automatic OIDC Gateway authentication or add the Gateway key to
    the project's deployment environment variables. Set the production
-   `APP_BASE_URL` to `https://www.verificado.si` (the canonical domain; the apex
-   redirects to it), and keep its callback and logout URLs registered in Auth0.
-   Redeploy after environment changes.
+   `APP_BASE_URL` to `https://che.bot`, configure `www.che.bot` to redirect to
+   it, and keep its callback and logout URLs registered in Auth0. Redeploy after
+   environment changes.
 4. Under project **Settings → Environment Variables**, enable access to **System
    Environment Variables**. Workflow uses `VERCEL_DEPLOYMENT_ID` to select its
    managed Vercel backend. No hosted workflow service is needed for local tests.

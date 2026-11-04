@@ -1,5 +1,6 @@
 import { attachDatabasePool } from "@vercel/functions";
 import { Pool } from "pg";
+import type { ModelSetting } from "./court/models.ts";
 import type { CaseRecord, CaseStatus, RecordedEvent, Submission } from "./domain/court.ts";
 import { newCaseId } from "./lib/case-id.ts";
 
@@ -67,6 +68,13 @@ async function db(): Promise<Pool> {
        CREATE TABLE IF NOT EXISTS case_aliases (
          old_id TEXT PRIMARY KEY,
          case_id TEXT NOT NULL REFERENCES cases(id) ON DELETE CASCADE
+       );
+       CREATE TABLE IF NOT EXISTS model_settings (
+         role TEXT PRIMARY KEY,
+         model_id TEXT NOT NULL,
+         effort TEXT,
+         updated_at TEXT NOT NULL,
+         updated_by TEXT NOT NULL
        );`
     )
     .then(async () => {
@@ -126,6 +134,39 @@ export async function createNewCase(submission: Submission, image?: Buffer, owne
 // Persist the detection so retries reuse the same language as the first attempt.
 export async function saveCaseLanguage(id: string, language: string): Promise<void> {
   await (await db()).query("UPDATE cases SET submission = jsonb_set(submission, '{resolvedLanguage}', to_jsonb($2::text)) WHERE id = $1", [id, language]);
+}
+
+export function databaseConfigured(): boolean {
+  return Boolean(process.env.DATABASE_URL ?? process.env.POSTGRES_URL);
+}
+
+// Admin overrides of the default model for each role; a missing row means the default.
+export async function getModelSettings(): Promise<ModelSetting[]> {
+  const { rows } = await (await db()).query<{ role: string; model_id: string; effort: string | null }>("SELECT role, model_id, effort FROM model_settings ORDER BY role");
+  return rows.map((row) => ({ role: row.role, modelId: row.model_id, effort: row.effort }));
+}
+
+// A null setting restores the default by removing the override.
+export async function saveModelSettings(changes: ReadonlyArray<{ role: string; setting: { modelId: string; effort: string | null } | null }>, updatedBy: string): Promise<void> {
+  const client = await (await db()).connect();
+  try {
+    await client.query("BEGIN");
+    const now = new Date().toISOString();
+    for (const { role, setting } of changes) {
+      if (!setting) await client.query("DELETE FROM model_settings WHERE role = $1", [role]);
+      else await client.query(
+        `INSERT INTO model_settings (role, model_id, effort, updated_at, updated_by) VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (role) DO UPDATE SET model_id = EXCLUDED.model_id, effort = EXCLUDED.effort, updated_at = EXCLUDED.updated_at, updated_by = EXCLUDED.updated_by`,
+        [role, setting.modelId, setting.effort, now, updatedBy]
+      );
+    }
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 // Blob writes hold a shared row lock so deletion waits for in-flight uploads;

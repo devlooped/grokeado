@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { CourtModel } from "../../src/court/models.ts";
+import { courtModel, DEFAULT_MODELS, type CourtModel, type ModelConfig } from "../../src/court/models.ts";
 import { COUNSEL, type Counsel } from "../../src/domain/court.ts";
 
 export const tierSchema = z.enum(["fact", "comparison", "assessment"]);
@@ -133,15 +133,10 @@ export function validateRouting(route: Routing, sources: Source[]): Routing {
   return route;
 }
 
-export function modelFor(by: Counsel, tier: Tier, effort: "medium" | "high" = tier === "fact" ? "medium" : "high"): CourtModel {
-  switch (by) {
-    // The live Gateway catalog currently offers one general-purpose Grok.
-    // Its inexpensive research lane lowers effort rather than claiming a mini model.
-    case "grok": return { id: "spacexai/grok-4.7", providerOptions: { xai: { reasoningEffort: effort } } };
-    case "gemini": return { id: tier === "assessment" ? "google/gemini-4-argon" : "google/gemini-3.8-flash", providerOptions: { google: { thinkingConfig: { thinkingLevel: effort } } } };
-    case "claude": return { id: tier === "fact" ? "anthropic/claude-haiku-5.5" : tier === "comparison" ? "anthropic/claude-sonnet-5.5" : "anthropic/claude-opus-5.5", providerOptions: { anthropic: { effort } } };
-    case "chatgpt": return { id: tier === "fact" ? "openai/gpt-6-luna" : tier === "comparison" ? "openai/gpt-6.1-terra" : "openai/gpt-6.1-sol", providerOptions: { openai: { reasoningEffort: effort } } };
-  }
+// Tier model IDs come from the model settings (defaults in src/court/models.ts,
+// overridable from /admin); each experiment sets the effort.
+export function modelFor(by: Counsel, tier: Tier, effort: "medium" | "high" = tier === "fact" ? "medium" : "high", models: ModelConfig = DEFAULT_MODELS): CourtModel {
+  return courtModel(models[`tier.${by}.${tier}`].id, effort);
 }
 
 export const EVALUATORS = COUNSEL;

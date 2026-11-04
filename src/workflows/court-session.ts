@@ -1,5 +1,6 @@
-import { illustrateCase } from "../court/cover.ts";
-import { COUNSEL_MODELS, JUDGE_MODEL, MOCK_MODEL_ID, modelEffort } from "../court/models.ts";
+import { illustrateCase, liveCoverDeps } from "../court/cover.ts";
+import { loadModels } from "../court/model-config.ts";
+import { counselModels, DEFAULT_MODELS, MOCK_MODEL_ID, modelEffort, seatModel, type CourtModel, type ModelConfig } from "../court/models.ts";
 import { playTurn } from "../court/play.ts";
 import { resolveCaseLanguage } from "../court/language.ts";
 import { holdSession } from "../court/procedure.ts";
@@ -7,7 +8,7 @@ import type { Docket, TurnOutcome, TurnSpec } from "../court/turns.ts";
 import type { CourtEvent, RecordedEvent, Submission, SubmissionContext } from "../domain/court.ts";
 import { languageInstruction } from "../domain/language.ts";
 import { collectEvidenceBase } from "../evidence/collect.ts";
-import { saveContributedSources } from "../evidence/contributions.ts";
+import { liveContributionDeps, saveContributedSources } from "../evidence/contributions.ts";
 import { archiveEvidence } from "../evidence/archive.ts";
 import { blobConfigured } from "../evidence/blob.ts";
 import { runEvidenceStep, type EvidenceStepResult } from "../evidence/sandbox.ts";
@@ -15,23 +16,29 @@ import type { EvidenceSeat, EvidenceStage } from "../evidence/schema.ts";
 import { closeCase, openCase, saveEvents } from "./steps.ts";
 import { saveCaseLanguage } from "../store.ts";
 
+// One snapshot per session: every turn uses, and the acta records, the same models.
+async function configuredModels(): Promise<ModelConfig> {
+  "use step";
+  return loadModels();
+}
+
 async function collect(caseId: string, submission: Submission, simulated: boolean) {
   "use step";
   return collectEvidenceBase(caseId, submission, simulated);
 }
 
-async function determineLanguage(caseId: string, submission: Submission, context: SubmissionContext | undefined, simulated: boolean): Promise<string> {
+async function determineLanguage(caseId: string, submission: Submission, context: SubmissionContext | undefined, simulated: boolean, model: CourtModel): Promise<string> {
   "use step";
-  const language = await resolveCaseLanguage(caseId, submission, context, simulated);
+  const language = await resolveCaseLanguage(caseId, submission, context, simulated, undefined, model);
   if (!submission.resolvedLanguage) await saveCaseLanguage(caseId, language);
   return language;
 }
 
 // Keep source processing separate from the paid court turn so a retry need not
 // repeat the analyst's model call.
-async function collectSources(caseId: string, events: CourtEvent[], language: string): Promise<void> {
+async function collectSources(caseId: string, events: CourtEvent[], language: string, translator: CourtModel): Promise<void> {
   "use step";
-  if (blobConfigured()) await saveContributedSources(caseId, events, language);
+  if (blobConfigured()) await saveContributedSources(caseId, events, language, liveContributionDeps(translator));
 }
 
 async function archive(caseId: string): Promise<void> {
@@ -40,11 +47,11 @@ async function archive(caseId: string): Promise<void> {
 }
 
 // A missing cover never fails a case: the home page shows a placeholder instead.
-async function illustrate(caseId: string, simulated: boolean): Promise<void> {
+async function illustrate(caseId: string, simulated: boolean, models: Pick<ModelConfig, "cover.chooser" | "cover.image">): Promise<void> {
   "use step";
   if (simulated) return;
   try {
-    await illustrateCase(caseId);
+    await illustrateCase(caseId, liveCoverDeps(models));
   } catch (err) {
     console.warn("Cover for case " + caseId + " failed:", err);
   }
@@ -60,12 +67,12 @@ async function play(
 ) {
   "use step";
   const outcome = await playTurn(caseId, docket, spec, record, attempt, evidence);
-  return linkEvidenceRun(outcome, evidence?.runId, docket.simulated);
+  return linkEvidenceRun(outcome, evidence?.runId, docket.simulated, docket.models);
 }
 
-export function linkEvidenceRun(outcome: TurnOutcome, runId?: string, simulated = false): TurnOutcome {
+export function linkEvidenceRun(outcome: TurnOutcome, runId?: string, simulated = false, models: ModelConfig = DEFAULT_MODELS): TurnOutcome {
   return { ...outcome, events: outcome.events.map((event) => event.type === "statement" ? {
-    ...event, modelId: simulated ? MOCK_MODEL_ID : COUNSEL_MODELS[event.by].id, effort: simulated ? null : modelEffort(COUNSEL_MODELS[event.by]), ...(runId ? { evidenceRunId: runId } : {}),
+    ...event, modelId: simulated ? MOCK_MODEL_ID : seatModel(models, event.by).id, effort: simulated ? null : modelEffort(seatModel(models, event.by)), ...(runId ? { evidenceRunId: runId } : {}),
   } : event) };
 }
 
@@ -85,10 +92,10 @@ function evidenceTask(spec: TurnSpec, targetLanguage: string): { seat: EvidenceS
   }
 }
 
-async function prepareEvidence(caseId: string, spec: TurnSpec, simulated: boolean, language: string): Promise<EvidenceStepResult | undefined> {
+async function prepareEvidence(caseId: string, spec: TurnSpec, simulated: boolean, language: string, models: ModelConfig): Promise<EvidenceStepResult | undefined> {
   const request = evidenceTask(spec, language);
   if (!request) return undefined;
-  return runEvidenceStep(caseId, request.seat, request.stage, request.task, simulated, language);
+  return runEvidenceStep(caseId, request.seat, request.stage, request.task, simulated, language, { seat: seatModel(models, request.seat), translator: models.translator });
 }
 
 function describeError(err: unknown): string {
@@ -100,29 +107,32 @@ export async function courtSession(caseId: string): Promise<void> {
   "use workflow";
   const { submission, today, simulated } = await openCase(caseId);
   try {
+    const models = await configuredModels();
+    const counsel = counselModels(models);
     const submissionContext = await collect(caseId, submission, simulated);
-    const language = await determineLanguage(caseId, submission, submissionContext, simulated);
-    const docket: Docket = { submission, today, simulated, language, ...(submissionContext ? { submissionContext } : {}) };
+    const language = await determineLanguage(caseId, submission, submissionContext, simulated, models.language);
+    const docket: Docket = { submission, today, simulated, language, models, ...(submissionContext ? { submissionContext } : {}) };
+    const effort = (model: CourtModel) => simulated ? null : modelEffort(model);
     await holdSession({
       submission,
       simulated,
       models: {
-        judge: JUDGE_MODEL.id,
-        counsel: { grok: COUNSEL_MODELS.grok.id, gemini: COUNSEL_MODELS.gemini.id, claude: COUNSEL_MODELS.claude.id, chatgpt: COUNSEL_MODELS.chatgpt.id },
+        judge: models.judge.id,
+        counsel: { grok: counsel.grok.id, gemini: counsel.gemini.id, claude: counsel.claude.id, chatgpt: counsel.chatgpt.id },
       },
       efforts: {
-        judge: simulated ? null : modelEffort(JUDGE_MODEL),
-        counsel: { grok: simulated ? null : modelEffort(COUNSEL_MODELS.grok), gemini: simulated ? null : modelEffort(COUNSEL_MODELS.gemini), claude: simulated ? null : modelEffort(COUNSEL_MODELS.claude), chatgpt: simulated ? null : modelEffort(COUNSEL_MODELS.chatgpt) },
+        judge: effort(models.judge),
+        counsel: { grok: effort(counsel.grok), gemini: effort(counsel.gemini), claude: effort(counsel.claude), chatgpt: effort(counsel.chatgpt) },
       },
       play: async (spec, record, attempt) => {
-        const evidence = await prepareEvidence(caseId, spec, simulated, language);
+        const evidence = await prepareEvidence(caseId, spec, simulated, language, models);
         const outcome = await play(caseId, docket, spec, record, attempt, evidence);
-        if (!simulated && spec.kind === "instruction") await collectSources(caseId, outcome.events, language);
+        if (!simulated && spec.kind === "instruction") await collectSources(caseId, outcome.events, language, models.translator);
         return outcome;
       },
       commit: (events: readonly RecordedEvent[]) => saveEvents(caseId, [...events]),
     });
-    await illustrate(caseId, simulated);
+    await illustrate(caseId, simulated, models);
     await archive(caseId);
     await closeCase(caseId, "resolved");
   } catch (err) {

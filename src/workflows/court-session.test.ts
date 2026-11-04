@@ -57,7 +57,7 @@ test("a collection failure after opening marks the case as failed and rethrows",
   };
   t.mock.method(Pool.prototype, "connect", (async () => client) as unknown as typeof Pool.prototype.connect);
   t.mock.method(Pool.prototype, "query", (async (sql: string, values?: unknown[]) => {
-    if (sql.startsWith("CREATE TABLE") || sql.startsWith("SELECT case_id, seq, body FROM events")) return { rows: [] };
+    if (sql.startsWith("CREATE TABLE") || sql.startsWith("SELECT case_id, seq, body FROM events") || sql.startsWith("SELECT role, model_id, effort FROM model_settings")) return { rows: [] };
     if (sql.startsWith("SELECT mime_type, bytes FROM images")) {
       assert.deepEqual(values, [caseId]);
       assert.equal(row.status, "in_session");

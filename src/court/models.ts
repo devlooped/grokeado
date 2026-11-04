@@ -20,12 +20,113 @@ export function modelEffort(model: CourtModel): string | null {
   return typeof value === "string" && value ? value : null;
 }
 
-// AI Gateway catalog IDs, shared by execution and the recorded acta.
-export const JUDGE_MODEL: CourtModel = { id: "spacexai/grok-4.7", providerOptions: { xai: { reasoningEffort: "high" } } };
+// The inverse of modelEffort: the provider option that carries a reasoning
+// effort through AI Gateway. Other providers keep their own default.
+export function courtModel(id: string, effort?: string | null): CourtModel {
+  if (!effort) return { id };
+  const provider = id.split("/", 1)[0];
+  const providerOptions: CourtModel["providerOptions"] = provider === "spacexai" ? { xai: { reasoningEffort: effort } }
+    : provider === "google" ? { google: { thinkingConfig: { thinkingLevel: effort } } }
+    : provider === "anthropic" ? { anthropic: { effort } }
+    : provider === "openai" ? { openai: { reasoningEffort: effort } }
+    : undefined;
+  return providerOptions ? { id, providerOptions } : { id };
+}
 
-export const COUNSEL_MODELS: Record<Counsel, CourtModel> = {
-  grok: JUDGE_MODEL,
-  gemini: { id: "google/gemini-4-argon", providerOptions: { google: { thinkingConfig: { thinkingLevel: "high" } } } },
-  chatgpt: { id: "openai/gpt-5.5" },
-  claude: { id: "anthropic/claude-opus-5.5", providerOptions: { anthropic: { effort: "high" } } },
+export const TIERS = ["fact", "comparison", "assessment"] as const;
+export type TierName = (typeof TIERS)[number];
+
+export type ModelRole =
+  | "judge"
+  | `counsel.${Counsel}`
+  | "language"
+  | "translator"
+  | "cover.chooser"
+  | "cover.image"
+  | `tier.${Counsel}.${TierName}`;
+
+export type ModelKind = "language" | "image";
+
+export interface ModelRoleDefinition {
+  key: ModelRole;
+  group: "Debate" | "Soporte" | "Evaluación por niveles";
+  label: string;
+  description: string;
+  kind: ModelKind;
+  defaultId: string;
+  defaultEffort: string | null;
+  // Tier evals pick the effort per experiment, and image models take none here.
+  configurableEffort: boolean;
+  // Gateway catalog tags the role relies on.
+  requires: readonly string[];
+}
+
+const SEAT = ["tool-use", "vision"] as const;
+
+const TIER_DEFAULTS: Record<Counsel, Record<TierName, string>> = {
+  // The live Gateway catalog offers one general-purpose Grok; its cheaper lanes lower effort instead.
+  grok: { fact: "spacexai/grok-4.7", comparison: "spacexai/grok-4.7", assessment: "spacexai/grok-4.7" },
+  gemini: { fact: "google/gemini-3.8-flash", comparison: "google/gemini-3.8-flash", assessment: "google/gemini-4-argon" },
+  claude: { fact: "anthropic/claude-haiku-5.5", comparison: "anthropic/claude-sonnet-5.5", assessment: "anthropic/claude-opus-5.5" },
+  chatgpt: { fact: "openai/gpt-6-luna", comparison: "openai/gpt-6.1-terra", assessment: "openai/gpt-6.1-sol" },
 };
+const TIER_LABEL: Record<TierName, string> = { fact: "hechos", comparison: "comparación", assessment: "evaluación" };
+const COUNSEL_LABEL: Record<Counsel, string> = { grok: "Grok", gemini: "Gemini", claude: "Claude", chatgpt: "ChatGPT" };
+
+// AI Gateway catalog IDs, shared by execution and the recorded acta. These are
+// the defaults; an admin can override each role from /admin.
+export const MODEL_ROLES: readonly ModelRoleDefinition[] = [
+  { key: "judge", group: "Debate", label: "Moderador", description: "Instruye el caso, resuelve objeciones y desempata.", kind: "language", defaultId: "spacexai/grok-4.7", defaultEffort: "high", configurableEffort: true, requires: SEAT },
+  { key: "counsel.grok", group: "Debate", label: "Analista Grok", description: "Asiento de Grok en el panel.", kind: "language", defaultId: "spacexai/grok-4.7", defaultEffort: "high", configurableEffort: true, requires: SEAT },
+  { key: "counsel.gemini", group: "Debate", label: "Analista Gemini", description: "Asiento de Gemini en el panel.", kind: "language", defaultId: "google/gemini-4-argon", defaultEffort: "high", configurableEffort: true, requires: SEAT },
+  { key: "counsel.claude", group: "Debate", label: "Analista Claude", description: "Asiento de Claude en el panel.", kind: "language", defaultId: "anthropic/claude-opus-5.5", defaultEffort: "high", configurableEffort: true, requires: SEAT },
+  { key: "counsel.chatgpt", group: "Debate", label: "Analista ChatGPT", description: "Asiento de ChatGPT en el panel.", kind: "language", defaultId: "openai/gpt-5.5", defaultEffort: null, configurableEffort: true, requires: SEAT },
+  { key: "language", group: "Soporte", label: "Detección de idioma", description: "Identifica el idioma del material enviado, incluidas imágenes.", kind: "language", defaultId: "spacexai/grok-4.7", defaultEffort: null, configurableEffort: true, requires: ["structured-output", "vision"] },
+  { key: "translator", group: "Soporte", label: "Traductor", description: "Traduce las fuentes descargadas y la evidencia promovida al idioma del caso.", kind: "language", defaultId: "google/gemini-3.5-flash-lite", defaultEffort: null, configurableEffort: true, requires: ["structured-output"] },
+  { key: "cover.chooser", group: "Soporte", label: "Portada: búsqueda y revisión", description: "Busca una imagen real para la portada y la aprueba antes de usarla.", kind: "language", defaultId: "spacexai/grok-4.7", defaultEffort: null, configurableEffort: true, requires: SEAT },
+  { key: "cover.image", group: "Soporte", label: "Portada: ilustración", description: "Genera la ilustración cuando no hay una imagen real adecuada.", kind: "image", defaultId: "spacexai/grok-imagine-image-2.0", defaultEffort: null, configurableEffort: false, requires: [] },
+  ...(Object.keys(TIER_DEFAULTS) as Counsel[]).flatMap((by) => TIERS.map((tier): ModelRoleDefinition => ({
+    key: `tier.${by}.${tier}`,
+    group: "Evaluación por niveles",
+    label: `${COUNSEL_LABEL[by]} · ${TIER_LABEL[tier]}`,
+    description: "Modelo del eval de niveles (npm run eval:tiers); el esfuerzo lo fija cada experimento.",
+    kind: "language",
+    defaultId: TIER_DEFAULTS[by][tier],
+    defaultEffort: null,
+    configurableEffort: false,
+    requires: [],
+  }))),
+];
+
+export const MODEL_ROLE = Object.fromEntries(MODEL_ROLES.map((role) => [role.key, role])) as Record<ModelRole, ModelRoleDefinition>;
+
+export type ModelConfig = Record<ModelRole, CourtModel>;
+
+export interface ModelSetting {
+  role: string;
+  modelId: string;
+  effort: string | null;
+}
+
+// Stored overrides on top of the defaults; rows for retired roles are ignored.
+export function resolveModels(settings: readonly ModelSetting[] = []): ModelConfig {
+  const config = Object.fromEntries(MODEL_ROLES.map((role) => [role.key, courtModel(role.defaultId, role.defaultEffort)])) as ModelConfig;
+  for (const setting of settings) {
+    const role = MODEL_ROLE[setting.role as ModelRole];
+    if (role) config[role.key] = courtModel(setting.modelId, role.configurableEffort ? setting.effort : null);
+  }
+  return config;
+}
+
+export const DEFAULT_MODELS: ModelConfig = resolveModels();
+
+export function seatModel(models: ModelConfig, seat: Counsel | "judge"): CourtModel {
+  return seat === "judge" ? models.judge : models[`counsel.${seat}`];
+}
+
+export function counselModels(models: ModelConfig): Record<Counsel, CourtModel> {
+  return { grok: models["counsel.grok"], gemini: models["counsel.gemini"], claude: models["counsel.claude"], chatgpt: models["counsel.chatgpt"] };
+}
+
+export const JUDGE_MODEL: CourtModel = DEFAULT_MODELS.judge;
+export const COUNSEL_MODELS: Record<Counsel, CourtModel> = counselModels(DEFAULT_MODELS);
