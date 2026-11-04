@@ -12,6 +12,37 @@ function render(events: CourtEvent[]) {
   return renderToStaticMarkup(createElement(Acta, { events: recorded, view: project(recorded), caseId: "fixture" }));
 }
 
+test("majority results show small vote chips with agreeing analysts first and dissent last", () => {
+  const input: CourtEvent[] = [
+    { type: "claims_entered", claims: ["A1", "A2", "A3", "A4", "A5"].map((id) => ({ id, quote: id, text: id })) },
+    ...COUNSEL.map((by, i): CourtEvent => ({ type: "vote", by, claimId: "A1", verdict: i === 0 ? "verdadero" : "falso", rationale: "A1 " + by })),
+    ...COUNSEL.map((by): CourtEvent => ({ type: "vote", by, claimId: "A2", verdict: "verdadero", rationale: "A2 " + by })),
+    ...COUNSEL.slice(0, 3).map((by): CourtEvent => ({ type: "vote", by, claimId: "A3", verdict: "falso", rationale: "A3 " + by })),
+    ...COUNSEL.map((by, i): CourtEvent => ({ type: "vote", by, claimId: "A5", verdict: i % 2 === 0 ? "verdadero" : "falso", rationale: "A5 " + by })),
+    { type: "judgment", claimId: "A1", verdict: "falso", method: "consensus", reasoning: "" },
+    { type: "judgment", claimId: "A2", verdict: "verdadero", method: "consensus", reasoning: "" },
+    { type: "judgment", claimId: "A3", verdict: "falso", method: "consensus", reasoning: "" },
+    { type: "judgment", claimId: "A4", verdict: "verdadero", method: "consensus", reasoning: "" },
+    { type: "judgment", claimId: "A5", verdict: "falso", method: "consensus", reasoning: "" },
+    { type: "judgment", claimId: "A1", verdict: "verdadero", method: "judge", reasoning: "Razón del moderador." },
+  ];
+  const { document } = parseHTML(render(input));
+  const result = [...document.querySelectorAll("details")].find((d) => d.querySelector("summary h3")?.textContent === "Resultado")!;
+  const groups = result.querySelectorAll('[role="group"]');
+  assert.equal(groups.length, 4);
+  const labels = (group: Element) => [...group.children].map((el) => el.querySelector("[title]")?.getAttribute("title") ?? el.getAttribute("title"));
+  assert.deepEqual(labels(groups[0]), ["Gemini: Falso", "Claude: Falso", "ChatGPT: Falso", "Grok: Verdadero"]);
+  assert.deepEqual(labels(groups[1]), ["Grok: Verdadero", "Gemini: Verdadero", "Claude: Verdadero", "ChatGPT: Verdadero"]);
+  assert.deepEqual(labels(groups[2]), ["Grok: Falso", "Gemini: Falso", "Claude: Falso", "ChatGPT: no votó"]);
+  assert.deepEqual(labels(groups[3]), ["Gemini: Falso", "ChatGPT: Falso", "Grok: Verdadero", "Claude: Verdadero"], "inconsistent records still place all dissenting votes last");
+  assert.deepEqual([...groups[0].querySelectorAll("a")].map((a) => a.getAttribute("href")), ["#voto-A1-gemini", "#voto-A1-claude", "#voto-A1-chatgpt", "#voto-A1-grok"]);
+  assert.equal(groups[2].querySelectorAll("a").length, 3, "an absent vote has no reason to link to");
+  assert.equal(groups[0].querySelectorAll(".size-6").length, 4, "the chips use the compact size");
+  assert.ok(!groups[0].parentElement!.textContent.includes("por mayoría"));
+  assert.ok(result.textContent.includes("Resultado de A4: Verdadero, por mayoría."), "a record without votes retains the decision method");
+  assert.ok(result.textContent.includes("Desempate del moderador sobre A1: Verdadero. Razón del moderador."));
+});
+
 test("the acta labels translated contributions and retains their originals in both stages", () => {
   const evidence = { id: "P1", by: "grok" as const, claimId: "A1", title: "Informe oficial", url: "https://example.org/report", excerpt: "El investigado no entregó los documentos.", stance: "opposes" as const, translation: { language: "es", original: { title: "Relatório oficial", excerpt: "O investigado não entregou os documentos." } } };
   const html = render([

@@ -2,7 +2,7 @@ import { ABSENCE_LABEL, EVIDENCE_STANCE_LABEL, STAGE_LABEL, VERDICT_LABEL } from
 import { COUNSEL, MODEL_NAME, seatModels, type CaseView, type Counsel, type Evidence, type RecordedEvent, type SeatModels, type SourceView, type Stage } from "@/domain/court.ts";
 import { FoldButtons, FoldNavigation } from "./acta-folding.tsx";
 import { CitationLink, Cited, citationHref, citationRefs, mentions, type Citations } from "./citations.tsx";
-import { GavelIcon, JudgeSeal, ModelMark, VERDICT_TEXT, VerdictGlyph } from "./marks.tsx";
+import { GavelIcon, JudgeSeal, ModelMark, VERDICT_TEXT, VerdictGlyph, VoteChip } from "./marks.tsx";
 
 const time = (at: string) =>
   new Date(at).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit", second: "2-digit", timeZone: "America/Argentina/Buenos_Aires" });
@@ -219,7 +219,14 @@ function Entry({ e, ctx }: { e: RecordedEvent; ctx: Context }) {
           </p>
         </div>
       );
-    case "judgment":
+    case "judgment": {
+      const votes = view.claims.find((claim) => claim.id === e.claimId)?.votes ?? {};
+      const voted = COUNSEL.some((c) => votes[c]);
+      const ordered = [
+        ...COUNSEL.filter((c) => votes[c]?.verdict === e.verdict),
+        ...COUNSEL.filter((c) => votes[c] && votes[c].verdict !== e.verdict),
+        ...COUNSEL.filter((c) => !votes[c]),
+      ];
       return e.method === "judge" ? (
         <div className="flex items-start gap-4 rounded-sm border border-seal/40 bg-seal/5 p-4">
           <JudgeSeal verdict={e.verdict} judge={ctx.models.judge} />
@@ -229,11 +236,19 @@ function Entry({ e, ctx }: { e: RecordedEvent; ctx: Context }) {
           </p>
         </div>
       ) : (
-        <p className="flex items-center justify-center gap-2 text-sm">
+        <p className="flex flex-wrap items-center justify-center gap-2 text-sm">
           <span className={VERDICT_TEXT[e.verdict]}><VerdictGlyph verdict={e.verdict} className="size-4" /></span>
-          Resultado de <Cited text={e.claimId} ctx={ctx} />: <span className={"font-semibold " + VERDICT_TEXT[e.verdict]}>{VERDICT_LABEL[e.verdict]}</span>, por mayoría.
+          <span>Resultado de <Cited text={e.claimId} ctx={ctx} />: <span className={"font-semibold " + VERDICT_TEXT[e.verdict]}>{VERDICT_LABEL[e.verdict]}</span>{!voted && ", por mayoría."}</span>
+          {voted && <span role="group" aria-label={"Votos de los analistas sobre " + e.claimId} className="inline-flex items-center gap-1.5">
+            {ordered.map((c) => votes[c] ? (
+              <a key={c} href={"#voto-" + e.claimId + "-" + c} aria-label={"Ver fundamento de " + MODEL_NAME[c] + ": " + VERDICT_LABEL[votes[c].verdict]} className="rounded-full focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-celeste-deep">
+                <VoteChip model={c} verdict={votes[c].verdict} used={ctx.models[c]} size="sm" />
+              </a>
+            ) : <VoteChip key={c} model={c} used={ctx.models[c]} size="sm" />)}
+          </span>}
         </p>
       );
+    }
     case "case_summary":
       return (
         <div className="text-sm">
