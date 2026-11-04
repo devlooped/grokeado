@@ -35,6 +35,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 Método
               </Link>
               <ThemeToggle />
+              <Link href="/" aria-label="Volver al inicio" title="Volver al inicio" className="grid size-8 shrink-0 place-items-center rounded-full border border-rule text-base tracking-normal transition hover:bg-paper-deep">
+                <span aria-hidden>🏠</span>
+              </Link>
             </div>
           </div>
           <Link href="/" className="mt-2 block text-center">
