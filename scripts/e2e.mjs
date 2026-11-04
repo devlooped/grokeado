@@ -33,12 +33,13 @@ if (mode === "case") {
   await page.waitForTimeout(1500);
   const heading = await page.getByRole("heading", { level: 1 }).textContent();
   console.log("heading: " + heading);
-  const claims = await page.locator("article").count();
-  const chips = await page.locator("[aria-label='Votos de los analistas'] > span").count();
+  const claims = await page.locator("article[data-claim]").count();
+  const votes = page.locator('article[data-claim] [role="group"] span[aria-label][title]');
+  const chips = await votes.count();
   const seals = await page.locator("span[aria-label^='Desempate del moderador']").count();
   console.log("claims=" + claims + " voteChips=" + chips + " judgeSeals=" + seals + " actaEntries=" + (await page.locator("section ol > li").count()));
-  for (const label of await page.locator("[aria-label='Votos de los analistas'] > span").evaluateAll((els) => els.map((e) => e.getAttribute("aria-label")))) console.log("  " + label);
-  assert(claims > 0 && chips === claims * 3, "every claim shows exactly three AI vote icons");
+  for (const label of await votes.evaluateAll((els) => els.map((e) => e.getAttribute("aria-label")))) console.log("  " + label);
+  assert(claims > 0 && chips === claims * 4, "every claim shows exactly four analyst vote icons");
   await page.screenshot({ path: out + "/case-" + arg + ".png", fullPage: true });
   await page.screenshot({ path: out + "/case-" + arg + "-top.png" });
   await page.getByRole("heading", { name: "Registro del debate" }).scrollIntoViewIfNeeded();

@@ -30,8 +30,9 @@ function render(c: CaseRecord, events: CourtEvent[] = []) {
 test("the panel introduces the snapshot's moderator, seats and support roles without inventing their use", () => {
   const { document } = parseHTML(render(record));
   const panel = document.querySelector("section")!;
-  assert.ok(panel.textContent.includes("Panel del caso"));
-  assert.ok(panel.textContent.includes("las funciones de apoyo se usan cuando hacen falta"));
+  assert.equal(panel.querySelector("h2")?.textContent, "Panel");
+  assert.ok(!panel.textContent.includes("Configuración al inicio del caso"));
+  assert.ok(panel.textContent.includes("Las funciones de apoyo se usan cuando hacen falta"));
   assert.ok(panel.textContent.includes("Moderador:Claude"));
   const analysts = panel.querySelector("dl > div.border-t dd")!;
   assert.deepEqual([...analysts.querySelectorAll("[title]")].map((model) => model.textContent), ["ChatGPT", "Gemini"], "list the configured models, including a model whose provider differs from its seat");

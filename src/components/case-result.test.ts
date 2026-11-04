@@ -33,7 +33,7 @@ test("the content, panel and claims form an overview immediately before the mode
   const html = render(events);
   const { document } = parseHTML(html);
   const overview = document.querySelector("[data-case-overview]")!;
-  assert.ok(overview.querySelector("figure figcaption")?.textContent.includes("Lo que se dijo"));
+  assert.equal(overview.querySelector("figure figcaption")?.textContent, "Contenido");
   assert.ok(overview.querySelector("figure figcaption svg"), "the content has a margin icon");
   assert.ok(overview.querySelector('[aria-labelledby="case-panel-title"] svg'), "the panel has a margin icon");
   assert.equal(overview.querySelectorAll("article[data-claim]").length, 2);
@@ -45,6 +45,67 @@ test("the content, panel and claims form an overview immediately before the mode
   assert.ok(html.includes("El debate discutió el alcance de las pruebas."));
   assert.ok(html.includes("Los analistas discreparon."));
   assert.ok(html.includes("Fundamentos de cada voto"));
+});
+
+test("a text submission identical to its sole claim shares one card with the result, votes and reasons", () => {
+  const text = "Una afirmación verificable.";
+  const input: CourtEvent[] = [
+    { type: "claims_entered", claims: [{ id: "A1", quote: text, text }] },
+    ...events.slice(1).filter((event) => !("claimId" in event) || event.claimId === "A1"),
+  ];
+  const { document } = parseHTML(render(input, { ...c, submission: { kind: "text", text } }));
+  const card = document.getElementById("A1")!;
+  assert.equal(document.querySelectorAll("article[data-claim]").length, 1);
+  assert.equal(card.querySelector("figure")?.closest("article"), card);
+  assert.equal(card.querySelector("figcaption")?.textContent, "ContenidoA1");
+  assert.equal(card.textContent.split(text).length - 1, 1, "the claim's text appears only once");
+  assert.ok(!card.querySelector("h3"));
+  assert.ok(!card.querySelector("blockquote a"), "no duplicate inline result or vote tooltip");
+  assert.ok(!document.querySelector('[aria-labelledby="case-claims-title"]'));
+  assert.ok(card.textContent.includes("Falso"));
+  assert.ok(card.textContent.includes("Mayoría · 3 de 4"));
+  assert.equal(card.querySelectorAll('[role="group"] a').length, COUNSEL.length);
+  for (const by of COUNSEL) {
+    assert.ok(card.querySelector('a[href="#voto-A1-' + by + '"]'));
+    assert.equal(document.getElementById("voto-A1-" + by)?.closest("details")?.id, "fundamentos-A1");
+  }
+  assert.equal(document.querySelector("[data-case-overview]")?.nextElementSibling?.getAttribute("aria-labelledby"), "case-summary-title");
+});
+
+test("matching a sole claim ignores surrounding quotation marks and terminal punctuation but does not invent a result", () => {
+  const input: CourtEvent[] = [{ type: "claims_entered", claims: [{ id: "A1", quote: "Única afirmación", text: "Única afirmación" }] }];
+  const { document } = parseHTML(render(input, { ...c, models: undefined, submission: { kind: "text", text: "  «Única afirmación.» " } }));
+  const card = document.getElementById("A1")!;
+  assert.ok(card.querySelector("figure"));
+  assert.ok(card.textContent.includes("Sin resultado registrado"));
+  assert.ok(!document.querySelector('[aria-labelledby="case-claims-title"]'));
+  assert.equal(card.querySelectorAll('[role="group"] a').length, 0);
+});
+
+test("a sole claim with different wording remains separate even if it quotes the entire content", () => {
+  const text = "Única afirmación.";
+  const input: CourtEvent[] = [{ type: "claims_entered", claims: [{ id: "A1", quote: text, text: "Afirmación reformulada por el panel." }] }];
+  const { document } = parseHTML(render(input, { ...c, submission: { kind: "text", text } }));
+  assert.ok(!document.querySelector("figure")?.closest("article"));
+  assert.equal(document.getElementById("A1")?.querySelector("h3")?.textContent, "Afirmación reformulada por el panel.");
+  assert.ok(document.querySelector('[aria-labelledby="case-claims-title"]'));
+});
+
+test("links, images and multiple claims do not combine with the original content", () => {
+  const text = "Comentario";
+  const input: CourtEvent[] = [{ type: "claims_entered", claims: [{ id: "A1", quote: text, text }] }];
+  for (const submission of [
+    { kind: "link" as const, url: "https://example.org", note: text },
+    { kind: "image" as const, mimeType: "image/png", note: text },
+  ]) {
+    const { document } = parseHTML(render(input, { ...c, submission }));
+    assert.ok(!document.querySelector("figure")?.closest("article"));
+    assert.ok(document.querySelector('[aria-labelledby="case-claims-title"]'));
+  }
+  const multiple: CourtEvent[] = [{ type: "claims_entered", claims: [{ id: "A1", quote: text, text }, { id: "A2", quote: "", text: "Otra afirmación" }] }];
+  const { document } = parseHTML(render(multiple, { ...c, submission: { kind: "text", text } }));
+  assert.ok(!document.querySelector("figure")?.closest("article"));
+  assert.equal(document.querySelectorAll("article[data-claim]").length, 2);
 });
 
 test("every visible vote links to its own folded reason, with missing votes left unlinked", () => {
@@ -65,6 +126,17 @@ test("every visible vote links to its own folded reason, with missing votes left
   assert.ok(partial.querySelector('[role="group"] > [aria-label="Grok: no votó"]'));
   assert.ok(document.getElementById("A1")!.textContent.includes("Mayoría · 3 de 4"));
   assert.ok(partial.textContent.includes("Desempate del moderador"));
+});
+
+test("the overview shows a mixed or shared overall result without combining analysts' votes across claims", () => {
+  const mixed = parseHTML(render(events)).document;
+  assert.ok(mixed.querySelector('[aria-label="Resultado general: Mixto"]'));
+  const shared = events.map((e): CourtEvent => e.type === "judgment" ? { ...e, verdict: "falso" } : e);
+  const same = parseHTML(render(shared)).document;
+  assert.ok(same.querySelector('[aria-label="Resultado general: Falso"] .bg-falso'));
+  assert.ok(!same.querySelector('[aria-label="Resultado general: Mixto"]'));
+  const pending = parseHTML(render([events[0]!])).document;
+  assert.ok(!pending.querySelector('[aria-label^="Resultado general:"]'));
 });
 
 test("unresolved historical claims remain visible without an invented verdict or an empty panel", () => {

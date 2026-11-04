@@ -74,8 +74,11 @@ Once every claim has a decision, the moderator records a case summary of the
 salient arguments, agreements and disagreements, using the completed record.
 An unfinished summary suspends the court after one retry. Existing cases without
 a summary remain readable; they are not silently backfilled with invented text.
-The result page places the summary before the individual claims and links the
-compact votes beside quoted claims to their respective reasons.
+The result page opens with cards for the submitted content, the configured panel,
+and the claims with their overall result and individual analyst votes. Each vote
+links to its folded reason; the moderator's case summary follows the cards. When
+a text submission matches its only claim, one card combines the content, result
+and votes without repeating the claim's text.
 
 ## Case revisions and caching
 

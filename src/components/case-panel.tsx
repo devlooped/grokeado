@@ -31,10 +31,7 @@ export function CasePanel({ c, models }: { c: CaseRecord; models: SeatModels }) 
     <section aria-labelledby="case-panel-title" className="min-w-0 rounded-sm border border-rule bg-paper/60 p-5 text-sm">
       <div className="flex items-center gap-3">
         <span className="grid size-9 shrink-0 place-items-center rounded-sm border border-rule text-seal"><GavelIcon className="size-5" /></span>
-        <div>
-          <h2 id="case-panel-title" className="font-display text-2xl">Panel del caso</h2>
-          <p className="text-[11px] text-ink-soft">Configuración al inicio del caso</p>
-        </div>
+        <h2 id="case-panel-title" className="font-display text-2xl">Panel</h2>
       </div>
       <dl className="mt-4 space-y-3">
         {models.judge && <PanelMember role="Moderador" model={models.judge} />}
@@ -50,7 +47,7 @@ export function CasePanel({ c, models }: { c: CaseRecord; models: SeatModels }) 
       {support.length > 0 && (
         <details className="mt-4 border-t border-rule pt-3">
           <summary className="cursor-pointer text-xs text-celeste-deep hover:underline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-celeste-deep">Modelos de apoyo ({support.length})</summary>
-          <p className="mt-2 text-xs text-ink-soft">Configuración al inicio del caso; las funciones de apoyo se usan cuando hacen falta.</p>
+          <p className="mt-2 text-xs text-ink-soft">Las funciones de apoyo se usan cuando hacen falta.</p>
           <dl className="mt-3 space-y-3">
             {support.map(({ role, model }) => <PanelMember key={role.key} role={role.label} model={model} />)}
           </dl>
