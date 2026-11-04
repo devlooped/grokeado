@@ -1,0 +1,19 @@
+# Keep credentials and their local copies out of CLI deployments.
+.env*
+.env*local*
+!.env.example
+*.bak*
+*.backup*
+*.orig
+*~
+
+# Local configuration, runtime data, and generated artifacts.
+.alta/
+.config/
+data/
+.workflow-data/
+test-results/
+.next/
+.swc/
+node_modules/
+*.tsbuildinfo

@@ -10,7 +10,7 @@ const ISSUER = `https://${DOMAIN}/`;
 const CLIENT_ID = "pqq7y4f9IMv7PFLx6gEngGkIXUIeWo7A";
 const CLIENT_SECRET = "test-client-secret-for-callback-exchange";
 const SECRET = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
-const APP_BASE_URL = "https://www.verificado.si";
+const APP_BASE_URL = "https://che.bot";
 const MICROSOFT_ROLE = "http://schemas.microsoft.com/ws/2008/06/identity/claims/role";
 
 const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
@@ -199,8 +199,8 @@ test("logout normalization uses the configured origin for root and rejects cross
   }
 });
 
-test("login callbacks and logout normalization use both Verificado origins", async () => {
-  for (const origin of ["https://verificado.si", "https://www.verificado.si"]) {
+test("login callbacks and logout normalization use configured origins", async () => {
+  for (const origin of ["https://che.bot", "https://www.che.bot", "https://verificado.si", "https://www.verificado.si"]) {
     const client = createAuth0Client({
       domain: DOMAIN,
       clientId: CLIENT_ID,
