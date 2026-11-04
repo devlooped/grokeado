@@ -81,6 +81,12 @@ Detection and translation make additional AI Gateway calls; an error translating
 promoted analyst evidence fails the case rather than silently presenting
 untranslated evidence. Downloaded archival source translation failures are
 recorded as described above and do not themselves fail the case.
+The default translator, Gemini 3.5 Flash Lite, is called with
+`thinkingLevel: "minimal"`; OpenAI and xAI translators use `reasoningEffort: "none"`
+when the catalog advertises it. If that setting is rejected as unsupported,
+the request is retried once without it. If the catalog is unavailable, no
+OpenAI or xAI reasoning effort is sent. Provider defaults may still incur thinking
+tokens. Other configured translator models keep their own options.
 Mock mode uses
 fixed Spanish fixtures and does not download analyst URLs or call translation.
 Existing cases and archives are not retroactively translated.

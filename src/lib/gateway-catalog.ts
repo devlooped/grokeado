@@ -4,6 +4,7 @@ export interface CatalogModel {
   type: string;
   tags: string[];
   efforts: string[];
+  supportsNoReasoning?: boolean;
 }
 
 const CATALOG_URL = "https://ai-gateway.vercel.sh/v1/models";
@@ -24,6 +25,7 @@ export function parseCatalog(body: unknown): CatalogModel[] {
       type: typeof model.type === "string" ? model.type : "",
       tags: strings(model.tags),
       efforts: strings(effort?.values).filter((value) => value !== "none"),
+      ...(strings(effort?.values).includes("none") ? { supportsNoReasoning: true } : {}),
     }];
   }).sort((a, b) => a.id.localeCompare(b.id));
 }
