@@ -54,6 +54,15 @@ async function db(): Promise<Pool> {
          mime_type TEXT NOT NULL,
          bytes BYTEA NOT NULL
        );
+       CREATE TABLE IF NOT EXISTS covers (
+         case_id TEXT PRIMARY KEY REFERENCES cases(id) ON DELETE CASCADE,
+         mime_type TEXT NOT NULL,
+         bytes BYTEA NOT NULL,
+         source_url TEXT,
+         generated BOOLEAN NOT NULL,
+         saved_at TEXT
+       );
+       ALTER TABLE covers ADD COLUMN IF NOT EXISTS saved_at TEXT;
        CREATE TABLE IF NOT EXISTS case_aliases (
          old_id TEXT PRIMARY KEY,
          case_id TEXT NOT NULL REFERENCES cases(id) ON DELETE CASCADE
@@ -134,6 +143,7 @@ export async function renameCase(oldId: string, newId: string): Promise<void> {
     if (rowCount !== 1) throw new Error("case " + oldId + " does not exist");
     await client.query("UPDATE events SET case_id = $2 WHERE case_id = $1", [oldId, newId]);
     await client.query("UPDATE images SET case_id = $2 WHERE case_id = $1", [oldId, newId]);
+    await client.query("UPDATE covers SET case_id = $2 WHERE case_id = $1", [oldId, newId]);
     await client.query("UPDATE case_aliases SET case_id = $2 WHERE case_id = $1", [oldId, newId]);
     await client.query("DELETE FROM cases WHERE id = $1", [oldId]);
     await client.query("INSERT INTO case_aliases (old_id, case_id) VALUES ($1, $2)", [oldId, newId]);
@@ -159,6 +169,35 @@ export async function listCases(limit = 20): Promise<CaseRecord[]> {
 export async function getImage(caseId: string): Promise<StoredImage | undefined> {
   const { rows } = await (await db()).query<{ mime_type: string; bytes: Buffer }>("SELECT mime_type, bytes FROM images WHERE case_id = $1", [caseId]);
   return rows[0] && { mimeType: rows[0].mime_type, bytes: rows[0].bytes };
+}
+
+export interface StoredCover extends StoredImage {
+  sourceUrl?: string;
+  generated: boolean;
+}
+
+// Idempotent: a retried step or a regenerated cover replaces the previous one.
+export async function saveCover(caseId: string, cover: Omit<StoredCover, "bytes"> & { bytes: Uint8Array }): Promise<void> {
+  await (await db()).query(
+    `INSERT INTO covers (case_id, mime_type, bytes, source_url, generated, saved_at) VALUES ($1, $2, $3, $4, $5, $6)
+     ON CONFLICT (case_id) DO UPDATE SET mime_type = EXCLUDED.mime_type, bytes = EXCLUDED.bytes, source_url = EXCLUDED.source_url, generated = EXCLUDED.generated, saved_at = EXCLUDED.saved_at`,
+    [caseId, cover.mimeType, Buffer.from(cover.bytes), cover.sourceUrl ?? null, cover.generated, new Date().toISOString()]
+  );
+}
+
+export async function getCover(caseId: string): Promise<StoredCover | undefined> {
+  const { rows } = await (await db()).query<{ mime_type: string; bytes: Buffer; source_url: string | null; generated: boolean }>(
+    "SELECT mime_type, bytes, source_url, generated FROM covers WHERE case_id = $1",
+    [caseId]
+  );
+  return rows[0] && { mimeType: rows[0].mime_type, bytes: rows[0].bytes, sourceUrl: rows[0].source_url ?? undefined, generated: rows[0].generated };
+}
+
+// Case id -> cover version, so a regenerated cover gets a new URL and the old one can be cached forever.
+export async function coverVersions(caseIds: readonly string[]): Promise<Map<string, string>> {
+  if (!caseIds.length) return new Map();
+  const { rows } = await (await db()).query<{ case_id: string; saved_at: string | null }>("SELECT case_id, saved_at FROM covers WHERE case_id = ANY($1)", [caseIds]);
+  return new Map(rows.map((r) => [r.case_id, r.saved_at ? String(Date.parse(r.saved_at)) : "0"]));
 }
 
 export async function getEvents(caseId: string): Promise<RecordedEvent[]> {

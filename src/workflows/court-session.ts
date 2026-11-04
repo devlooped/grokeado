@@ -1,3 +1,4 @@
+import { illustrateCase } from "../court/cover.ts";
 import { COUNSEL_MODELS, JUDGE_MODEL, MOCK_MODEL_ID } from "../court/models.ts";
 import { playTurn } from "../court/play.ts";
 import { holdSession } from "../court/procedure.ts";
@@ -18,6 +19,17 @@ async function collect(caseId: string, submission: Submission, simulated: boolea
 async function archive(caseId: string): Promise<void> {
   "use step";
   if (blobConfigured()) await archiveEvidence(caseId);
+}
+
+// A missing cover never fails a case: the home page shows a placeholder instead.
+async function illustrate(caseId: string, simulated: boolean): Promise<void> {
+  "use step";
+  if (simulated) return;
+  try {
+    await illustrateCase(caseId);
+  } catch (err) {
+    console.warn("Cover for case " + caseId + " failed:", err);
+  }
 }
 
 async function play(
@@ -85,6 +97,7 @@ export async function courtSession(caseId: string): Promise<void> {
       },
       commit: (events: readonly RecordedEvent[]) => saveEvents(caseId, [...events]),
     });
+    await illustrate(caseId, simulated);
     await archive(caseId);
     await closeCase(caseId, "resolved");
   } catch (err) {
