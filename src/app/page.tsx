@@ -13,11 +13,11 @@ import { DeleteCaseButton } from "@/components/delete-case-button.tsx";
 import { coverVersions, getEvents, listCases } from "@/store.ts";
 
 const MAX_CLAIMS = 3;
-const caseHref = (id: string) => "/caso/" + id;
+const caseHref = (id: string) => "/c/" + id;
 const shortDate = (at: string) => new Date(at).toLocaleDateString("es-AR", { day: "numeric", month: "short", year: "numeric", timeZone: "America/Argentina/Buenos_Aires" });
 
 function CoverImage({ c, cover }: { c: CaseRecord; cover?: string }) {
-  const src = c.status === "resolved" ? caseCardImageUrl(c.id, cover) : c.submission.kind === "image" ? caseHref(c.id) + "/imagen" : cover ? caseHref(c.id) + "/portada?v=" + cover : undefined;
+  const src = c.status === "resolved" ? caseCardImageUrl(c.id, cover) : c.submission.kind === "image" ? caseHref(c.id) + "/image" : cover ? caseHref(c.id) + "/cover?v=" + cover : undefined;
   if (src) {
     // eslint-disable-next-line @next/next/no-img-element
     return <img src={src} alt="" loading="lazy" className="size-full object-cover transition duration-500 group-hover:scale-[1.03] motion-reduce:transform-none motion-reduce:transition-none" />;

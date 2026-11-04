@@ -146,7 +146,7 @@ Cada etapa = step de evidencia + step de decisión (`runSeat`).
 
 ## Fase 5 — UI (2 días, solapable con la 4)
 
-- Panel de evidencia en `caso/[id]` (índice, documento, fragmento), citas del acta con enlace.
+- Panel de evidencia en `c/[id]` (índice, documento, fragmento), citas del acta con enlace.
 - Ruta para servir raw/assets desde Blob (similar a `imagen/route.ts`). El store es de lectura pública; la ruta exige que el caso exista.
 - Mostrar autor y, si es reproceso, comparación contra la extracción base.
 

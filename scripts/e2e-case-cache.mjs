@@ -20,7 +20,7 @@ const event = (text) => ({ seq: 1, at, type: "claims_entered", claims: [{ id: "A
 async function readPage(id) {
   const page = await browser.newPage();
   try {
-    await page.goto(`${base}/caso/${id}`, { waitUntil: "networkidle" });
+    await page.goto(`${base}/c/${id}`, { waitUntil: "networkidle" });
     const heading = await page.locator("h1").first().textContent();
     const claimNode = page.locator("article#A1 h3");
     const summaryNode = page.locator("section").filter({ has: page.getByRole("heading", { name: "Resumen del caso" }) });

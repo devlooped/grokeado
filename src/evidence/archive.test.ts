@@ -76,7 +76,7 @@ test("refuses missing base indexes and unsafe extraction paths", async () => {
 });
 
 test("reads the final tree and uploads it, propagating read or write errors", async () => {
-  const expected = { downloadUrl: "https://blob.test/expediente.zip?download=1", etag: "final" };
+  const expected = { downloadUrl: "https://blob.test/case.zip?download=1", etag: "final" };
   let saved: Buffer | undefined;
   let transcript: string | undefined;
   const dependencies = {
@@ -144,15 +144,13 @@ test("persists the same merged transcript in the run, case blob and ZIP on retri
   assert.deepEqual(zip, firstZip);
 });
 
-test("reuses complete archives and rebuilds legacy archives when the evidence exists", async () => {
-  const existing = { downloadUrl: "https://blob.test/expediente.zip?download=1", etag: "v1" };
-  const legacy = { downloadUrl: "https://blob.test/legacy.zip?download=1", etag: "old" };
+test("reuses the case archive and rebuilds it when missing and the evidence exists", async () => {
+  const existing = { downloadUrl: "https://blob.test/case.zip?download=1", etag: "v1" };
   let archived = 0;
   let hasBase = true;
   let found: typeof existing | undefined = existing;
   const store = {
-    findCompleteEvidenceArchive: async () => found,
-    findLegacyEvidenceArchive: async () => legacy,
+    findEvidenceArchive: async () => found,
     hasEvidenceBase: async () => hasBase,
     archiveEvidence: async (id: string) => { assert.equal(id, "old-case"); archived++; return existing; },
   };
@@ -162,13 +160,13 @@ test("reuses complete archives and rebuilds legacy archives when the evidence ex
   assert.deepEqual(await getOrCreateEvidenceArchive("old-case", store), existing);
   assert.equal(archived, 1);
   hasBase = false;
-  assert.deepEqual(await getOrCreateEvidenceArchive("old-case", store), legacy);
+  assert.equal(await getOrCreateEvidenceArchive("old-case", store), undefined);
   assert.equal(archived, 1);
 });
 
 test("downloads only resolved cases and redirects to the current stored version", async () => {
   let calls = 0;
-  const getArchive = async () => { calls++; return { downloadUrl: "https://blob.test/expediente.zip?download=1", etag: "etag+1" }; };
+  const getArchive = async () => { calls++; return { downloadUrl: "https://blob.test/case.zip?download=1", etag: "etag+1" }; };
   for (const status of [undefined, "queued", "in_session", "failed"] as const) {
     assert.equal((await evidenceDownloadResponse(status, true, getArchive)).status, 404);
   }

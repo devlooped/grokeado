@@ -1,7 +1,7 @@
 import { deflateRaw } from "node:zlib";
 import { promisify } from "node:util";
 import { getEvents } from "../store.ts";
-import { findCompleteEvidenceArchive, findLegacyEvidenceArchive, hasEvidenceBase, readEvidenceTree, writeCaseTranscript, writeEvidenceArchive, writeEvidenceTree, type EvidenceArchive } from "./blob.ts";
+import { findEvidenceArchive, hasEvidenceBase, readEvidenceTree, writeCaseTranscript, writeEvidenceArchive, writeEvidenceTree, type EvidenceArchive } from "./blob.ts";
 import { buildCaseTranscript } from "./transcript.ts";
 import { normalizeEvidenceBytes, type EvidenceFiles } from "./validate.ts";
 
@@ -105,16 +105,15 @@ export async function archiveEvidence(caseId: string, store: ArchiveStore = { re
 }
 
 type ArchiveLookup = {
-  findCompleteEvidenceArchive: typeof findCompleteEvidenceArchive;
-  findLegacyEvidenceArchive: typeof findLegacyEvidenceArchive;
+  findEvidenceArchive: typeof findEvidenceArchive;
   hasEvidenceBase: typeof hasEvidenceBase;
   archiveEvidence: typeof archiveEvidence;
 };
 
-// Rebuild older archives from the stored evidence and events without overwriting them.
-export async function getOrCreateEvidenceArchive(caseId: string, store: ArchiveLookup = { findCompleteEvidenceArchive, findLegacyEvidenceArchive, hasEvidenceBase, archiveEvidence }): Promise<EvidenceArchive | undefined> {
-  const existing = await store.findCompleteEvidenceArchive(caseId);
+// Rebuild a missing case.zip from the stored evidence and events without overwriting an existing one.
+export async function getOrCreateEvidenceArchive(caseId: string, store: ArchiveLookup = { findEvidenceArchive, hasEvidenceBase, archiveEvidence }): Promise<EvidenceArchive | undefined> {
+  const existing = await store.findEvidenceArchive(caseId);
   if (existing) return existing;
-  if (!await store.hasEvidenceBase(caseId)) return store.findLegacyEvidenceArchive(caseId);
+  if (!await store.hasEvidenceBase(caseId)) return undefined;
   return store.archiveEvidence(caseId);
 }

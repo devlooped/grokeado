@@ -76,7 +76,7 @@ async function cleanup(): Promise<void> {
 try {
   const { blobConfigured, readEvidenceTree, writeEvidenceTree } = await import("../src/evidence/blob.ts");
   const { list } = await import("@vercel/blob");
-  const { GET: evidenceGet } = await import("../src/app/caso/[id]/evidencia/[...path]/route.ts");
+  const { GET: evidenceGet } = await import("../src/app/c/[id]/evidence/[...path]/route.ts");
   const { createCase } = await import("../src/store.ts");
   if (!blobConfigured()) {
     say("ITEM 1 FAIL OIDC token or BLOB_STORE_ID is missing");

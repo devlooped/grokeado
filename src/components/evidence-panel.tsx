@@ -7,7 +7,7 @@ export function EvidencePanel({ caseId }: { caseId: string }) {
       </div>
       <a
         className="btn-primary mt-5"
-        href={`/caso/${encodeURIComponent(caseId)}/expediente`}
+        href={`/c/${encodeURIComponent(caseId)}/file`}
       >
         Descargar expediente completo (ZIP)
       </a>

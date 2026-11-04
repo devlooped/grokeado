@@ -40,7 +40,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </div>
             <div className="flex items-center gap-2">
               <UserClaimsBadge />
-              <Link href="/metodo" title="¿Cómo debaten las 4 superinteligencias más potentes?" className="rounded-full border border-rule px-3 py-1.5 leading-none text-ink transition hover:bg-paper-deep">
+              <Link href="/method" title="¿Cómo debaten las 4 superinteligencias más potentes?" className="rounded-full border border-rule px-3 py-1.5 leading-none text-ink transition hover:bg-paper-deep">
                 Método
               </Link>
               <RequestPanel />

@@ -23,7 +23,7 @@ async function checkAnchor(href) {
 
 try {
   await page.goto(base, { waitUntil: "networkidle" });
-  const claim = page.locator('a[href^="/caso/"][href*="#"]:not([href*="#voto-"])').first();
+  const claim = page.locator('a[href^="/c/"][href*="#"]:not([href*="#voto-"])').first();
   const claimHref = await claim.getAttribute("href");
   assert(claimHref, "hay una afirmación para probar");
 
@@ -55,7 +55,7 @@ try {
   await page.goto(base, { waitUntil: "networkidle" });
   assert(await page.locator(".reveal").first().evaluate((el) => getComputedStyle(el).animationName) === "none", "las entradas respetan movimiento reducido");
 
-  const response = await page.request.get(base + "/caso/nonexistent-navigation-check");
+  const response = await page.request.get(base + "/c/nonexistent-navigation-check");
   assert(response.status() === 404, "un caso inexistente conserva el estado HTTP 404");
 } finally {
   await page.unrouteAll({ behavior: "ignoreErrors" });

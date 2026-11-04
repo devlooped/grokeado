@@ -19,7 +19,7 @@ test("lists every page and removes only the requested case and alias artifacts",
     const cursor = url.searchParams.get("cursor");
     requests.push(prefix + (cursor ? ":" + cursor : ""));
     const first = prefix === "cases/AA-123-BB/" && !cursor;
-    const pathname = prefix + (first ? "evidence/base/raw/a.pdf" : cursor ? "expediente.zip" : "transcript.jsonl");
+    const pathname = prefix + (first ? "evidence/base/raw/a.pdf" : cursor ? "case.zip" : "transcript.jsonl");
     res.writeHead(200, { "content-type": "application/json" });
     res.end(JSON.stringify({ blobs: [blob(pathname)], hasMore: first, ...(first ? { cursor: "next" } : {}) }));
   });
@@ -30,7 +30,7 @@ test("lists every page and removes only the requested case and alias artifacts",
     process.env.VERCEL_BLOB_API_URL = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
     await deleteCaseBlobs(["AA-123-BB", "old_id"]);
     assert.deepEqual(requests, ["cases/AA-123-BB/", "cases/AA-123-BB/:next", "delete", "cases/old_id/", "delete"]);
-    assert.deepEqual(deleted, [["https://blob.test/cases/AA-123-BB/evidence/base/raw/a.pdf", "https://blob.test/cases/AA-123-BB/expediente.zip"], ["https://blob.test/cases/old_id/transcript.jsonl"]]);
+    assert.deepEqual(deleted, [["https://blob.test/cases/AA-123-BB/evidence/base/raw/a.pdf", "https://blob.test/cases/AA-123-BB/case.zip"], ["https://blob.test/cases/old_id/transcript.jsonl"]]);
   } finally {
     if (token === undefined) delete process.env.BLOB_READ_WRITE_TOKEN; else process.env.BLOB_READ_WRITE_TOKEN = token;
     if (api === undefined) delete process.env.VERCEL_BLOB_API_URL; else process.env.VERCEL_BLOB_API_URL = api;

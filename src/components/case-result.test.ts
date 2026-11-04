@@ -123,7 +123,7 @@ test("historical and dismissed cases do not invent a summary; link and image sub
   assert.ok(dismissed.includes("No hay afirmaciones verificables."));
   assert.ok(!dismissed.includes("Resumen del caso"));
   assert.ok(render(events, { ...c, submission: { kind: "link", url: "https://example.org", note: "Comentario" } }).includes("https://example.org"));
-  assert.ok(render(events, { ...c, submission: { kind: "image", mimeType: "image/png" } }).includes('/caso/fixture/imagen'));
+  assert.ok(render(events, { ...c, submission: { kind: "image", mimeType: "image/png" } }).includes('/c/fixture/image'));
 });
 
 test("the result shows all four verdicts and preserves historical Insostenible decisions", () => {

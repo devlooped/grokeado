@@ -1,6 +1,6 @@
 import { getImage } from "@/store.ts";
 
-export async function GET(_req: Request, ctx: RouteContext<"/caso/[id]/imagen">) {
+export async function GET(_req: Request, ctx: RouteContext<"/c/[id]/image">) {
   const { id } = await ctx.params;
   const image = await getImage(id);
   if (!image) return new Response("No encontrada", { status: 404 });

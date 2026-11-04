@@ -71,7 +71,7 @@ export async function requestFactCheck(_prev: RequestState, formData: FormData):
     console.error("could not start court session:", err);
     await finishCase(id, "failed", "No se pudo iniciar la sesión.");
   }
-  redirect("/caso/" + id);
+  redirect("/c/" + id);
 }
 
 export async function retryCase(id: string): Promise<void> {
@@ -86,5 +86,5 @@ export async function retryCase(id: string): Promise<void> {
       await finishCase(id, "failed", "No se pudo iniciar la sesión.");
     }
   }
-  redirect("/caso/" + id);
+  redirect("/c/" + id);
 }

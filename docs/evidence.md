@@ -44,7 +44,7 @@ Public Blob storage is the canonical source. Objects are written with
 `access: "public"` and stable pathnames, so anyone with the URL can read them.
 When a case completes, the complete `evidence/` tree (including originals,
 catalogs, extractions, analyst files, and run artifacts) is compressed and
-stored separately at `cases/{caseId}/expediente-completo-v2.zip` before the case is marked
+stored separately at `cases/{caseId}/case.zip` before the case is marked
 resolved. A storage error prevents the case from being marked resolved. The
 ZIP includes every stored file under `evidence/`, including raw court research
 tool calls and their complete returned results under
@@ -178,9 +178,9 @@ each one has passed:
    deployed environment may use `BLOB_READ_WRITE_TOKEN` instead. `put` uses
    `access: "public"`.
    Reads fetch the public blob URL with no token. An unauthenticated `GET` of
-   `/caso/{id}/evidencia/...` returns the file when the case exists.
-   After a case resolves, download `/caso/{id}/expediente` and verify that the
-   ZIP stored at `cases/{caseId}/expediente-completo-v2.zip` contains the complete tree.
+   `/c/{id}/evidence/...` returns the file when the case exists.
+   After a case resolves, download `/c/{id}/file` and verify that the
+   ZIP stored at `cases/{caseId}/case.zip` contains the complete tree.
 2. `npm run evidence:snapshot` prints a snapshot id. Set it as
    `EVIDENCE_SANDBOX_SNAPSHOT_ID`.
 3. `EVIDENCE_AI_GATEWAY_API_KEY` is a different key from `AI_GATEWAY_API_KEY`,

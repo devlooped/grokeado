@@ -3,7 +3,7 @@ import type { CaseView, RecordedEvent } from "@/domain/court.ts";
 export function evidenceHref(caseId: string, citation: string): string {
   const [path, anchor] = citation.slice("/evidence/".length).split("#", 2);
   const encodedPath = path!.split("/").map(encodeURIComponent).join("/");
-  return `/caso/${encodeURIComponent(caseId)}/evidencia/${encodedPath}${anchor ? `#${encodeURIComponent(anchor)}` : ""}`;
+  return `/c/${encodeURIComponent(caseId)}/evidence/${encodedPath}${anchor ? `#${encodeURIComponent(anchor)}` : ""}`;
 }
 
 // What free text of the case can point to: the unified sources (E, or S in historical records), contributions (P),

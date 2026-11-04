@@ -22,6 +22,6 @@ test("card voters are paired with each judged claim and exclude dissenters and a
 });
 
 test("case card URLs encode the id and cover version", () => {
-  assert.equal(caseCardImageUrl("A B"), "/caso/A%20B/tarjeta");
-  assert.equal(caseCardImageUrl("A", "v&1"), "/caso/A/tarjeta?v=v%261");
+  assert.equal(caseCardImageUrl("A B"), "/c/A%20B/card");
+  assert.equal(caseCardImageUrl("A", "v&1"), "/c/A/card?v=v%261");
 });

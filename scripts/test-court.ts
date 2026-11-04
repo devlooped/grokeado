@@ -43,7 +43,7 @@ const id = values.case ?? newCaseId();
 if (!values.case) await createCase(id, { kind: "text", text: positionals.join(" ") || "Según el Censo 2022, la provincia de Córdoba tiene más habitantes que la Ciudad Autónoma de Buenos Aires." });
 try {
   const run = values.run ? getRun(values.run) : await start({ workflowId }, [id]);
-  console.log("Case: " + base.origin + "/caso/" + id);
+  console.log("Case: " + base.origin + "/c/" + id);
   console.log("Workflow: " + run.runId);
   await run.returnValue;
 } catch (err) {

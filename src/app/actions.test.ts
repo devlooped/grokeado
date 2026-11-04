@@ -56,7 +56,7 @@ test("an authorized retry attempts the atomic failed-to-queued transition", asyn
   const originalUrl = process.env.DATABASE_URL;
   process.env.DATABASE_URL = "postgres://example.invalid/test";
   try {
-    await assert.rejects(retryCase("failed-case"), { digest: "NEXT_REDIRECT;replace;/caso/failed-case;307;" });
+    await assert.rejects(retryCase("failed-case"), { digest: "NEXT_REDIRECT;replace;/c/failed-case;307;" });
   } finally {
     if (originalUrl === undefined) delete process.env.DATABASE_URL;
     else process.env.DATABASE_URL = originalUrl;

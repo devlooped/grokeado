@@ -10,6 +10,6 @@ export function caseCardVotes(view: Pick<CaseView, "claims">) {
 }
 
 export function caseCardImageUrl(id: string, coverVersion?: string): string {
-  const path = `/caso/${encodeURIComponent(id)}/tarjeta`;
+  const path = `/c/${encodeURIComponent(id)}/card`;
   return coverVersion === undefined ? path : `${path}?v=${encodeURIComponent(coverVersion)}`;
 }

@@ -21,7 +21,7 @@ import { blobConfigured, findEvidenceArchive, hasEvidenceBase } from "@/evidence
 import { auth0 } from "@/lib/auth0.ts";
 import { coverVersions, findCaseAlias, getCase, getEvents } from "@/store.ts";
 
-export async function generateMetadata(props: PageProps<"/caso/[id]">): Promise<Metadata> {
+export async function generateMetadata(props: PageProps<"/c/[id]">): Promise<Metadata> {
   const { id } = await props.params;
   const c = await getCase(id);
   if (!c) return { title: "Che, bot" };
@@ -31,7 +31,7 @@ export async function generateMetadata(props: PageProps<"/caso/[id]">): Promise<
   const { title, description } = caseShareMetadata(c, events);
   const image = c.status === "resolved" ? caseCardImageUrl(c.id, covers.get(c.id)) : undefined;
   return {
-    metadataBase: new URL(process.env.APP_BASE_URL || "https://www.che.bot"),
+    metadataBase: new URL(process.env.APP_BASE_URL || "https://che.bot"),
     title,
     description,
     openGraph: { title, description, type: "article", ...(image && { images: [{ url: image, width: 720, height: 720, type: "image/jpeg", alt: title }] }) },
@@ -58,7 +58,7 @@ function InSession({ c, events }: { c: CaseRecord; events: readonly CourtEvent[]
       <SessionProgress events={events} queued={c.status === "queued"} />
       <p className="mx-auto mt-6 max-w-md text-xs text-ink-soft">
         Esta página se actualiza sola. Podés cerrarla: el análisis sigue y el resultado queda en esta misma dirección.{" "}
-        <Link href="/metodo" className="text-celeste-deep underline underline-offset-4">Cómo trabaja el panel</Link>
+        <Link href="/method" className="text-celeste-deep underline underline-offset-4">Cómo trabaja el panel</Link>
       </p>
       <p className="mx-auto mt-8 line-clamp-3 max-w-lg font-display text-lg italic text-ink-soft">«{submissionExcerpt(c.submission)}»</p>
       <p className="mt-6 font-mono text-xs text-ink-soft">Caso Nº {c.id}</p>
@@ -66,13 +66,13 @@ function InSession({ c, events }: { c: CaseRecord; events: readonly CourtEvent[]
   );
 }
 
-export default async function CasePage(props: PageProps<"/caso/[id]">) {
+export default async function CasePage(props: PageProps<"/c/[id]">) {
   await connection();
   const { id } = await props.params;
   const c = await getCase(id);
   if (!c) {
     const renamed = await findCaseAlias(id);
-    if (renamed) permanentRedirect("/caso/" + renamed);
+    if (renamed) permanentRedirect("/c/" + renamed);
     notFound();
   }
   if (c.status === "queued" || c.status === "in_session") return <div className="case-enter"><InSession c={c} events={c.status === "queued" ? [] : await getEvents(id)} /></div>;

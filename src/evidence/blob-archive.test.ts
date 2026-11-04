@@ -48,8 +48,8 @@ test("stores and locates the ZIP separately from the evidence tree using the Blo
     assert.equal(await hasEvidenceBase("case 1"), true);
     assert.equal(await hasEvidenceBase("other"), false);
     const archive = await writeEvidenceArchive("case 1", Uint8Array.of(1, 2, 3));
-    assert.deepEqual(archive, { downloadUrl: "https://blob.test/cases/case%201/expediente-completo-v2.zip?download=1", etag: "v1" });
-    assert.equal(uploads[0]!.pathname, "cases/case%201/expediente-completo-v2.zip");
+    assert.deepEqual(archive, { downloadUrl: "https://blob.test/cases/case%201/case.zip?download=1", etag: "v1" });
+    assert.equal(uploads[0]!.pathname, "cases/case%201/case.zip");
     assert.equal(uploads[0]!.headers["x-vercel-blob-access"], "public");
     assert.equal(uploads[0]!.headers["x-add-random-suffix"], "0");
     assert.equal(uploads[0]!.headers["x-allow-overwrite"], "1");

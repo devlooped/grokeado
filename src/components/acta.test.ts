@@ -182,7 +182,7 @@ test("the acta links OKF page citations to the case evidence route", () => {
   const html = render([
     { type: "statement", id: "I1", by: "grok", stage: "opening", text: "La evidencia disponible permite contrastar la afirmación.", evidenceIds: ["/evidence/grok/passage.md#p3"] },
   ]);
-  assert.ok(html.includes('href="/caso/fixture/evidencia/grok/passage.md#p3"'));
+  assert.ok(html.includes('href="/c/fixture/evidence/grok/passage.md#p3"'));
 });
 
 test("the acta omits the moderator's summary because it is already shown in the case result", () => {

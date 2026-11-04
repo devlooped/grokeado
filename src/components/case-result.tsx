@@ -87,7 +87,7 @@ function Original({ c, claims }: { c: CaseRecord; claims: ClaimView[] }) {
       )}
       {s.kind === "image" && (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={"/caso/" + c.id + "/imagen"} alt="Imagen enviada" className="max-h-[28rem] rounded-sm border border-rule" />
+        <img src={"/c/" + c.id + "/image"} alt="Imagen enviada" className="max-h-[28rem] rounded-sm border border-rule" />
       )}
       {s.kind !== "text" && s.note && <p className="mt-3 text-sm text-ink-soft">Comentario: {s.note}</p>}
     </figure>
@@ -182,7 +182,7 @@ export function CaseResult({ c, view, events = [] }: { c: CaseRecord; view: Case
               <span className="inline-flex items-center gap-1"><span className="size-2.5 rounded-full bg-insostenible" /> {VERDICT_LABEL.no_verificable}</span>
               <span className="inline-flex items-center gap-1"><span className="size-2.5 rounded-full bg-enganoso" /> {VERDICT_LABEL.enganoso}</span>
               <span className="inline-flex items-center gap-1 text-seal"><GavelIcon className="size-3.5" /> Sello: desempate del moderador</span>
-              <a href="/metodo#resultados" className="text-celeste-deep underline underline-offset-4">¿Qué significa cada resultado?</a>
+              <a href="/method#resultados" className="text-celeste-deep underline underline-offset-4">¿Qué significa cada resultado?</a>
             </p>
           </section>
         </>

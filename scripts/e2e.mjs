@@ -20,7 +20,7 @@ if (mode === "submit") {
   await page.getByRole("button", { name: "Pedir el chequeo" }).waitFor();
   await page.locator("textarea[name=text]").fill(arg);
   await page.getByRole("button", { name: "Pedir el chequeo" }).click();
-  await page.waitForURL(/\/caso\//);
+  await page.waitForURL(/\/c\//);
   const heading = await page.getByRole("heading", { level: 1 }).textContent();
   assert(heading === "El panel está analizando", "after submitting, the case page shows only 'El panel está analizando'");
   assert((await page.locator("article").count()) === 0, "no claims or votes are shown while in session");
@@ -29,7 +29,7 @@ if (mode === "submit") {
 }
 
 if (mode === "case") {
-  await page.goto(base + "/caso/" + arg);
+  await page.goto(base + "/c/" + arg);
   await page.waitForTimeout(1500);
   const heading = await page.getByRole("heading", { level: 1 }).textContent();
   console.log("heading: " + heading);

@@ -1,6 +1,6 @@
 import { getCover } from "@/store.ts";
 
-export async function GET(req: Request, ctx: RouteContext<"/caso/[id]/portada">) {
+export async function GET(req: Request, ctx: RouteContext<"/c/[id]/cover">) {
   const { id } = await ctx.params;
   const cover = await getCover(id);
   if (!cover) return new Response("No encontrada", { status: 404 });

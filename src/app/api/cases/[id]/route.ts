@@ -10,7 +10,7 @@ export async function DELETE(request: Request, context: { params: Promise<{ id: 
   const response = await deleteCaseResponse(request, id, session?.user, (caseId) => deleteCase(caseId, deleteCaseBlobs));
   if (response.status === 204) {
     revalidatePath("/");
-    revalidatePath(`/caso/${id}`);
+    revalidatePath(`/c/${id}`);
   }
   return response;
 }
