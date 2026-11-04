@@ -41,16 +41,6 @@ export async function generateMetadata(props: PageProps<"/caso/[id]">): Promise<
 
 const date = (at: string) => new Date(at).toLocaleString("es-AR", { dateStyle: "long", timeStyle: "short", timeZone: "America/Argentina/Buenos_Aires" });
 
-function BackToCases() {
-  return (
-    <nav aria-label="Ruta" className="pt-6 text-sm">
-      <Link href="/" className="text-celeste-deep underline decoration-celeste/40 underline-offset-4 hover:decoration-celeste-deep">
-        ← Casos recientes
-      </Link>
-    </nav>
-  );
-}
-
 function InSession({ c, events }: { c: CaseRecord; events: readonly CourtEvent[] }) {
   return (
     <section className="mx-auto max-w-2xl py-16 text-center">
@@ -109,7 +99,6 @@ async function ResolvedCase({ c, id, revision }: { c: CaseRecord; id: string; re
 
   return (
     <div className="case-enter">
-      <BackToCases />
       <header className="reveal flex flex-wrap items-end justify-between gap-4 pt-4">
         <div>
           <p className="font-mono text-xs uppercase tracking-widest text-ink-soft">Caso Nº {c.id} · {date(c.createdAt)}</p>

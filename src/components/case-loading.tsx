@@ -1,13 +1,6 @@
-import Link from "next/link";
-
 export default function CaseLoading() {
   return (
     <div className="case-enter">
-      <nav aria-label="Ruta" className="pt-6 text-sm">
-        <Link href="/" className="text-celeste-deep underline decoration-celeste/40 underline-offset-4 hover:decoration-celeste-deep">
-          ← Casos recientes
-        </Link>
-      </nav>
       <div role="status" className="pt-4">
         <p className="font-mono text-xs uppercase tracking-widest text-ink-soft">Cargando caso…</p>
         <div aria-hidden className="case-loading mt-4 space-y-6">
