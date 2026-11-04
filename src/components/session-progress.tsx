@@ -15,6 +15,8 @@ const STAGE_OF: Partial<Record<CourtEvent["type"], number>> = {
   ruling: 2,
   vote: 3,
   judgment: 3,
+  content_vote: 3,
+  content_judgment: 3,
   case_summary: 3,
   session_closed: 3,
 };

@@ -249,6 +249,15 @@ function Entry({ e, ctx }: { e: RecordedEvent; ctx: Context }) {
         </p>
       );
     }
+    case "content_vote":
+      return (
+        <div className="flex items-start gap-2 text-sm">
+          <ModelMark model={e.by} className="mt-0.5 size-4 shrink-0" />
+          <p><span className="font-semibold">{MODEL_NAME[e.by]}</span>{e.verdict ? <> vota <span className={"font-semibold " + VERDICT_TEXT[e.verdict]}>{VERDICT_LABEL[e.verdict]}</span> sobre el contenido completo.</> : " considera que no corresponde un voto sobre el contenido completo."}{" "}<span className="text-ink-soft"><Cited text={e.rationale} ctx={ctx} /></span></p>
+        </div>
+      );
+    case "content_judgment":
+      return <p className="text-sm"><span className="font-semibold">Resultado del contenido completo:</span>{" "}<span className={"font-semibold " + VERDICT_TEXT[e.verdict]}>{VERDICT_LABEL[e.verdict]}</span>{e.method === "judge" ? <> · Desempate del moderador. <Cited text={e.reasoning} ctx={ctx} /></> : " · Por mayoría."}</p>;
     case "case_summary":
       return (
         <div className="text-sm">
@@ -266,7 +275,7 @@ function Entry({ e, ctx }: { e: RecordedEvent; ctx: Context }) {
 // Entries that hang from a speaker above them sit indented under the speakers' column.
 const INDENTED = new Set<RecordedEvent["type"]>([
   "evidence_filed", "instruction_completed", "evidence_unified", "source_review_vote", "source_decided",
-  "objection", "objection_reply", "ruling", "vote", "case_summary",
+  "objection", "objection_reply", "ruling", "vote", "content_vote", "case_summary",
 ]);
 
 type SectionKey = "apertura" | "instruccion" | "fuentes" | Stage | "resultado";
@@ -305,7 +314,7 @@ function sectionsOf(events: readonly RecordedEvent[]): Section[] {
     else if ((e.type === "evidence_filed" || e.type === "instruction_completed") && key === "apertura") key = "instruccion";
     else if (e.type === "evidence_unified") key = "fuentes";
     else if (e.type === "floor_granted" || e.type === "statement") key = e.stage;
-    else if (e.type === "judgment" || e.type === "session_closed") key = "resultado";
+    else if (e.type === "judgment" || e.type === "content_vote" || e.type === "content_judgment" || e.type === "session_closed") key = "resultado";
     const last = sections.at(-1);
     if (last?.key === key) last.events.push(e);
     else sections.push({ key, events: [e] });

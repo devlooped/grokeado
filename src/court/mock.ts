@@ -86,6 +86,10 @@ function responses({ spec, record, submission }: MockTurn): Call[][] {
       return [[statement()], [call("cast_votes", { votes: view.claims.map((c) => ({ claimId: c.id, verdict: "no_verificable", rationale: prefix + "Las fuentes son ficticias: no permiten verificar el material enviado." })) })]];
     case "tiebreak":
       return [[call("decide", { decisions: view.claims.filter((c) => !c.judgment).map((c) => ({ claimId: c.id, verdict: "no_verificable", reasoning: prefix + "Decisión ficticia para probar el desempate; no verifica el material enviado." })) })]];
+    case "content_vote":
+      return [[call("vote_content", { verdict: "no_verificable", rationale: prefix + "Las fuentes ficticias no verifican el contenido completo." })]];
+    case "content_tiebreak":
+      return [[call("decide_content", { verdict: "no_verificable", reasoning: prefix + "Decisión ficticia sobre el contenido completo, sin verificación real." })]];
     case "summary":
       return [[call("summarize_case", { text: prefix + "Los analistas contrastaron pruebas ficticias a favor y en contra; no verificaron el material enviado." })]];
   }

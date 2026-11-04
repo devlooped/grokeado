@@ -39,6 +39,7 @@ const lastId = (prompt: string, prefix: string) => [...prompt.matchAll(new RegEx
 
 function counsel(name: Counsel, votes: Record<string, string> | null): Script {
   return (prompt, tools) => {
+    if (tools.includes("vote_content")) return [["vote_content", { verdict: null, rationale: "Las afirmaciones no forman una narrativa común." }]];
     if (tools.includes("review_sources")) return [["review_sources", { votes: [{ sourceId: "E1", veto: false, reason: "Documento oficial con metodología publicada." }] }]];
     if (tools.includes("object")) return name === "claude" && /intervención I1 de/.test(prompt) ? [["object", { grounds: "La cifra citada no aparece en la fuente." }]] : [["pass", {}]];
     if (tools.includes("reply_objection")) return [["reply_objection", { text: "La cifra está en la tabla 3 del informe." }]];
@@ -271,6 +272,7 @@ test("an unfinished moderator unification blocks exposures rather than silently 
 
 test("instruction with no evidence records unsuccessful searches and shares an empty dossier", async () => {
   const script: Script = (_prompt, tools) => {
+    if (tools.includes("vote_content")) return [["vote_content", { verdict: null, rationale: "Las afirmaciones no forman una narrativa común." }]];
     if (tools.includes("finish_instruction")) return [["finish_instruction", { searches: ["A1", "A2"].map((claimId) => ({ claimId, supporting: "Busqué respaldo a favor sin encontrar documentos verificables.", opposing: "Busqué respaldo en contra sin encontrar documentos verificables." })) }]];
     if (tools.includes("object")) return [["pass", {}]];
     if (tools.includes("cast_votes")) return [
@@ -306,4 +308,74 @@ test("a misleading verdict can win a majority or be chosen by the moderator", as
   ]);
   assert.ok(prompts.judge.at(-1)!.includes("Resultado de A1: Engañoso (por mayoría)"));
   assert.ok(prompts.judge.at(-1)!.includes("Resultado de A2: Engañoso (desempate del moderador)"));
+});
+
+test("content voting follows all claim judgments and can disagree with their aggregate", async () => {
+  const scripts = Object.fromEntries((["grok", "gemini", "claude", "chatgpt"] as const).map((name) => {
+    const base = counsel(name, { A1: "verdadero", A2: "falso" });
+    const script: Script = (prompt, tools) => tools.includes("vote_content")
+      ? [["vote_content", { verdict: name === "chatgpt" ? "falso" : "enganoso", rationale: "La combinación de las afirmaciones omite contexto importante." }]]
+      : base(prompt, tools);
+    return [name, script];
+  })) as Record<Counsel, Script>;
+  const { bench, events, prompts } = makeBench({ judge: judgeScript, ...scripts });
+  await holdSession(bench);
+  const view = project(events);
+  assert.deepEqual(view.contentJudgment, { verdict: "enganoso", method: "consensus", reasoning: "" });
+  assert.equal(view.contentVotes.chatgpt?.verdict, "falso");
+  assert.ok(events.filter((e) => e.type === "content_vote").every((e) => e.seq > events.filter((x) => x.type === "judgment").at(-1)!.seq));
+  assert.ok(events.find((e) => e.type === "content_judgment")!.seq < events.find((e) => e.type === "case_summary")!.seq);
+  assert.match(prompts.grok.find((p) => p.includes("evaluá el contenido enviado como un todo"))!, /Resultado de A1: Verdadero/);
+  assert.match(prompts.grok.find((p) => p.includes("evaluá el contenido enviado como un todo"))!, /Resultado de A2: Falso/);
+  assert.match(prompts.judge.at(-1)!, /Resultado del contenido completo: Engañoso/);
+});
+
+test("content votes need at least three votes; a split is decided by the moderator", async (t) => {
+  for (const [votes, expected] of [
+    [["verdadero", "falso", null, null], undefined],
+    [["verdadero", "falso", "enganoso", null], "judge"],
+    [[null, null, null, null], undefined],
+  ] as const) {
+    await t.test(JSON.stringify(votes), async () => {
+      const names = ["grok", "gemini", "claude", "chatgpt"] as const;
+      const scripts = Object.fromEntries(names.map((name, i) => {
+        const base = counsel(name, { A1: "falso", A2: "falso" });
+        return [name, ((prompt, tools) => tools.includes("vote_content")
+          ? [["vote_content", { verdict: votes[i], rationale: "Evaluación del contenido según el debate completo." }]]
+          : base(prompt, tools)) satisfies Script];
+      })) as Record<Counsel, Script>;
+      const judge: Script = (prompt, tools) => tools.includes("decide_content")
+        ? [["decide_content", { verdict: "enganoso", reasoning: "La narrativa en conjunto presenta los hechos sin contexto." }]]
+        : judgeScript(prompt, tools);
+      const { bench, events } = makeBench({ judge, ...scripts });
+      await holdSession(bench);
+      assert.equal(project(events).contentJudgment?.method, expected);
+      assert.equal(events.filter((e) => e.type === "content_vote").length, 4);
+    });
+  }
+});
+
+test("missing content votes are retried and never fabricated", async () => {
+  const silent: Script = (prompt, tools) => tools.includes("vote_content") ? [] : counsel("grok", { A1: "falso", A2: "falso" })(prompt, tools);
+  const { bench, events, prompts } = makeBench({ judge: judgeScript, grok: silent, gemini: silent, claude: silent, chatgpt: silent });
+  await holdSession(bench);
+  assert.equal(prompts.grok.filter((p) => p.includes("evaluá el contenido enviado como un todo")).length, 2);
+  assert.equal(events.filter((e) => e.type === "absence" && e.stage === "content").length, 4);
+  assert.equal(project(events).contentJudgment, undefined);
+});
+
+test("an unfinished content tiebreak does not invent a verdict or close the case", async () => {
+  const names = ["grok", "gemini", "claude", "chatgpt"] as const;
+  const verdicts = ["verdadero", "falso", "enganoso", "no_verificable"];
+  const scripts = Object.fromEntries(names.map((name, i) => {
+    const base = counsel(name, { A1: "falso", A2: "falso" });
+    return [name, ((prompt, tools) => tools.includes("vote_content")
+      ? [["vote_content", { verdict: verdicts[i], rationale: "Evaluación del contenido según el debate completo." }]]
+      : base(prompt, tools)) satisfies Script];
+  })) as Record<Counsel, Script>;
+  const judge: Script = (prompt, tools) => tools.includes("decide_content") ? [] : judgeScript(prompt, tools);
+  const { bench, events, prompts } = makeBench({ judge, ...scripts });
+  await assert.rejects(holdSession(bench), /no desempató el contenido completo/);
+  assert.equal(prompts.judge.filter((p) => p.includes("Al menos tres analistas votaron sobre el contenido completo")).length, 2);
+  assert.ok(!events.some((e) => e.type === "content_judgment" || e.type === "session_closed"));
 });

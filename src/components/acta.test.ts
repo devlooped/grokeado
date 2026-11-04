@@ -249,3 +249,16 @@ test("the acta renders historical Insostenible and new Engañoso verdicts", () =
   assert.match(html, /text-enganoso-text[^>]*>Engañoso/);
   assert.ok(!html.includes("No verificable"));
 });
+
+test("the acta records content votes, abstentions and the moderator's tiebreak", () => {
+  const html = render([
+    { type: "content_vote", by: "grok", verdict: "enganoso", rationale: "La narrativa omite contexto." },
+    { type: "content_vote", by: "gemini", verdict: null, rationale: "Son afirmaciones independientes." },
+    { type: "content_judgment", verdict: "enganoso", method: "judge", reasoning: "El contexto cambia el sentido del conjunto." },
+  ]);
+  assert.ok(html.includes("sobre el contenido completo"));
+  assert.ok(html.includes("considera que no corresponde un voto"));
+  assert.ok(html.includes("Resultado del contenido completo"));
+  assert.ok(html.includes("Desempate del moderador"));
+  assert.ok(html.includes("El contexto cambia el sentido del conjunto."));
+});

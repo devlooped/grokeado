@@ -33,19 +33,30 @@ export function caseOutcome(view: Pick<CaseView, "claims">): Verdict | "mixto" |
   return verdicts.size === 1 ? [...verdicts][0] : "mixto";
 }
 
+// Old records have no structured content votes. Recognize only the explicit,
+// unanimous statement recorded in this historical moderator summary; do not
+// manufacture individual votes or infer a verdict from the claim outcomes.
+export function contentOutcome(view: Pick<CaseView, "contentJudgment" | "contentVotingRecorded" | "summary" | "dismissal">): { verdict: Verdict; method: "consensus" | "judge" | "reported" } | undefined {
+  if (view.dismissal) return undefined;
+  if (view.contentJudgment) return view.contentJudgment;
+  if (!view.contentVotingRecorded && view.summary?.includes("Los cuatro analistas coincidieron en considerar engañoso el enunciado completo."))
+    return { verdict: "enganoso", method: "reported" };
+  return undefined;
+}
+
 export function caseShareMetadata(c: CaseRecord, events: readonly CourtEvent[] = []): { title: string; description: string } {
   const title = "Caso Nº " + c.id + " · CheBot";
   const view = c.status === "resolved" ? project(events) : undefined;
   const claims = view?.claims.map((claim) => claim.text).filter(Boolean) ?? [];
   const quoted = `«${claims.length ? claims.join(" / ") : submissionExcerpt(c.submission)}»`;
-  const outcome = view && !view.dismissal ? caseOutcome(view) : undefined;
+  const outcome = view && !view.dismissal ? contentOutcome(view)?.verdict ?? caseOutcome(view) : undefined;
   const icon = outcome === "mixto" ? "⚖️" : outcome ? VERDICT_THUMB[outcome] : undefined;
   return icon
     ? { title: `${title} · ${icon}`, description: `${quoted} ${icon}` }
     : { title, description: quoted };
 }
 
-export const ABSENCE_LABEL = { ...STAGE_LABEL, discovery: "investigación", instruction: "instrucción", source_review: "crítica de fuentes", objection: "ronda de objeciones" };
+export const ABSENCE_LABEL = { ...STAGE_LABEL, discovery: "investigación", instruction: "instrucción", source_review: "crítica de fuentes", objection: "ronda de objeciones", content: "votación del contenido completo" };
 export const EVIDENCE_STANCE_LABEL = { supports: "a favor", opposes: "en contra", context: "contexto" };
 
 export function describe(e: CourtEvent): string {
@@ -86,6 +97,10 @@ export function describe(e: CourtEvent): string {
       return MODEL_NAME[e.by] + " vota " + VERDICT_LABEL[e.verdict] + " sobre " + e.claimId + ": " + e.rationale;
     case "judgment":
       return "Resultado de " + e.claimId + ": " + VERDICT_LABEL[e.verdict] + (e.method === "consensus" ? " (por mayoría)." : " (desempate del moderador). " + e.reasoning);
+    case "content_vote":
+      return MODEL_NAME[e.by] + (e.verdict ? " vota " + VERDICT_LABEL[e.verdict] + " sobre el contenido completo" : " considera que no corresponde un voto sobre el contenido completo") + ": " + e.rationale;
+    case "content_judgment":
+      return "Resultado del contenido completo: " + VERDICT_LABEL[e.verdict] + (e.method === "consensus" ? " (por mayoría)." : " (desempate del moderador). " + e.reasoning);
     case "case_summary":
       return "Resumen del moderador: " + e.text;
     case "absence":

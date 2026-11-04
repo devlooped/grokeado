@@ -112,6 +112,8 @@ test("isolated mock objection, reply, ruling, tiebreak and summary fixtures all 
     { kind: "reply", speaker: "grok", objector: "gemini", objectionId: "O1" },
     { kind: "ruling", objectionId: "O1" },
     { kind: "tiebreak" },
+    { kind: "content_vote", counsel: "grok" },
+    { kind: "content_tiebreak" },
     { kind: "summary" },
   ] satisfies TurnSpec[]) {
     const outcome = await runMock(spec, record);

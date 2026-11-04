@@ -144,8 +144,10 @@ export type CourtEvent =
   | { type: "ruling"; objectionId: string; sustained: boolean; reason: string }
   | { type: "vote"; by: Counsel; claimId: string; verdict: Verdict; rationale: string }
   | { type: "judgment"; claimId: string; verdict: Verdict; method: "consensus" | "judge"; reasoning: string }
+  | { type: "content_vote"; by: Counsel; verdict: Verdict | null; rationale: string }
+  | { type: "content_judgment"; verdict: Verdict; method: "consensus" | "judge"; reasoning: string }
   | { type: "case_summary"; text: string }
-  | { type: "absence"; by: Counsel; stage: Stage | "discovery" | "instruction" | "source_review" | "objection" }
+  | { type: "absence"; by: Counsel; stage: Stage | "discovery" | "instruction" | "source_review" | "objection" | "content" }
   | { type: "session_closed" };
 
 export type RecordedEvent = CourtEvent & { seq: number; at: string };
@@ -172,6 +174,9 @@ export interface ClaimView extends Claim {
 
 export interface CaseView {
   claims: ClaimView[];
+  contentVotes: Partial<Record<Counsel, { verdict: Verdict | null; rationale: string }>>;
+  contentVotingRecorded: boolean;
+  contentJudgment?: { verdict: Verdict; method: "consensus" | "judge"; reasoning: string };
   evidence: Map<string, Evidence>;
   sources: Map<string, SourceView>;
   struck: Set<string>;
@@ -181,7 +186,7 @@ export interface CaseView {
 }
 
 export function project(events: readonly CourtEvent[]): CaseView {
-  const view: CaseView = { claims: [], evidence: new Map(), sources: new Map(), struck: new Set(), closed: false };
+  const view: CaseView = { claims: [], contentVotes: {}, contentVotingRecorded: false, evidence: new Map(), sources: new Map(), struck: new Set(), closed: false };
   const objectionTarget = new Map<string, string>();
   const claim = (id: string) => view.claims.find((c) => c.id === id);
   for (const e of events) {
@@ -224,6 +229,17 @@ export function project(events: readonly CourtEvent[]): CaseView {
         if (c) c.judgment = { verdict: e.verdict, method: e.method, reasoning: e.reasoning };
         break;
       }
+      case "content_vote":
+        view.contentVotingRecorded = true;
+        view.contentVotes[e.by] = { verdict: e.verdict, rationale: e.rationale };
+        break;
+      case "content_judgment":
+        view.contentVotingRecorded = true;
+        view.contentJudgment = { verdict: e.verdict, method: e.method, reasoning: e.reasoning };
+        break;
+      case "absence":
+        if (e.stage === "content") view.contentVotingRecorded = true;
+        break;
       case "case_summary":
         view.summary = e.text;
         break;

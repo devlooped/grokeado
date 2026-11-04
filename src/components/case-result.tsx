@@ -1,4 +1,4 @@
-import { caseOutcome, VERDICT_LABEL } from "@/domain/acta.ts";
+import { caseOutcome, contentOutcome, VERDICT_LABEL } from "@/domain/acta.ts";
 import { COUNSEL, MODEL_NAME, seatModels, type CaseRecord, type CaseView, type ClaimView, type RecordedEvent, type SeatModels } from "@/domain/court.ts";
 import { Cited, citationRefs, type Citations } from "./citations.tsx";
 import { ClaimsIcon, GavelIcon, JudgeSeal, MegaphoneIcon, VERDICT_TEXT, VerdictDot, VoteChip } from "./marks.tsx";
@@ -67,14 +67,20 @@ function Highlighted({ text, claims, models }: { text: string; claims: ClaimView
   return <>{parts}</>;
 }
 
-function Original({ c, claims, models, combined = false }: { c: CaseRecord; claims: ClaimView[]; models: SeatModels; combined?: boolean }) {
+function Original({ c, view, models, citations, combined = false }: { c: CaseRecord; view: CaseView; models: SeatModels; citations: Citations; combined?: boolean }) {
   const s = c.submission;
+  const claims = view.claims;
+  const outcome = contentOutcome(view);
   return (
     <figure className={combined ? "min-w-0" : "min-w-0 rounded-sm border border-rule bg-paper/60 p-5"}>
-      <figcaption className="mb-5 flex items-center gap-3">
+      <figcaption className="mb-5 flex flex-wrap items-center gap-3">
         <span className="grid size-9 shrink-0 place-items-center rounded-sm border border-rule text-celeste-deep"><MegaphoneIcon className="size-5" /></span>
         <span className="font-display text-2xl">Contenido</span>
-        {combined && <span className="ml-auto font-mono text-[11px] text-ink-soft">{claims[0]?.id}</span>}
+        {outcome ? (
+          <span className={"ml-auto inline-flex items-center gap-1.5 text-right font-display text-xl " + VERDICT_TEXT[outcome.verdict]} aria-label={"Resultado del contenido completo: " + VERDICT_LABEL[outcome.verdict]}>
+            <VerdictDot verdict={outcome.verdict} /> {VERDICT_LABEL[outcome.verdict]}
+          </span>
+        ) : combined && <span className="ml-auto font-mono text-[11px] text-ink-soft">{claims[0]?.id}</span>}
       </figcaption>
       {s.kind === "text" && (
         <blockquote className="pl-3 break-words whitespace-pre-line font-display text-2xl leading-snug">
@@ -93,6 +99,19 @@ function Original({ c, claims, models, combined = false }: { c: CaseRecord; clai
         <img src={"/c/" + c.id + "/image"} alt="Imagen enviada" className="max-h-72 max-w-full rounded-sm border border-rule object-contain" />
       )}
       {s.kind !== "text" && s.note && <p className="mt-3 text-sm text-ink-soft">Comentario: {s.note}</p>}
+      {outcome?.method === "reported" && <p className="mt-3 text-xs text-ink-soft">Consenso informado en el <a href="#case-summary-title" className="text-celeste-deep underline">resumen del moderador</a>.</p>}
+      {Object.keys(view.contentVotes).length > 0 && (
+        <details className="mt-3 text-sm">
+          <summary className="w-fit cursor-pointer text-xs text-celeste-deep hover:underline">Evaluaciones del contenido completo</summary>
+          <ul className="mt-3 space-y-3 rounded-sm bg-paper-deep/50 p-4">
+            {COUNSEL.map((by) => {
+              const vote = view.contentVotes[by];
+              return <li key={by}><span className="font-semibold">{MODEL_NAME[by]}:</span>{" "}{vote ? <><span className={vote.verdict ? "font-semibold " + VERDICT_TEXT[vote.verdict] : "font-semibold"}>{vote.verdict ? VERDICT_LABEL[vote.verdict] : "No corresponde"}.</span>{" "}<span className="text-ink-soft"><Cited text={vote.rationale} ctx={citations} /></span></> : <span className="text-ink-soft">no votó.</span>}</li>;
+            })}
+            {view.contentJudgment?.method === "judge" && <li className="border-l-2 border-seal pl-3"><span className="font-semibold text-seal">Desempate del moderador:</span> <Cited text={view.contentJudgment.reasoning} ctx={citations} /></li>}
+          </ul>
+        </details>
+      )}
     </figure>
   );
 }
@@ -154,6 +173,7 @@ function ClaimCard({ claim, models, citations, children }: { claim: ClaimView; m
 export function CaseResult({ c, view, events = [], models = seatModels(c, events) }: { c: CaseRecord; view: CaseView; events?: readonly RecordedEvent[]; models?: SeatModels }) {
   const citations: Citations = { caseId: c.id, refs: citationRefs(events, view) };
   const outcome = caseOutcome(view);
+  const content = contentOutcome(view);
   const combinedClaim = !view.dismissal && c.submission.kind === "text" && view.claims.length === 1 && bare(c.submission.text) === bare(view.claims[0]!.text) ? view.claims[0] : undefined;
   return (
     <>
@@ -162,9 +182,9 @@ export function CaseResult({ c, view, events = [], models = seatModels(c, events
         <div className="grid items-start gap-4 lg:has-[section]:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
           {combinedClaim ? (
             <ClaimCard claim={combinedClaim} models={models} citations={citations}>
-              <Original c={c} claims={view.claims} models={models} combined />
+              <Original c={c} view={view} models={models} citations={citations} combined />
             </ClaimCard>
-          ) : <Original c={c} claims={view.claims} models={models} />}
+          ) : <Original c={c} view={view} models={models} citations={citations} />}
           <CasePanel c={c} models={models} />
         </div>
         {view.dismissal ? (
@@ -181,8 +201,8 @@ export function CaseResult({ c, view, events = [], models = seatModels(c, events
                 <p className="font-mono text-[10px] text-ink-soft">{view.claims.length} {view.claims.length === 1 ? "examinada" : "examinadas"}</p>
               </div>
               {outcome && (
-                <div className="ml-auto text-right" aria-label={"Resultado general: " + (outcome === "mixto" ? "Mixto" : VERDICT_LABEL[outcome])}>
-                  <p className="text-[10px] text-ink-soft">Resultado general</p>
+                <div className="ml-auto text-right" aria-label={(content ? "Resultado de afirmaciones: " : "Resultado general: ") + (outcome === "mixto" ? "Mixto" : VERDICT_LABEL[outcome])}>
+                  <p className="text-[10px] text-ink-soft">{content ? "Resultado de afirmaciones" : "Resultado general"}</p>
                   <p className={"mt-0.5 inline-flex items-center gap-1.5 font-display text-xl leading-none " + (outcome === "mixto" ? "text-ink" : VERDICT_TEXT[outcome])}>
                     {outcome !== "mixto" && <VerdictDot verdict={outcome} />}
                     {outcome === "mixto" ? "Mixto" : VERDICT_LABEL[outcome]}

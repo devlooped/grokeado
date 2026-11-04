@@ -152,6 +152,17 @@ export async function holdSession(bench: Bench): Promise<void> {
   const judged = new Set(log.flatMap((e) => (e.type === "judgment" ? [e.claimId] : [])));
   if (claims().some((c) => !judged.has(c.id)) && !(await solo({ kind: "tiebreak" }))) throw new Error("El moderador no desempató.");
 
+  const contentDone = await round(COUNSEL.map((counsel) => ({ kind: "content_vote", counsel })));
+  for (const [i, ok] of contentDone.entries()) if (!ok) await absent(COUNSEL[i]!, "content");
+  const contentVotes = Object.values(project(log).contentVotes).flatMap((vote) => vote?.verdict ? [vote.verdict] : []);
+  const contentVerdict = majority(contentVotes);
+  if (contentVerdict) {
+    note({ type: "content_judgment", verdict: contentVerdict, method: "consensus", reasoning: "" });
+    await flush();
+  } else if (contentVotes.length >= 3 && !(await solo({ kind: "content_tiebreak" }))) {
+    throw new Error("El moderador no desempató el contenido completo.");
+  }
+
   if (!(await solo({ kind: "summary" }))) throw new Error("El moderador no resumió el caso.");
 
   note({ type: "session_closed" });

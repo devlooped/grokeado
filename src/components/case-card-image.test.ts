@@ -31,6 +31,23 @@ test("dismissed cases do not display a verdict or voters", () => {
   assert.doesNotMatch(markup, /Falso|title=\"Grok\"/);
 });
 
+test("the content verdict replaces the case number on the cover, separate from claim results", async () => {
+  const view = project([...events, { type: "content_judgment", verdict: "enganoso", method: "consensus", reasoning: "" }]);
+  const markup = renderToStaticMarkup(createElement(CaseCardImage, { c, view }));
+  assert.match(markup, /Engañoso/);
+  assert.match(markup, /Falso/);
+  assert.doesNotMatch(markup, /Contenido completo/);
+  assert.doesNotMatch(markup, /Nº TEST/);
+  const response = new ImageResponse(createElement(CaseCardImage, { c, view }), { width: 720, height: 720 });
+  assert.equal((await sharp(await caseCardJpeg(await response.arrayBuffer())).metadata()).format, "jpeg");
+});
+
+test("without a content judgment the cover does not turn claim outcomes into a content verdict", () => {
+  const markup = renderToStaticMarkup(createElement(CaseCardImage, { c, view: project(events) }));
+  assert.match(markup, /Nº TEST/);
+  assert.doesNotMatch(markup, /Engañoso/);
+});
+
 test("PNG, JPEG, WebP and GIF covers render into the same stamped JPEG", async () => {
   for (const format of ["png", "jpeg", "webp", "gif"] as const) {
     const bytes = await sharp({ create: { width: 20, height: 20, channels: 3, background: "red" } }).toFormat(format).toBuffer();

@@ -27,3 +27,22 @@ test("the analyst and moderator tools accept and record all four verdicts", asyn
   const closing = planTurn({ kind: "closing", counsel: "grok" }, record, submission);
   assert.equal(closing.tools.cast_votes.schema.safeParse({ votes: [{ claimId: "A1", verdict: "otro", rationale: "Según la evidencia del registro." }] }).success, false);
 });
+
+test("one claim requires a content verdict, while multiple independent claims can abstain", async () => {
+  const single = planTurn({ kind: "content_vote", counsel: "grok" }, record, submission);
+  const tools = toAiTools(single.tools);
+  const response = await tools.vote_content.execute({ verdict: null, rationale: "No corresponde una valoración global." });
+  assert.match((response as { error: string }).error, /una sola afirmación/);
+  assert.equal(single.done(), false);
+  await tools.vote_content.execute({ verdict: "enganoso", rationale: "El contenido omite contexto importante." });
+  assert.equal(single.done(), true);
+  assert.equal(single.produced[0].type, "content_vote");
+  const duplicate = await tools.vote_content.execute({ verdict: "verdadero", rationale: "Otro fundamento distinto." });
+  assert.match((duplicate as { error: string }).error, /Ya registraste/);
+
+  const multi = planTurn({ kind: "content_vote", counsel: "gemini" }, [{ type: "claims_entered", claims: [
+    { id: "A1", quote: "", text: "Primera afirmación." }, { id: "A2", quote: "", text: "Segunda afirmación." },
+  ] }], submission);
+  await toAiTools(multi.tools).vote_content.execute({ verdict: null, rationale: "Son afirmaciones independientes." });
+  assert.equal(multi.done(), true);
+});

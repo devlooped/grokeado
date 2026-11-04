@@ -31,6 +31,8 @@ export function displayHistoricalCitations(events: readonly RecordedEvent[]): { 
       case "ruling": return { ...e, reason: text(e.reason) };
       case "vote": return { ...e, rationale: text(e.rationale) };
       case "judgment": return { ...e, reasoning: text(e.reasoning) };
+      case "content_vote": return { ...e, rationale: text(e.rationale) };
+      case "content_judgment": return { ...e, reasoning: text(e.reasoning) };
       case "case_summary": return { ...e, text: text(e.text) };
       default: return e;
     }

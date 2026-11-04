@@ -48,6 +48,30 @@ test("the content, panel and claims form an overview immediately before the mode
   assert.ok(html.includes("Fundamentos de cada voto"));
 });
 
+test("the content card shows its own verdict and transparent votes without changing the claim aggregate", () => {
+  const input: CourtEvent[] = [...events,
+    { type: "content_vote", by: "grok", verdict: "enganoso", rationale: "La narrativa omite contexto." },
+    { type: "content_vote", by: "gemini", verdict: null, rationale: "Son afirmaciones independientes." },
+    { type: "content_judgment", verdict: "enganoso", method: "judge", reasoning: "El contexto completo cambia el sentido." },
+  ];
+  const { document } = parseHTML(render(input));
+  const figure = document.querySelector("figure")!;
+  assert.equal(figure.querySelector('[aria-label="Resultado del contenido completo: Engañoso"]')?.textContent?.trim(), "Engañoso");
+  assert.ok(figure.textContent.includes("La narrativa omite contexto"));
+  assert.ok(figure.textContent.includes("No corresponde"));
+  assert.ok(figure.textContent.includes("Desempate del moderador"));
+  assert.ok(document.querySelector('[aria-label="Resultado de afirmaciones: Mixto"]'));
+});
+
+test("a historical unanimous summary shows the reported content verdict without invented individual votes", () => {
+  const input: CourtEvent[] = [...events.filter((e) => e.type !== "case_summary"), { type: "case_summary", text: "Los cuatro analistas coincidieron en considerar engañoso el enunciado completo." }];
+  const { document } = parseHTML(render(input));
+  const figure = document.querySelector("figure")!;
+  assert.ok(figure.querySelector('[aria-label="Resultado del contenido completo: Engañoso"]'));
+  assert.ok(figure.textContent.includes("Consenso informado en el"));
+  assert.equal(figure.querySelector("details"), null);
+});
+
 test("a text submission identical to its sole claim shares one card with the result, votes and reasons", () => {
   const text = "Una afirmación verificable.";
   const input: CourtEvent[] = [

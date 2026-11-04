@@ -1,5 +1,5 @@
 import { ModelMark, VerdictGlyph } from "./marks.tsx";
-import { caseOutcome, submissionExcerpt, VERDICT_LABEL } from "../domain/acta.ts";
+import { caseOutcome, contentOutcome, submissionExcerpt, VERDICT_LABEL } from "../domain/acta.ts";
 import { caseCardVotes } from "../domain/case-card.ts";
 import { MODEL_NAME, type CaseRecord, type CaseView, type Verdict } from "../domain/court.ts";
 
@@ -9,6 +9,7 @@ const COLORS: Record<Verdict, string> = { verdadero: "#2f7a4b", falso: "#b3361f"
 export function CaseCardImage({ c, view, image }: { c: CaseRecord; view: CaseView; image?: string }) {
   const votes = view.dismissal ? [] : caseCardVotes(view);
   const outcome = view.dismissal ? undefined : caseOutcome(view);
+  const content = contentOutcome(view);
   const iconSize = Math.max(20, Math.min(42, Math.floor(400 / Math.max(votes.length, 1))));
   return (
     <div style={{ display: "flex", position: "relative", width: "100%", height: "100%", backgroundColor: "#e9e0cf", color: "#1b1915" }}>
@@ -18,11 +19,20 @@ export function CaseCardImage({ c, view, image }: { c: CaseRecord; view: CaseVie
       ) : (
         <div style={{ display: "flex", padding: 55, fontSize: 32, color: "#57524a" }}>«{submissionExcerpt(c.submission).slice(0, 180)}»</div>
       )}
-      <div style={{ display: "flex", position: "absolute", top: 24, left: 24, backgroundColor: "#f3ede1", padding: "8px 14px", fontSize: 19 }}>Nº {c.id}</div>
+      <div style={{ display: "flex", position: "absolute", top: 24, left: 24, backgroundColor: "#f3ede1", ...(content ? { border: "2px solid #1b1915" } : {}), padding: "8px 14px", fontSize: content ? 26 : 19 }}>
+        {content ? (
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 32, height: 32, borderRadius: 32, backgroundColor: COLORS[content.verdict], color: content.verdict === "verdadero" || content.verdict === "falso" ? "white" : "#1b1915" }}>
+              <VerdictGlyph verdict={content.verdict} style={{ width: 20, height: 20, ...(content.verdict === "falso" ? { transform: "rotate(180deg)" } : {}) }} />
+            </div>
+            {VERDICT_LABEL[content.verdict]}
+          </div>
+        ) : <>Nº {c.id}</>}
+      </div>
       {(outcome || view.dismissal) && (
         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", position: "absolute", right: 24, bottom: 24, gap: 6, backgroundColor: "#f3ede1", border: "2px solid #1b1915", padding: 12, boxShadow: "4px 4px 0 #1b1915" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 23 }}>
-            {view.dismissal ? "Descartado" : outcome === "mixto" ? "Resultado mixto" : outcome && VERDICT_LABEL[outcome]}
+            {view.dismissal ? "Descartado" : content ? (votes.length === 1 ? "Afirmación: " : "Afirmaciones: ") + (outcome === "mixto" ? "Mixto" : outcome ? VERDICT_LABEL[outcome] : "") : outcome === "mixto" ? "Resultado mixto" : outcome && VERDICT_LABEL[outcome]}
           </div>
           {votes.map(({ id, verdict, models }) => (
             <div key={id} style={{ display: "flex", alignItems: "center", gap: 8 }}>

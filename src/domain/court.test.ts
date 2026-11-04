@@ -17,6 +17,21 @@ test("a three-way split or a missing majority goes to the judge", () => {
   assert.equal(majority(["verdadero", "falso", "no_verificable", "enganoso"]), undefined);
 });
 
+test("historical content consensus is reported without inventing votes; new records need a judgment", async () => {
+  const { contentOutcome, caseShareMetadata } = await import("./acta.ts");
+  const summary: CourtEvent = { type: "case_summary", text: "A1, Verdadero; A2, Falso. Los cuatro analistas coincidieron en considerar engañoso el enunciado completo." };
+  const view = project([summary]);
+  assert.deepEqual(contentOutcome(view), { verdict: "enganoso", method: "reported" });
+  assert.deepEqual(view.contentVotes, {});
+  assert.equal(contentOutcome(project([{ ...summary, text: "El enunciado podría ser engañoso." }])), undefined);
+  assert.equal(contentOutcome(project([summary, { type: "absence", by: "grok", stage: "content" }])), undefined);
+  assert.equal(contentOutcome(project([summary, { type: "dismissed", reason: "Sin afirmaciones" }])), undefined);
+  const decision: CourtEvent = { type: "content_judgment", verdict: "verdadero", method: "judge", reasoning: "La evidencia respalda el conjunto." };
+  assert.equal(contentOutcome(project([summary, decision]))?.verdict, "verdadero");
+  const c = { id: "ABC", createdAt: "2026-01-01", status: "resolved" as const, submission: { kind: "text" as const, text: "Contenido" } };
+  assert.match(caseShareMetadata(c, [summary]).title, /⚠️/);
+});
+
 test("historical and misleading verdicts have distinct labels in records and sharing metadata", async () => {
   const { caseShareMetadata, describe } = await import("./acta.ts");
   const c = { id: "abc", createdAt: "2026-10-31T00:00:00Z", status: "resolved" as const, submission: { kind: "text" as const, text: "Afirmación" } };

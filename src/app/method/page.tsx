@@ -87,6 +87,7 @@ export default function MethodPage() {
             Si no hay tres votos coincidentes, el moderador desempata con la evidencia del registro y su decisión lleva el sello de desempate. En cada caso podés ver qué modelo moderó y leer el fundamento de cada voto, el debate completo y las fuentes.
           </span>
         </p>
+        <p className="mt-4 text-sm text-ink-soft">Después de decidir las afirmaciones, los analistas evalúan el contenido completo si hay una sola afirmación o forman una narrativa común. Si al menos tres votan sobre el conjunto, tres votos coincidentes dan el resultado; si no coinciden, desempata el moderador. Las afirmaciones independientes pueden no tener un resultado global. Los casos anteriores pueden no incluir esta votación.</p>
       </section>
 
       <section id="proceso" className="mt-14 scroll-mt-6">

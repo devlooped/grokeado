@@ -18,6 +18,8 @@ export type TurnSpec =
   | { kind: "ruling"; objectionId: string }
   | { kind: "closing"; counsel: Counsel }
   | { kind: "tiebreak" }
+  | { kind: "content_vote"; counsel: Counsel }
+  | { kind: "content_tiebreak" }
   | { kind: "summary" };
 
 export type StampedEvent = CourtEvent & { at: string };
@@ -125,6 +127,7 @@ export function seatOf(spec: TurnSpec): SeatId {
     case "unification":
     case "ruling":
     case "tiebreak":
+    case "content_tiebreak":
     case "summary":
       return "judge";
     case "reply":
@@ -438,6 +441,40 @@ export function planTurn(
       const instruction =
         "Los analistas no alcanzaron mayoría sobre " + ids.join(", ") + ". Decidí cada una con la herramienta decide, considerando solo la evidencia y las intervenciones no anuladas del registro.";
       return plan(instruction, tools, () => decided);
+    }
+
+    case "content_vote": {
+      const by = spec.counsel;
+      const voted = () => all().some((e) => e.type === "content_vote" && e.by === by);
+      return plan(
+        "A la luz del debate, los votos y los resultados de las afirmaciones, evaluá el contenido enviado como un todo. Si hay una sola afirmación o las afirmaciones forman una narrativa conjunta, emití un voto global con vote_content, aunque difiera de los resultados individuales: por ejemplo, hechos ciertos pueden combinarse de manera engañosa. Si son afirmaciones independientes que no forman una narrativa común, registrá verdict=null y explicá por qué no corresponde un voto global. No inventes hechos ni uses pruebas anuladas. " + VERDICT_INSTRUCTIONS,
+        { vote_content: tool(
+          "Registrá tu evaluación del contenido completo o indicá con null que no corresponde evaluarlo como un todo. " + VERDICT_INSTRUCTIONS,
+          z.object({ verdict: z.enum(VERDICTS).nullable(), rationale: z.string().trim().min(10).describe("Fundamento de la evaluación global o de por qué no corresponde") }),
+          ({ verdict, rationale }) => {
+            if (voted()) throw new Rejection("Ya registraste tu evaluación del contenido completo.");
+            if (verdict === null && claims().length === 1) throw new Rejection("Hay una sola afirmación: emití un voto sobre el contenido completo.");
+            emit({ type: "content_vote", by, verdict, rationale });
+            return "Evaluación registrada.";
+          }
+        ) }, voted
+      );
+    }
+
+    case "content_tiebreak": {
+      const decided = () => all().some((e) => e.type === "content_judgment");
+      return plan(
+        "Al menos tres analistas votaron sobre el contenido completo, pero no alcanzaron mayoría. Desempatá con decide_content considerando sus votos, los resultados individuales y la evidencia no anulada del registro. " + VERDICT_INSTRUCTIONS,
+        { decide_content: tool(
+          "Desempata el resultado del contenido completo. " + VERDICT_INSTRUCTIONS,
+          z.object({ verdict: z.enum(VERDICTS), reasoning: z.string().trim().min(20) }),
+          ({ verdict, reasoning }) => {
+            if (decided()) throw new Rejection("Ya decidiste el contenido completo.");
+            emit({ type: "content_judgment", verdict, method: "judge", reasoning });
+            return "Decisión registrada.";
+          }
+        ) }, decided
+      );
     }
 
     case "summary": {
