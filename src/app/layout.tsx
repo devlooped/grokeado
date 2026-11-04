@@ -4,7 +4,7 @@ import { Archivo, IBM_Plex_Mono, Instrument_Serif } from "next/font/google";
 import { RequestPanel } from "@/components/request-panel.tsx";
 import { ThemeToggle } from "@/components/theme-toggle.tsx";
 import { UserClaimsBadge } from "@/components/user-claims-badge.tsx";
-import { COUNSEL_NAMES, JUDGE, MODEL_NAME } from "@/domain/court.ts";
+import { COUNSEL_NAMES } from "@/domain/court.ts";
 import "./globals.css";
 
 const instrument = Instrument_Serif({ subsets: ["latin"], weight: "400", style: ["normal", "italic"], variable: "--font-instrument" });
@@ -56,7 +56,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <main className="mx-auto max-w-5xl px-5 pb-24">{children}</main>
         <footer className="mx-auto max-w-5xl px-5 pb-10 text-xs text-ink-soft">
           <div className="border-t border-rule pt-4">
-            Analistas: {COUNSEL_NAMES}. Moderador: {MODEL_NAME[JUDGE]}. Cada voto y cada decisión queda en el registro público del debate.
+            Analistas: {COUNSEL_NAMES}. Cada caso indica qué modelo lo moderó, y cada voto y cada decisión quedan en el registro público del debate.
           </div>
         </footer>
       </body>

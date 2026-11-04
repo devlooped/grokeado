@@ -1,6 +1,6 @@
 import { illustrateCase, liveCoverDeps, type CoverModels } from "../court/cover.ts";
 import { loadModels } from "../court/model-config.ts";
-import { counselModels, DEFAULT_MODELS, MOCK_MODEL_ID, modelEffort, seatModel, type CourtModel, type ModelConfig } from "../court/models.ts";
+import { counselModels, DEFAULT_MODELS, MOCK_MODEL_ID, modelEffort, modelSnapshot, seatModel, type CourtModel, type ModelConfig } from "../court/models.ts";
 import { playTurn } from "../court/play.ts";
 import { resolveCaseLanguage } from "../court/language.ts";
 import { holdSession } from "../court/procedure.ts";
@@ -15,12 +15,14 @@ import { blobConfigured } from "../evidence/blob.ts";
 import { runEvidenceStep, type EvidenceStepResult } from "../evidence/sandbox.ts";
 import type { EvidenceSeat, EvidenceStage } from "../evidence/schema.ts";
 import { closeCase, openCase, saveEvents } from "./steps.ts";
-import { saveCaseLanguage } from "../store.ts";
+import { saveCaseLanguage, saveCaseModels } from "../store.ts";
 
-// One snapshot per session: every turn uses, and the acta records, the same models.
-async function configuredModels(): Promise<ModelConfig> {
+// One snapshot per session: every turn uses, and the case records, the same models.
+async function configuredModels(caseId: string): Promise<ModelConfig> {
   "use step";
-  return loadModels();
+  const models = await loadModels();
+  await saveCaseModels(caseId, modelSnapshot(models));
+  return models;
 }
 
 async function collect(caseId: string, submission: Submission, simulated: boolean, describer: CourtModel) {
@@ -109,7 +111,7 @@ export async function courtSession(caseId: string): Promise<void> {
   "use workflow";
   const { submission, today, simulated } = await openCase(caseId);
   try {
-    const models = await configuredModels();
+    const models = await configuredModels(caseId);
     const counsel = counselModels(models);
     const submissionContext = await collect(caseId, submission, simulated, models["image.description"]);
     const language = await determineLanguage(caseId, submission, submissionContext, simulated, models.language);

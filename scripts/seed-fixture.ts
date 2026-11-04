@@ -6,7 +6,7 @@ if (!process.env.DATABASE_URL?.includes("fixture")) throw new Error("point DATAB
 const id = "fixture1";
 await createCase(id, { kind: "text", text: "[Fixture visual] El dulce de leche se inventó en la Argentina y la birome es un invento argentino." });
 const events = [
-  { type: "session_opened", judgeModel: "grok-4.7", counselModels: { grok: "grok-4.7", gemini: "gemini-4-argon", claude: "claude-opus-5-5", chatgpt: "gpt-5.5" } },
+  { type: "session_opened", judgeModel: "spacexai/grok-4.7", counselModels: { grok: "spacexai/grok-4.7", gemini: "google/gemini-4-argon", claude: "anthropic/claude-opus-5.5", chatgpt: "openai/gpt-6.1-sol" } },
   { type: "claims_entered", claims: [
     { id: "A1", quote: "El dulce de leche se inventó en la Argentina", text: "El dulce de leche se inventó en la Argentina." },
     { id: "A2", quote: "la birome es un invento argentino", text: "La birome es un invento argentino." },

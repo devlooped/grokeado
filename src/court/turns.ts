@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { describe, EVIDENCE_STANCE_LABEL, STAGE_LABEL } from "../domain/acta.ts";
-import { COUNSEL, JUDGE, MODEL_NAME, VERDICTS, imageDescribed, project, type Claim, type Counsel, type CourtEvent, type Stage, type Submission, type SubmissionContext, type UnifiedSource } from "../domain/court.ts";
-import type { ModelConfig } from "./models.ts";
+import { COUNSEL, MODEL_NAME, modelName, VERDICTS, imageDescribed, project, type Claim, type Counsel, type CourtEvent, type Stage, type Submission, type SubmissionContext, type UnifiedSource } from "../domain/court.ts";
+import { DEFAULT_MODELS, type ModelConfig } from "./models.ts";
 import { Rejection, tool, type Toolset } from "./toolset.ts";
 import { languageInstruction } from "../domain/language.ts";
 
@@ -51,10 +51,10 @@ const OBJECTION_GROUNDS =
 const VERDICT_INSTRUCTIONS =
   "Elegí verdadero si la evidencia respalda la afirmación; falso si la contradice; no_verificable (Insostenible) si no alcanza para sostenerla o refutarla; o enganoso (Engañoso) si presenta datos parciales o fuera de contexto que inducen a una conclusión equivocada.";
 
-function counselBrief(c: Counsel, today: string): string {
+function counselBrief(c: Counsel, today: string, judge: string): string {
   const colleagues = COUNSEL.filter((x) => x !== c).map((x) => MODEL_NAME[x]);
   return [
-    "Sos " + MODEL_NAME[c] + ", uno de los cuatro analistas de CheBot, un panel de chequeo de datos sin humanos para el público argentino. Tus colegas son " + colleagues.join(" y ") + ". El moderador es " + MODEL_NAME[JUDGE] + ". Hoy es " + today + ".",
+    "Sos " + MODEL_NAME[c] + ", uno de los cuatro analistas de CheBot, un panel de chequeo de datos sin humanos para el público argentino. Tus colegas son " + colleagues.join(" y ") + ". El moderador es " + modelName(judge) + ". Hoy es " + today + ".",
     "No defendés ninguna postura de antemano. Tu deber es con la verdad: investigá, presentá evidencia y argumentá tu propia evaluación, aunque contradiga a tus colegas.",
     "Durante la instrucción, investigá con búsqueda web y lectura de páginas. Preferí fuentes primarias (organismos oficiales, INDEC, Boletín Oficial, documentos originales) y medios con trayectoria. Nunca inventes URLs, cifras ni citas: solo presentá evidencia que hayas leído.",
     "Si tenés herramientas x_*, usalas para lo que se publicó en X (posts, cuentas, noticias) y citá la URL de x.com que devuelven. Un post prueba que alguien lo publicó, no que sea cierto.",
@@ -110,7 +110,7 @@ export function composePrompt(input: { seat: SeatId; docket: Docket; record: rea
       "\nLas fuentes anuladas y sus aportes no pueden fundamentar exposiciones, votos ni decisiones. Podés refutar posiciones con cualquiera de las fuentes admitidas, aunque la haya aportado otro analista."
     : "";
   return [
-    seat === "judge" ? judgeBrief(docket.today) : counselBrief(seat, docket.today),
+    seat === "judge" ? judgeBrief(docket.today) : counselBrief(seat, docket.today, (docket.models ?? DEFAULT_MODELS).judge.id),
     languageInstruction(docket.language ?? "es"),
     submissionText(docket.submission, docket.submissionContext),
     "Registro del debate hasta ahora:\n" + (record.length ? record.map(describe).join("\n") : "(todavía vacío)"),

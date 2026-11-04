@@ -1,8 +1,6 @@
 export const COUNSEL = ["grok", "gemini", "claude", "chatgpt"] as const;
 export type Counsel = (typeof COUNSEL)[number];
 
-export const JUDGE = "grok" satisfies Counsel;
-
 export const MODEL_NAME: Record<Counsel, string> = {
   grok: "Grok",
   gemini: "Gemini",
@@ -11,6 +9,53 @@ export const MODEL_NAME: Record<Counsel, string> = {
 };
 
 export const COUNSEL_NAMES = new Intl.ListFormat("es-AR", { style: "long", type: "conjunction" }).format(COUNSEL.map((c) => MODEL_NAME[c]));
+
+export type Seat = "judge" | Counsel;
+
+// A model as configured for a role: its AI Gateway id and the effort set for it, if any.
+export interface ModelUse {
+  id: string;
+  effort: string | null;
+}
+
+// The models configured when a case opened, keyed by role (judge, counsel.grok, translator...).
+export type ModelSnapshot = Record<string, ModelUse>;
+
+export type SeatModels = Partial<Record<Seat, ModelUse>>;
+
+const PROVIDER_MARK: Record<string, Counsel> = { spacexai: "grok", xai: "grok", google: "gemini", anthropic: "claude", openai: "chatgpt" };
+
+// The family whose mark and name a model takes, from its Gateway provider.
+export function modelMark(id: string): Counsel | undefined {
+  return id.includes("/") ? PROVIDER_MARK[id.split("/", 1)[0]!.toLowerCase()] : undefined;
+}
+
+export function modelName(id: string): string {
+  const mark = modelMark(id);
+  return mark ? MODEL_NAME[mark] : id.split("/", 1)[0]!;
+}
+
+// "gpt-6.1-sol high": the model without its provider, then the effort when one was configured.
+export function modelDetail(model: ModelUse): string {
+  const name = model.id.slice(model.id.indexOf("/") + 1);
+  return model.effort ? name + " " + model.effort : name;
+}
+
+// Who sat where. The snapshot of the case wins; cases recorded before it existed fall back to the opening event.
+export function seatModels(record: { models?: ModelSnapshot }, events: readonly CourtEvent[] = []): SeatModels {
+  const seats: SeatModels = {};
+  const session = events.find((e) => e.type === "session_opened");
+  if (session) {
+    seats.judge = { id: session.judgeModel, effort: session.judgeEffort ?? null };
+    for (const c of COUNSEL) if (session.counselModels[c]) seats[c] = { id: session.counselModels[c], effort: session.counselEfforts?.[c] ?? null };
+  }
+  if (record.models?.judge) seats.judge = record.models.judge;
+  for (const c of COUNSEL) {
+    const model = record.models?.["counsel." + c];
+    if (model) seats[c] = model;
+  }
+  return seats;
+}
 
 // Keep the historical identifier for Insostenible so stored cases remain readable.
 export const VERDICTS = ["verdadero", "falso", "no_verificable", "enganoso"] as const;
@@ -110,6 +155,8 @@ export type CaseRecord = {
   submission: Submission;
   ownerId?: string;
   error?: string;
+  // Absent until the session opens, and on cases recorded before snapshots existed.
+  models?: ModelSnapshot;
 };
 
 export function majority(verdicts: Verdict[]): Verdict | undefined {

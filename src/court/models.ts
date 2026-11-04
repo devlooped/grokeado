@@ -1,5 +1,5 @@
 import type { generateText } from "ai";
-import type { Counsel } from "../domain/court.ts";
+import type { Counsel, ModelSnapshot } from "../domain/court.ts";
 
 export interface CourtModel {
   id: string;
@@ -131,6 +131,11 @@ export function resolveModels(settings: readonly ModelSetting[] = []): ModelConf
 }
 
 export const DEFAULT_MODELS: ModelConfig = resolveModels();
+
+// What a case records of the configuration: every role a session uses, not the tier evals.
+export function modelSnapshot(config: ModelConfig): ModelSnapshot {
+  return Object.fromEntries(MODEL_ROLES.filter((role) => role.group !== "Evaluación por niveles").map((role) => [role.key, { id: config[role.key].id, effort: modelEffort(config[role.key]) }]));
+}
 
 export function seatModel(models: ModelConfig, seat: Counsel | "judge"): CourtModel {
   return seat === "judge" ? models.judge : models[`counsel.${seat}`];

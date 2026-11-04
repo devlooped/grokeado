@@ -2,7 +2,7 @@ import Link from "next/link";
 import { connection } from "next/server";
 import { submissionExcerpt, VERDICT_LABEL } from "@/domain/acta.ts";
 import { caseCardImageUrl } from "@/domain/case-card.ts";
-import { COUNSEL, JUDGE, MODEL_NAME, project, type CaseRecord, type ClaimView } from "@/domain/court.ts";
+import { COUNSEL, MODEL_NAME, project, seatModels, type CaseRecord, type ClaimView, type SeatModels } from "@/domain/court.ts";
 import { GavelIcon, VERDICT_TEXT, VoteChip } from "@/components/marks.tsx";
 import { voteId } from "@/components/case-result.tsx";
 import { auth0 } from "@/lib/auth0.ts";
@@ -43,7 +43,7 @@ function OutcomeStamp({ c }: { c: CaseRecord }) {
   return c.status === "failed" ? <span className={stamp + " text-xs uppercase tracking-wider text-ink-soft"}>Interrumpido</span> : null;
 }
 
-function ClaimLine({ c, claim, voted }: { c: CaseRecord; claim: ClaimView; voted: boolean }) {
+function ClaimLine({ c, claim, voted, models }: { c: CaseRecord; claim: ClaimView; voted: boolean; models: SeatModels }) {
   const j = claim.judgment;
   return (
     <li className="py-3 first:pt-0 last:pb-0">
@@ -57,17 +57,17 @@ function ClaimLine({ c, claim, voted }: { c: CaseRecord; claim: ClaimView; voted
               const vote = claim.votes[m];
               return vote ? (
                 <Link key={m} href={caseHref(c.id) + "#" + voteId(claim.id, m)} aria-label={"Fundamento de " + MODEL_NAME[m] + ": " + VERDICT_LABEL[vote.verdict]} className="rounded-full transition hover:-translate-y-0.5 motion-reduce:transform-none motion-reduce:transition-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-celeste-deep">
-                  <VoteChip model={m} verdict={vote.verdict} /><CaseLinkStatus />
+                  <VoteChip model={m} verdict={vote.verdict} used={models[m]} /><CaseLinkStatus />
                 </Link>
               ) : (
-                <VoteChip key={m} model={m} />
+                <VoteChip key={m} model={m} used={models[m]} />
               );
             })}
           </div>
           {j && (
             <Link href={caseHref(c.id) + "#" + claim.id} className="flex shrink-0 items-center gap-1.5 text-right hover:underline">
               {j.method === "judge" && (
-                <span title={"Desempate del moderador (" + MODEL_NAME[JUDGE] + ")"} className="text-seal">
+                <span title="Desempate del moderador" className="text-seal">
                   <GavelIcon className="size-4" />
                 </span>
               )}
@@ -81,7 +81,9 @@ function ClaimLine({ c, claim, voted }: { c: CaseRecord; claim: ClaimView; voted
 }
 
 async function CaseCard({ c, cover, index, admin }: { c: CaseRecord; cover?: string; index: number; admin: boolean }) {
-  const view = c.status === "queued" ? undefined : project(await getEvents(c.id));
+  const events = c.status === "queued" ? [] : await getEvents(c.id);
+  const view = c.status === "queued" ? undefined : project(events);
+  const models = seatModels(c, events);
   const voted = c.status === "resolved";
   const claims = view?.claims ?? [];
   const hidden = claims.length - MAX_CLAIMS;
@@ -110,7 +112,7 @@ async function CaseCard({ c, cover, index, admin }: { c: CaseRecord; cover?: str
               <p className="line-clamp-4 text-sm leading-relaxed text-ink-soft">{view.dismissal}</p>
             ) : claims.length ? (
               <ol className="divide-y divide-rule">
-                {claims.slice(0, MAX_CLAIMS).map((claim) => <ClaimLine key={claim.id} c={c} claim={claim} voted={voted} />)}
+                {claims.slice(0, MAX_CLAIMS).map((claim) => <ClaimLine key={claim.id} c={c} claim={claim} voted={voted} models={models} />)}
               </ol>
             ) : (
               <p className="line-clamp-3 font-display text-lg italic leading-snug text-ink-soft">«{submissionExcerpt(c.submission)}»</p>

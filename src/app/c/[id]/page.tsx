@@ -14,7 +14,7 @@ import { CaseResult } from "@/components/case-result.tsx";
 import { SessionProgress } from "@/components/session-progress.tsx";
 import { caseShareMetadata, submissionExcerpt } from "@/domain/acta.ts";
 import { caseCardImageUrl } from "@/domain/case-card.ts";
-import { COUNSEL_NAMES, type CaseRecord, type CourtEvent } from "@/domain/court.ts";
+import { COUNSEL_NAMES, seatModels, type CaseRecord, type CourtEvent } from "@/domain/court.ts";
 import { project } from "@/domain/court.ts";
 import { displayHistoricalCitations } from "@/domain/historical-citations.ts";
 import { blobConfigured, findEvidenceArchive, hasEvidenceBase } from "@/evidence/blob.ts";
@@ -95,6 +95,7 @@ async function ResolvedCase({ c, id, revision }: { c: CaseRecord; id: string; re
   const hasEvidence = blobConfigured() && Boolean(await findEvidenceArchive(id) || await hasEvidenceBase(id));
   const simulated = events.some((e) => e.type === "session_opened" && e.simulated);
   const view = project(events);
+  const models = seatModels(c, events);
   const byJudge = view.claims.filter((cl) => cl.judgment?.method === "judge").length;
 
   return (
@@ -114,7 +115,7 @@ async function ResolvedCase({ c, id, revision }: { c: CaseRecord; id: string; re
 
       {simulated && <p role="status" className="mt-4 rounded-sm border border-seal/40 bg-seal/5 p-4 text-sm text-seal">Simulación local: las fuentes, respuestas y el resultado son ficticios y solo sirven para probar el flujo.</p>}
 
-      <CaseResult c={c} view={view} events={events} />
+      <CaseResult c={c} view={view} events={events} models={models} />
 
       <section className="mt-16">
         <div className="rule-double pt-4">
@@ -122,7 +123,7 @@ async function ResolvedCase({ c, id, revision }: { c: CaseRecord; id: string; re
           <p className="mt-1 text-sm text-ink-soft">Todo lo que pasó en el debate, completo y en orden.</p>
         </div>
         <div className="mt-8">
-          <Acta events={events} view={view} caseId={id} sourceAliases={aliases} />
+          <Acta events={events} view={view} caseId={id} sourceAliases={aliases} models={models} />
         </div>
       </section>
 

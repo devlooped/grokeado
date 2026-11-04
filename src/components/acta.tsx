@@ -1,5 +1,5 @@
 import { ABSENCE_LABEL, EVIDENCE_STANCE_LABEL, STAGE_LABEL, VERDICT_LABEL } from "@/domain/acta.ts";
-import { COUNSEL, JUDGE, MODEL_NAME, type CaseView, type Counsel, type RecordedEvent, type SourceView, type Stage } from "@/domain/court.ts";
+import { COUNSEL, MODEL_NAME, seatModels, type CaseView, type Counsel, type RecordedEvent, type SeatModels, type SourceView, type Stage } from "@/domain/court.ts";
 import { FoldButtons, FoldNavigation } from "./acta-folding.tsx";
 import { CitationLink, Cited, citationHref, citationRefs, mentions, type Citations } from "./citations.tsx";
 import { GavelIcon, JudgeSeal, ModelMark, VERDICT_TEXT, VerdictGlyph } from "./marks.tsx";
@@ -10,6 +10,7 @@ const time = (at: string) =>
 interface Context extends Citations {
   view: CaseView;
   sourceAliases: ReadonlyMap<string, string>;
+  models: SeatModels;
 }
 
 function Speaker({ by, small }: { by: Counsel; small?: boolean }) {
@@ -106,7 +107,7 @@ function Entry({ e, ctx }: { e: RecordedEvent; ctx: Context }) {
   const { view } = ctx;
   switch (e.type) {
     case "session_opened":
-      return <Clerk>{e.simulated && "Simulación local · fuentes y respuestas ficticias · "}Empieza el debate · modera {MODEL_NAME[JUDGE]} · {time(e.at)}</Clerk>;
+      return <Clerk>{e.simulated && "Simulación local · fuentes y respuestas ficticias · "}Empieza el debate · {time(e.at)}</Clerk>;
     case "claims_entered":
       return (
         <div className="flex gap-3">
@@ -207,7 +208,7 @@ function Entry({ e, ctx }: { e: RecordedEvent; ctx: Context }) {
     case "judgment":
       return e.method === "judge" ? (
         <div className="flex items-start gap-4 rounded-sm border border-seal/40 bg-seal/5 p-4">
-          <JudgeSeal verdict={e.verdict} model={JUDGE} />
+          <JudgeSeal verdict={e.verdict} judge={ctx.models.judge} />
           <p className="text-sm">
             <span className="font-semibold">Desempate del moderador sobre {e.claimId}: </span>
             <span className={"font-semibold " + VERDICT_TEXT[e.verdict]}>{VERDICT_LABEL[e.verdict]}.</span> <span className="text-ink-soft"><Cited text={e.reasoning} ctx={ctx} /></span>
@@ -424,7 +425,7 @@ function SectionFold({ section, index, ctx }: { section: Section; index: number;
   );
 }
 
-export function Acta({ events, view, caseId, sourceAliases = new Map() }: { events: RecordedEvent[]; view: CaseView; caseId: string; sourceAliases?: ReadonlyMap<string, string> }) {
+export function Acta({ events, view, caseId, sourceAliases = new Map(), models = seatModels({}, events) }: { events: RecordedEvent[]; view: CaseView; caseId: string; sourceAliases?: ReadonlyMap<string, string>; models?: SeatModels }) {
   // La tarjeta ya muestra el resumen, los votos y la decisión proyectados; conservar solo
   // eventos que no estén representados allí (por ejemplo, registros incompletos).
   const visible = events.filter((e) => {
@@ -437,7 +438,7 @@ export function Acta({ events, view, caseId, sourceAliases = new Map() }: { even
     return true;
   });
   const sections = sectionsOf(visible);
-  const ctx: Context = { view, caseId, refs: citationRefs(events, view), sourceAliases };
+  const ctx: Context = { view, caseId, refs: citationRefs(events, view), sourceAliases, models };
   return (
     <div data-acta data-fold-scope="acta">
       <FoldNavigation />

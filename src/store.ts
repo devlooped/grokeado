@@ -1,7 +1,7 @@
 import { attachDatabasePool } from "@vercel/functions";
 import { Pool } from "pg";
 import type { ModelSetting } from "./court/models.ts";
-import type { CaseRecord, CaseStatus, RecordedEvent, Submission } from "./domain/court.ts";
+import type { CaseRecord, CaseStatus, ModelSnapshot, RecordedEvent, Submission } from "./domain/court.ts";
 import { newCaseId } from "./lib/case-id.ts";
 
 export { newCaseId };
@@ -53,6 +53,7 @@ async function db(): Promise<Pool> {
        );
        ALTER TABLE cases ADD COLUMN IF NOT EXISTS owner_id TEXT;
        ALTER TABLE cases ADD COLUMN IF NOT EXISTS revision INTEGER NOT NULL DEFAULT 0;
+       ALTER TABLE cases ADD COLUMN IF NOT EXISTS models JSONB;
        CREATE TABLE IF NOT EXISTS events (
          case_id TEXT NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
          seq INTEGER NOT NULL,
@@ -102,12 +103,12 @@ async function db(): Promise<Pool> {
   return p;
 }
 
-type CaseRow = { id: string; created_at: string; status: CaseStatus; submission: Submission; owner_id: string | null; error: string | null; revision: number };
+type CaseRow = { id: string; created_at: string; status: CaseStatus; submission: Submission; owner_id: string | null; error: string | null; revision: number; models: ModelSnapshot | null };
 
 export type StoredCaseRecord = CaseRecord & { revision: number };
 
 function toRecord(row: CaseRow): StoredCaseRecord {
-  return { id: row.id, createdAt: row.created_at, status: row.status, submission: row.submission, ownerId: row.owner_id ?? undefined, error: row.error ?? undefined, revision: row.revision };
+  return { id: row.id, createdAt: row.created_at, status: row.status, submission: row.submission, ownerId: row.owner_id ?? undefined, error: row.error ?? undefined, revision: row.revision, ...(row.models ? { models: row.models } : {}) };
 }
 
 export async function createCase(id: string, submission: Submission, image?: Buffer, ownerId?: string): Promise<void> {
@@ -143,6 +144,11 @@ export async function createNewCase(submission: Submission, image?: Buffer, owne
 // Persist the detection so retries reuse the same language as the first attempt.
 export async function saveCaseLanguage(id: string, language: string): Promise<void> {
   await (await db()).query("UPDATE cases SET submission = jsonb_set(submission, '{resolvedLanguage}', to_jsonb($2::text)) WHERE id = $1", [id, language]);
+}
+
+// The models configured when the session opened; a restarted session records its own.
+export async function saveCaseModels(id: string, models: ModelSnapshot): Promise<void> {
+  await (await db()).query("UPDATE cases SET models = $2 WHERE id = $1", [id, JSON.stringify(models)]);
 }
 
 export function databaseConfigured(): boolean {
@@ -243,7 +249,7 @@ export async function renameCase(oldId: string, newId: string): Promise<void> {
   try {
     await client.query("BEGIN");
     const { rowCount } = await client.query(
-      "INSERT INTO cases (id, created_at, status, submission, owner_id, error, revision) SELECT $2, created_at, status, submission, owner_id, error, revision FROM cases WHERE id = $1",
+      "INSERT INTO cases (id, created_at, status, submission, owner_id, error, revision, models) SELECT $2, created_at, status, submission, owner_id, error, revision, models FROM cases WHERE id = $1",
       [oldId, newId]
     );
     if (rowCount !== 1) throw new Error("case " + oldId + " does not exist");

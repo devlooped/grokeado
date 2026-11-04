@@ -41,6 +41,7 @@ test("a collection failure after opening marks the case as failed and rethrows",
     submission: { kind: "image", mimeType: "image/png" },
     owner_id: null,
     error: null as string | null,
+    models: null as Record<string, { id: string; effort: string | null }> | null,
   };
   const closingUpdates: unknown[][] = [];
   const client = {
@@ -63,6 +64,11 @@ test("a collection failure after opening marks the case as failed and rethrows",
       assert.equal(row.status, "in_session");
       return { rows: [] };
     }
+    if (sql.startsWith("UPDATE cases SET models = $2")) {
+      assert.equal(values![0], caseId);
+      row.models = JSON.parse(values![1] as string);
+      return { rows: [] };
+    }
     if (sql.startsWith("UPDATE cases SET status = $1, error = $2")) {
       closingUpdates.push(values!);
       row.status = values![0] as string;
@@ -78,4 +84,5 @@ test("a collection failure after opening marks the case as failed and rethrows",
   assert.deepEqual(closingUpdates, [["failed", message, caseId]]);
   assert.equal(row.status, "failed");
   assert.equal(row.error, message);
+  assert.deepEqual(row.models?.judge, { id: "spacexai/grok-4.7", effort: "high" }, "the case keeps the models configured when it opened");
 });

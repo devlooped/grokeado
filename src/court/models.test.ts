@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { COUNSEL_MODELS, courtModel, DEFAULT_MODELS, JUDGE_MODEL, MODEL_ROLES, modelEffort, resolveModels } from "./models.ts";
+import { COUNSEL_MODELS, courtModel, DEFAULT_MODELS, JUDGE_MODEL, MODEL_ROLES, modelEffort, modelSnapshot, resolveModels } from "./models.ts";
 
 test("extracts explicitly configured effort for each provider, not an assumed default", () => {
   assert.equal(modelEffort(JUDGE_MODEL), "high");
@@ -57,4 +57,13 @@ test("stored settings override defaults; unknown roles and non-configurable effo
   assert.deepEqual(models["cover.image"], { id: "google/imagen" });
   assert.deepEqual(models.judge, DEFAULT_MODELS.judge);
   assert.equal("retired" in models, false);
+});
+
+test("a case's snapshot records every session role with its id and configured effort, but not the tier evals", () => {
+  const snapshot = modelSnapshot(resolveModels([{ role: "judge", modelId: "anthropic/claude-opus-5.5", effort: "max" }]));
+  assert.deepEqual(snapshot.judge, { id: "anthropic/claude-opus-5.5", effort: "max" });
+  assert.deepEqual(snapshot["counsel.chatgpt"], { id: "openai/gpt-6.1-sol", effort: "high" });
+  assert.deepEqual(snapshot.translator, { id: "google/gemini-3.5-flash-lite", effort: null });
+  assert.ok(snapshot["cover.image"]);
+  assert.ok(!Object.keys(snapshot).some((role) => role.startsWith("tier.")));
 });

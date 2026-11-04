@@ -176,6 +176,7 @@ test("the stored simulation flag labels the acta independently of the current AI
   const html = render([{ type: "session_opened", simulated: true, judgeModel: "fixture", counselModels: { grok: "fixture", gemini: "fixture", claude: "fixture", chatgpt: "fixture" } }]);
   assert.ok(html.includes("Simulación local"));
   assert.ok(html.includes("fuentes y respuestas ficticias"));
+  assert.ok(!html.includes("modera fixture"), "the moderator is introduced by the panel instead");
 });
 
 test("the acta links OKF page citations to the case evidence route", () => {

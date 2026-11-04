@@ -1,5 +1,5 @@
 import { VERDICT_LABEL } from "@/domain/acta.ts";
-import { MODEL_NAME, type Counsel, type Verdict } from "@/domain/court.ts";
+import { MODEL_NAME, modelDetail, modelMark, modelName, type Counsel, type ModelUse, type Verdict } from "@/domain/court.ts";
 
 export function ModelMark({ model, className = "size-5", style }: { model: Counsel; className?: string; style?: React.CSSProperties }) {
   switch (model) {
@@ -87,8 +87,19 @@ export function VerdictDot({ verdict, className = "size-4" }: { verdict: Verdict
   );
 }
 
-export function VoteChip({ model, verdict, size = "md" }: { model: Counsel; verdict?: Verdict; size?: "sm" | "md" }) {
-  const label = MODEL_NAME[model] + ": " + (verdict ? VERDICT_LABEL[verdict] : "no votó");
+// A configured model by name, with its family's mark; hovering shows its id and effort.
+export function ModelName({ model }: { model: ModelUse }) {
+  const mark = modelMark(model.id);
+  return (
+    <span title={modelDetail(model)} className="inline-flex items-baseline gap-1">
+      {mark && <ModelMark model={mark} className="size-3.5 shrink-0 self-center" />}
+      {modelName(model.id)}
+    </span>
+  );
+}
+
+export function VoteChip({ model, verdict, used, size = "md" }: { model: Counsel; verdict?: Verdict; used?: ModelUse; size?: "sm" | "md" }) {
+  const label = MODEL_NAME[model] + (used ? " (" + modelDetail(used) + ")" : "") + ": " + (verdict ? VERDICT_LABEL[verdict] : "no votó");
   return (
     <span title={label} aria-label={label} className={"relative inline-grid place-items-center rounded-full border border-rule bg-paper/70 shadow-sm " + (size === "sm" ? "size-6" : "size-10")}>
       <ModelMark model={model} className={size === "sm" ? "size-3" : "size-5"} />
@@ -105,6 +116,23 @@ export function VoteChip({ model, verdict, size = "md" }: { model: Counsel; verd
   );
 }
 
+export function MegaphoneIcon({ className = "size-5" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M4 9h4l11-5v16L8 15H4a2 2 0 0 1-2-2v-2a2 2 0 0 1 2-2Z" />
+      <path d="M8 9v6m-3 0 2 6h4l-2-5m13-6v4" />
+    </svg>
+  );
+}
+
+export function ClaimsIcon({ className = "size-5" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="m3 6 2 2 3-4m3 2h10M3 13h3m5 0h10M3 20h3m5 0h10" />
+    </svg>
+  );
+}
+
 export function GavelIcon({ className = "size-5" }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -117,8 +145,9 @@ export function GavelIcon({ className = "size-5" }: { className?: string }) {
   );
 }
 
-export function JudgeSeal({ verdict, model, size = "md" }: { verdict: Verdict; model: Counsel; size?: "md" | "lg" }) {
-  const label = "Desempate del moderador (" + MODEL_NAME[model] + "): " + VERDICT_LABEL[verdict];
+export function JudgeSeal({ verdict, judge, size = "md" }: { verdict: Verdict; judge?: ModelUse; size?: "md" | "lg" }) {
+  const label = "Desempate del moderador: " + VERDICT_LABEL[verdict];
+  const mark = judge && modelMark(judge.id);
   const dims = size === "lg" ? "size-24" : "size-14";
   return (
     <span title={label} aria-label={label} className={"relative inline-grid shrink-0 -rotate-6 place-items-center text-seal " + dims}>
@@ -134,7 +163,7 @@ export function JudgeSeal({ verdict, model, size = "md" }: { verdict: Verdict; m
       </svg>
       <span className="relative flex items-center gap-0.5">
         <GavelIcon className={size === "lg" ? "size-6" : "size-4"} />
-        <ModelMark model={model} className={size === "lg" ? "size-5 text-ink" : "size-3.5 text-ink"} />
+        {mark && <ModelMark model={mark} className={size === "lg" ? "size-5 text-ink" : "size-3.5 text-ink"} />}
       </span>
       <span
         className={

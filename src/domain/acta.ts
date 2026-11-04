@@ -1,4 +1,4 @@
-import { COUNSEL, JUDGE, MODEL_NAME, project, type CaseRecord, type CaseView, type CourtEvent, type Stage, type Submission, type Verdict } from "./court.ts";
+import { COUNSEL, MODEL_NAME, modelName, project, type CaseRecord, type CaseView, type CourtEvent, type Stage, type Submission, type Verdict } from "./court.ts";
 
 export function submissionExcerpt(s: Submission): string {
   if (s.kind === "text") return s.text;
@@ -51,7 +51,7 @@ export const EVIDENCE_STANCE_LABEL = { supports: "a favor", opposes: "en contra"
 export function describe(e: CourtEvent): string {
   switch (e.type) {
     case "session_opened":
-      return (e.simulated ? "SIMULACIÓN LOCAL: respuestas y fuentes ficticias. " : "") + "Empieza el debate. Modera " + MODEL_NAME[JUDGE] + ". Participan " + Object.keys(e.counselModels).map((c) => MODEL_NAME[c as keyof typeof MODEL_NAME]).join(", ") + ".";
+      return (e.simulated ? "SIMULACIÓN LOCAL: respuestas y fuentes ficticias. " : "") + "Empieza el debate. Modera " + modelName(e.judgeModel) + ". Participan " + Object.keys(e.counselModels).map((c) => MODEL_NAME[c as keyof typeof MODEL_NAME]).join(", ") + ".";
     case "claims_entered":
       return "El moderador fija las afirmaciones a examinar:\n" + e.claims.map((c) => "[" + c.id + "] " + c.text).join("\n");
     case "dismissed":

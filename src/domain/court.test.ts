@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { majority, project, type CourtEvent } from "./court.ts";
+import { majority, modelDetail, modelMark, modelName, project, seatModels, type CourtEvent } from "./court.ts";
 
 test("three matching votes out of four are a consensus", () => {
   assert.equal(majority(["verdadero", "verdadero", "verdadero", "falso"]), "verdadero");
@@ -82,4 +82,22 @@ test("caseShareMetadata uses one mixed outcome icon without vote icons", async (
   const meta = caseShareMetadata(c, events);
   assert.equal(meta.title, "Caso Nº abc123 · CheBot · ⚖️");
   assert.equal(meta.description, "«El dulce de leche se inventó en la Argentina. / La birome es un invento argentino.» ⚖️");
+});
+
+test("a model takes the mark and name of its provider's family; its detail drops the provider and adds the effort", () => {
+  assert.equal(modelMark("spacexai/grok-4.7"), "grok");
+  assert.equal(modelMark("anthropic/claude-opus-5.5"), "claude");
+  assert.equal(modelMark("mistral/large"), undefined);
+  assert.equal(modelName("openai/gpt-6.1-sol"), "ChatGPT");
+  assert.equal(modelName("mistral/large"), "mistral");
+  assert.equal(modelDetail({ id: "openai/gpt-6.1-sol", effort: "high" }), "gpt-6.1-sol high");
+  assert.equal(modelDetail({ id: "google/gemini-3.5-flash-lite", effort: null }), "gemini-3.5-flash-lite");
+});
+
+test("the case's snapshot decides who sat where, over the opening event", () => {
+  const opened: CourtEvent = { type: "session_opened", judgeModel: "spacexai/grok-4.7", counselModels: { grok: "spacexai/grok-4.7", gemini: "google/gemini-4-argon", claude: "anthropic/claude-opus-5.5", chatgpt: "openai/gpt-6.1-sol" } };
+  const seats = seatModels({ models: { judge: { id: "anthropic/claude-opus-5.5", effort: "high" }, translator: { id: "google/x", effort: null } } }, [opened]);
+  assert.deepEqual(seats.judge, { id: "anthropic/claude-opus-5.5", effort: "high" });
+  assert.deepEqual(seats.gemini, { id: "google/gemini-4-argon", effort: null });
+  assert.deepEqual(seatModels({}), {});
 });

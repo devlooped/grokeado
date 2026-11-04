@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { VERDICT_LABEL } from "@/domain/acta.ts";
-import { COUNSEL, COUNSEL_NAMES, JUDGE, MODEL_NAME, VERDICTS, type Verdict } from "@/domain/court.ts";
+import { COUNSEL, COUNSEL_NAMES, MODEL_NAME, VERDICTS, type Verdict } from "@/domain/court.ts";
 import { GavelIcon, ModelMark, VERDICT_TEXT, VerdictGlyph } from "@/components/marks.tsx";
 import { REQUEST_PANEL_ID } from "@/lib/request-panel.ts";
 
@@ -50,7 +50,6 @@ export default function MethodPage() {
                 <ModelMark model={c} className="size-4" />
               </span>
               {MODEL_NAME[c]}
-              {c === JUDGE && <span className="text-xs text-seal">· modera</span>}
             </span>
           ))}
         </div>
@@ -84,7 +83,7 @@ export default function MethodPage() {
         <p className="mt-8 flex items-start gap-3 text-sm text-ink-soft">
           <GavelIcon className="mt-0.5 size-4 shrink-0 text-seal" />
           <span>
-            Si no hay tres votos coincidentes, el moderador ({MODEL_NAME[JUDGE]}) desempata con la evidencia del registro y su decisión lleva el sello de desempate. En cada caso podés leer el fundamento de cada voto, el debate completo y las fuentes.
+            Si no hay tres votos coincidentes, el moderador desempata con la evidencia del registro y su decisión lleva el sello de desempate. En cada caso podés ver qué modelo moderó y leer el fundamento de cada voto, el debate completo y las fuentes.
           </span>
         </p>
         <p className="mt-10">
