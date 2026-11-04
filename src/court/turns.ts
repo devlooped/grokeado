@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { describe, EVIDENCE_STANCE_LABEL, STAGE_LABEL } from "../domain/acta.ts";
-import { COUNSEL, JUDGE, MODEL_NAME, VERDICTS, project, type Claim, type Counsel, type CourtEvent, type Stage, type Submission, type SubmissionContext, type UnifiedSource } from "../domain/court.ts";
+import { COUNSEL, JUDGE, MODEL_NAME, VERDICTS, imageDescribed, project, type Claim, type Counsel, type CourtEvent, type Stage, type Submission, type SubmissionContext, type UnifiedSource } from "../domain/court.ts";
 import type { ModelConfig } from "./models.ts";
 import { Rejection, tool, type Toolset } from "./toolset.ts";
 import { languageInstruction } from "../domain/language.ts";
@@ -85,7 +85,9 @@ function submissionText(s: Submission, context?: SubmissionContext): string {
       base = "Enlace enviado: " + s.url + (s.note ? "\nComentario de quien lo envió: " + s.note : "");
       break;
     case "image":
-      base = "Imagen enviada (adjunta)." + (s.note ? "\nComentario de quien la envió: " + s.note : "");
+      base = (imageDescribed(s, context)
+        ? "Imagen enviada (no adjunta: un modelo de visión la describió y transcribió una sola vez para todo el panel; ver abajo)."
+        : "Imagen enviada (adjunta).") + (s.note ? "\nComentario de quien la envió: " + s.note : "");
       break;
   }
   if (!context?.excerpt) return base;

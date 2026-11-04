@@ -1,4 +1,4 @@
-import type { CourtEvent } from "../domain/court.ts";
+import { imageDescribed, type CourtEvent } from "../domain/court.ts";
 import { randomUUID } from "node:crypto";
 import { blobConfigured, writeEvidenceTree } from "../evidence/blob.ts";
 import { getImage } from "../store.ts";
@@ -7,7 +7,8 @@ import { runSeat, type SeatImage } from "./seat.ts";
 import { conductTurn, type Docket, type SeatId, type TurnOutcome, type TurnSpec } from "./turns.ts";
 
 async function imagesFor(caseId: string, docket: Docket): Promise<SeatImage[]> {
-  if (docket.submission.kind !== "image") return [];
+  // A described image reaches seats as text in the prompt, so no seat analyzes it again.
+  if (docket.submission.kind !== "image" || imageDescribed(docket.submission, docket.submissionContext)) return [];
   const image = await getImage(caseId);
   if (!image) throw new Error("No se encontró la imagen del caso " + caseId + ".");
   return [{ data: image.bytes, mimeType: image.mimeType }];

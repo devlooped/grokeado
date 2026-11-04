@@ -6,7 +6,7 @@ test("extracts explicitly configured effort for each provider, not an assumed de
   assert.equal(modelEffort(JUDGE_MODEL), "high");
   assert.equal(modelEffort(COUNSEL_MODELS.gemini), "high");
   assert.equal(modelEffort(COUNSEL_MODELS.claude), "high");
-  assert.equal(modelEffort(COUNSEL_MODELS.chatgpt), null);
+  assert.equal(modelEffort(COUNSEL_MODELS.chatgpt), "high");
   assert.equal(modelEffort({ id: "openai/test", providerOptions: { openai: { reasoningEffort: "medium" } } }), "medium");
   assert.equal(modelEffort({ id: "unknown/test", providerOptions: { xai: { reasoningEffort: "high" } } }), null);
 });
@@ -16,11 +16,16 @@ test("defaults keep the models that were hardcoded before they became configurab
   assert.deepEqual(COUNSEL_MODELS.grok, DEFAULT_MODELS.judge);
   assert.deepEqual(COUNSEL_MODELS.gemini, { id: "google/gemini-4-argon", providerOptions: { google: { thinkingConfig: { thinkingLevel: "high" } } } });
   assert.deepEqual(COUNSEL_MODELS.claude, { id: "anthropic/claude-opus-5.5", providerOptions: { anthropic: { effort: "high" } } });
-  assert.deepEqual(COUNSEL_MODELS.chatgpt, { id: "openai/gpt-5.5" });
-  assert.deepEqual(DEFAULT_MODELS.language, { id: "spacexai/grok-4.7" });
+  assert.deepEqual(COUNSEL_MODELS.chatgpt, { id: "openai/gpt-6.1-sol", providerOptions: { openai: { reasoningEffort: "high" } } });
   assert.deepEqual(DEFAULT_MODELS["cover.chooser"], { id: "spacexai/grok-4.7" });
   assert.deepEqual(DEFAULT_MODELS["cover.image"], { id: "spacexai/grok-imagine-image-2.0" });
   assert.equal(DEFAULT_MODELS["tier.claude.comparison"].id, "anthropic/claude-sonnet-5.5");
+});
+
+test("image understanding runs once in its own roles, apart from the seats", () => {
+  assert.deepEqual(DEFAULT_MODELS["image.description"], { id: "openai/gpt-6.1-terra", providerOptions: { openai: { reasoningEffort: "high" } } });
+  assert.deepEqual(DEFAULT_MODELS.language, { id: "anthropic/claude-haiku-5.5" });
+  assert.deepEqual(DEFAULT_MODELS["cover.check"], { id: "anthropic/claude-haiku-5.5" });
 });
 
 test("translations have their own role, defaulting to Gemini Flash Lite", () => {

@@ -20,12 +20,24 @@ test("automatic detection uses submitted text, extracted links, and original ima
   assert.equal(await resolveCaseLanguage("id", { kind: "text", text: "English text", language: "auto" }, undefined, false, deps), "en");
   assert.equal(await resolveCaseLanguage("id", { kind: "link", url: "https://example.test", note: "Nota" }, context, false, deps), "en");
   assert.equal(await resolveCaseLanguage("id", { kind: "image", mimeType: "image/png" }, undefined, false, deps), "en");
-  assert.deepEqual(seen, [{ text: "English text", image: undefined }, { text: context.excerpt, image: undefined }, { text: "", image: bytes }]);
+  const described = { title: "Imagen enviada", tool: "vision:openai/test", excerpt: "Image description:\nA post." };
+  assert.equal(await resolveCaseLanguage("id", { kind: "image", mimeType: "image/png" }, described, false, deps), "en");
+  assert.deepEqual(seen, [{ text: "English text", image: undefined }, { text: context.excerpt, image: undefined }, { text: "", image: bytes }, { text: described.excerpt, image: undefined }]);
   assert.equal(canonicalLanguage("es-AR"), "es");
   assert.equal(canonicalLanguage("pt-BR"), "pt-BR");
   assert.throws(() => canonicalLanguage("en ignore instructions"));
   assert.match(languageInstruction("es"), /español latinoamericano/);
   assert.match(languageInstruction("en"), /inglés/);
+});
+
+test("a described image reaches seats as text, not as an attachment", () => {
+  const submission = { kind: "image" as const, mimeType: "image/png" };
+  const describedContext = { title: "Imagen enviada", tool: "vision:openai/test", excerpt: "Descripción de la imagen:\nUn gráfico." };
+  const described = composePrompt({ seat: "grok", docket: { submission, today: "hoy", submissionContext: describedContext }, record: [], instruction: "Analizá", attempt: 0 });
+  assert.match(described, /no adjunta: un modelo de visión la describió/);
+  assert.match(described, /Un gráfico\./);
+  const attached = composePrompt({ seat: "grok", docket: { submission, today: "hoy" }, record: [], instruction: "Analizá", attempt: 0 });
+  assert.match(attached, /Imagen enviada \(adjunta\)\./);
 });
 
 test("the resolved language reaches judge and analyst prompts", () => {

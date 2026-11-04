@@ -1,6 +1,6 @@
 import { gateway, generateText, Output } from "ai";
 import { z } from "zod";
-import type { Submission, SubmissionContext } from "../domain/court.ts";
+import { imageDescribed, type Submission, type SubmissionContext } from "../domain/court.ts";
 import { getImage, type StoredImage } from "../store.ts";
 import { DEFAULT_MODELS, type CourtModel } from "./models.ts";
 
@@ -35,7 +35,8 @@ export async function resolveCaseLanguage(caseId: string, submission: Submission
   if (submission.language && submission.language !== "auto") return submission.language;
   if (simulated) return "es";
   const text = submission.kind === "text" ? submission.text : context?.excerpt ?? submission.note ?? "";
-  const image = submission.kind === "image" ? await deps.getImage(caseId) : undefined;
+  // A described image is already text in its own language; only an undescribed one is sent.
+  const image = submission.kind === "image" && !imageDescribed(submission, context) ? await deps.getImage(caseId) : undefined;
   if (!text.trim() && !image) return "es"; // No usable language evidence.
   return canonicalLanguage(await deps.detectLanguage(text, image, model));
 }

@@ -36,6 +36,14 @@ export interface SubmissionContext {
   excerpt: string;
 }
 
+// Extraction tool of an uploaded image described by a vision model, followed by the model id.
+export const IMAGE_DESCRIPTION_TOOL = "vision:";
+
+// Seats read this description instead of receiving the image itself.
+export function imageDescribed(submission: Submission, context?: SubmissionContext): boolean {
+  return submission.kind === "image" && Boolean(context?.excerpt) && Boolean(context?.tool.startsWith(IMAGE_DESCRIPTION_TOOL));
+}
+
 export interface Claim {
   id: string;
   quote: string;

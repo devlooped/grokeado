@@ -15,9 +15,14 @@ concurrently with case deletion.
 
 By default the moderator and Grok analyst use `spacexai/grok-4.7`; the other
 analysts use `google/gemini-4-argon`, `anthropic/claude-opus-5.5`, and
-`openai/gpt-5.5`. Translations of sources and promoted evidence use a separate
-translator role, `google/gemini-3.5-flash-lite`. Every role (seats, language
-detection, translator, cover search and illustration, and the tier-eval models)
+`openai/gpt-6.1-sol`. Translations of sources and promoted evidence use a separate
+translator role, `google/gemini-3.5-flash-lite`. An uploaded image is described
+and its text transcribed once, by `openai/gpt-6.1-terra`, while the evidence base
+is collected; language detection and cover review use
+`anthropic/claude-haiku-5.5`, cover search `spacexai/grok-4.7` and the cover
+illustration `spacexai/grok-imagine-image-2.0`. Every role (seats, image
+description, language detection, translator, cover search, review and
+illustration, and the tier-eval models)
 has its default in `src/court/models.ts` and can be overridden by a user with
 the exact `Admin` role at `/admin`, linked from the session badge. Overrides are
 stored in the `model_settings` table and validated against the public Gateway
@@ -26,8 +31,10 @@ catalog; each case snapshots the configuration when its session opens.
 
 All analysts have Gateway's Parallel web search and Browserbase page fetch.
 They can also search public X posts through a Grok researcher using Gateway and
-the native X search tool. The moderator can fetch submitted links. Images are
-loaded from Postgres and sent as image inputs. No Cursor account, local agent
+the native X search tool. The moderator can fetch submitted links. Seats read the
+description of an uploaded image instead of the image itself; only when the
+description fails is the image, loaded from Postgres, sent to them as an image
+input. No Cursor account, local agent
 process, provider API keys, or X OAuth connection is required.
 
 ## Court procedure

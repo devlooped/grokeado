@@ -93,8 +93,8 @@ async function downloadImage(url: string): Promise<{ bytes: Uint8Array; mimeType
   return { bytes: result.bytes, mimeType };
 }
 
-// The chooser only sees URLs and page text, so Grok looks at the downloaded file before it becomes the cover.
-async function approveWithGrok(brief: string, image: { bytes: Uint8Array; mimeType: string }, model: CourtModel): Promise<boolean> {
+// The chooser only sees URLs and page text, so a vision model looks at the downloaded file before it becomes the cover.
+async function approveCover(brief: string, image: { bytes: Uint8Array; mimeType: string }, model: CourtModel): Promise<boolean> {
   const { text } = await generateText({
     model: gateway(model.id),
     providerOptions: model.providerOptions,
@@ -122,12 +122,12 @@ async function generateWithGrok(prompt: string, modelId: string): Promise<{ byte
   return { bytes: image.uint8Array, mimeType: image.mediaType };
 }
 
-export function liveCoverDeps(models: Pick<ModelConfig, "cover.chooser" | "cover.image"> = DEFAULT_MODELS): CoverDeps {
+export function liveCoverDeps(models: Pick<ModelConfig, "cover.chooser" | "cover.check" | "cover.image"> = DEFAULT_MODELS): CoverDeps {
   const chooser = models["cover.chooser"];
   return {
     choose: (brief) => chooseWithGrok(brief, chooser),
     download: downloadImage,
-    approve: (brief, image) => approveWithGrok(brief, image, chooser),
+    approve: (brief, image) => approveCover(brief, image, models["cover.check"]),
     generate: (prompt) => generateWithGrok(prompt, models["cover.image"].id),
   };
 }

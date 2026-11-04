@@ -1,5 +1,5 @@
 import { getImage } from "../store.ts";
-import type { Submission, SubmissionContext } from "../domain/court.ts";
+import { IMAGE_DESCRIPTION_TOOL, type Submission, type SubmissionContext } from "../domain/court.ts";
 import { blobConfigured, readEvidenceTree, writeEvidenceTree } from "./blob.ts";
 import { downloadUrl, sniffExtension, type DownloadResult } from "./download.ts";
 import { defaultRecognize, extractEntities, extractHtml, extractPdf, extractTimeline, renderMarkedPages, type Recognize } from "./extract.ts";
@@ -83,6 +83,8 @@ export async function buildBaseBundle(input: {
   assetMimeType?: string;
   download?: DownloadResult;
   recognize?: Recognize;
+  // Describes a submitted image with a vision model; falls back to recognize when it fails.
+  describe?: Recognize;
 }): Promise<Map<string, Uint8Array | string>> {
   const now = input.now ?? new Date().toISOString();
   const recognize = input.recognize ?? defaultRecognize;
@@ -113,14 +115,21 @@ export async function buildBaseBundle(input: {
     if (!input.asset) throw new Error("La evidencia de imagen requiere los bytes originales.");
     const extension = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif" }[input.assetMimeType ?? ""] ?? "bin";
     const rawPath = rawPathFor(files, input.asset, extension);
-    const transcript = await recognize(input.asset, input.assetMimeType ?? "application/octet-stream");
+    const mimeType = input.assetMimeType ?? "application/octet-stream";
+    const described = input.describe && await input.describe(input.asset, mimeType).catch((err: unknown) => {
+      console.warn("Image description failed; falling back to OCR:", err instanceof Error ? err.message : err);
+      return undefined;
+    });
+    const transcript = described?.text.trim() ? described : await recognize(input.asset, mimeType);
     const text = transcript.text.trim();
     const body = (text ? `[p.1]\n\n${text}` : `[p.1] Imagen original: ${rawPath}`) + note(submission.note) + "\n";
     const document = card({
       title: "Imagen enviada",
-      description: text
-        ? "Imagen original conservada. La transcripción recoge el texto visible y no reemplaza la imagen."
-        : "Imagen original conservada; no se obtuvo transcripción.",
+      description: !text
+        ? "Imagen original conservada; no se obtuvo transcripción."
+        : transcript.tool.startsWith(IMAGE_DESCRIPTION_TOOL)
+          ? "Imagen original conservada. Un modelo de visión la describió y transcribió su texto visible; la descripción no reemplaza la imagen."
+          : "Imagen original conservada. La transcripción recoge el texto visible y no reemplaza la imagen.",
       sources: [rawPath],
       now,
       pages: [1],
@@ -282,7 +291,8 @@ export function submissionContextFromBundle(
 export async function collectEvidenceBase(
   caseId: string,
   submission: Submission,
-  simulated = false
+  simulated = false,
+  describe?: Recognize
 ): Promise<SubmissionContext | undefined> {
   const hasBlob = blobConfigured();
 
@@ -308,7 +318,7 @@ export async function collectEvidenceBase(
     download = await downloadUrl(submission.url);
   }
 
-  const files = await buildBaseBundle({ submission, asset, assetMimeType, download });
+  const files = await buildBaseBundle({ submission, asset, assetMimeType, download, describe });
   const errors = validateEvidenceTree(files);
   if (errors.length) throw new Error("El expediente de evidencia recolectado no es válido: " + errors.join("; "));
   if (hasBlob) {

@@ -8,6 +8,7 @@ import type { Docket, TurnOutcome, TurnSpec } from "../court/turns.ts";
 import type { CourtEvent, RecordedEvent, Submission, SubmissionContext } from "../domain/court.ts";
 import { languageInstruction } from "../domain/language.ts";
 import { collectEvidenceBase } from "../evidence/collect.ts";
+import { imageDescriber } from "../evidence/describe.ts";
 import { liveContributionDeps, saveContributedSources } from "../evidence/contributions.ts";
 import { archiveEvidence } from "../evidence/archive.ts";
 import { blobConfigured } from "../evidence/blob.ts";
@@ -22,9 +23,10 @@ async function configuredModels(): Promise<ModelConfig> {
   return loadModels();
 }
 
-async function collect(caseId: string, submission: Submission, simulated: boolean) {
+async function collect(caseId: string, submission: Submission, simulated: boolean, describer: CourtModel) {
   "use step";
-  return collectEvidenceBase(caseId, submission, simulated);
+  const describe = !simulated && submission.kind === "image" ? imageDescriber(describer, submission.note) : undefined;
+  return collectEvidenceBase(caseId, submission, simulated, describe);
 }
 
 async function determineLanguage(caseId: string, submission: Submission, context: SubmissionContext | undefined, simulated: boolean, model: CourtModel): Promise<string> {
@@ -47,7 +49,7 @@ async function archive(caseId: string): Promise<void> {
 }
 
 // A missing cover never fails a case: the home page shows a placeholder instead.
-async function illustrate(caseId: string, simulated: boolean, models: Pick<ModelConfig, "cover.chooser" | "cover.image">): Promise<void> {
+async function illustrate(caseId: string, simulated: boolean, models: Pick<ModelConfig, "cover.chooser" | "cover.check" | "cover.image">): Promise<void> {
   "use step";
   if (simulated) return;
   try {
@@ -109,7 +111,7 @@ export async function courtSession(caseId: string): Promise<void> {
   try {
     const models = await configuredModels();
     const counsel = counselModels(models);
-    const submissionContext = await collect(caseId, submission, simulated);
+    const submissionContext = await collect(caseId, submission, simulated, models["image.description"]);
     const language = await determineLanguage(caseId, submission, submissionContext, simulated, models.language);
     const docket: Docket = { submission, today, simulated, language, models, ...(submissionContext ? { submissionContext } : {}) };
     const effort = (model: CourtModel) => simulated ? null : modelEffort(model);

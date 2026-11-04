@@ -39,9 +39,11 @@ export type TierName = (typeof TIERS)[number];
 export type ModelRole =
   | "judge"
   | `counsel.${Counsel}`
+  | "image.description"
   | "language"
   | "translator"
   | "cover.chooser"
+  | "cover.check"
   | "cover.image"
   | `tier.${Counsel}.${TierName}`;
 
@@ -80,10 +82,12 @@ export const MODEL_ROLES: readonly ModelRoleDefinition[] = [
   { key: "counsel.grok", group: "Debate", label: "Analista Grok", description: "Asiento de Grok en el panel.", kind: "language", defaultId: "spacexai/grok-4.7", defaultEffort: "high", configurableEffort: true, requires: SEAT },
   { key: "counsel.gemini", group: "Debate", label: "Analista Gemini", description: "Asiento de Gemini en el panel.", kind: "language", defaultId: "google/gemini-4-argon", defaultEffort: "high", configurableEffort: true, requires: SEAT },
   { key: "counsel.claude", group: "Debate", label: "Analista Claude", description: "Asiento de Claude en el panel.", kind: "language", defaultId: "anthropic/claude-opus-5.5", defaultEffort: "high", configurableEffort: true, requires: SEAT },
-  { key: "counsel.chatgpt", group: "Debate", label: "Analista ChatGPT", description: "Asiento de ChatGPT en el panel.", kind: "language", defaultId: "openai/gpt-5.5", defaultEffort: null, configurableEffort: true, requires: SEAT },
-  { key: "language", group: "Soporte", label: "Detección de idioma", description: "Identifica el idioma del material enviado, incluidas imágenes.", kind: "language", defaultId: "spacexai/grok-4.7", defaultEffort: null, configurableEffort: true, requires: ["structured-output", "vision"] },
+  { key: "counsel.chatgpt", group: "Debate", label: "Analista ChatGPT", description: "Asiento de ChatGPT en el panel.", kind: "language", defaultId: "openai/gpt-6.1-sol", defaultEffort: "high", configurableEffort: true, requires: SEAT },
+  { key: "image.description", group: "Soporte", label: "Descripción de imágenes", description: "Describe y transcribe una sola vez la imagen enviada; el panel trabaja con esa descripción en lugar de la imagen.", kind: "language", defaultId: "openai/gpt-6.1-terra", defaultEffort: "high", configurableEffort: true, requires: ["structured-output", "vision"] },
+  { key: "language", group: "Soporte", label: "Detección de idioma", description: "Identifica el idioma del material enviado, incluidas imágenes sin descripción.", kind: "language", defaultId: "anthropic/claude-haiku-5.5", defaultEffort: null, configurableEffort: true, requires: ["structured-output", "vision"] },
   { key: "translator", group: "Soporte", label: "Traductor", description: "Traduce las fuentes descargadas y la evidencia promovida al idioma del caso.", kind: "language", defaultId: "google/gemini-3.5-flash-lite", defaultEffort: null, configurableEffort: true, requires: ["structured-output"] },
-  { key: "cover.chooser", group: "Soporte", label: "Portada: búsqueda y revisión", description: "Busca una imagen real para la portada y la aprueba antes de usarla.", kind: "language", defaultId: "spacexai/grok-4.7", defaultEffort: null, configurableEffort: true, requires: SEAT },
+  { key: "cover.chooser", group: "Soporte", label: "Portada: búsqueda", description: "Busca una imagen real para la portada o propone la ilustración. Usa x_search, que solo existe en Grok.", kind: "language", defaultId: "spacexai/grok-4.7", defaultEffort: null, configurableEffort: true, requires: SEAT },
+  { key: "cover.check", group: "Soporte", label: "Portada: revisión", description: "Mira la imagen real encontrada y la aprueba antes de usarla como portada.", kind: "language", defaultId: "anthropic/claude-haiku-5.5", defaultEffort: null, configurableEffort: true, requires: ["vision"] },
   { key: "cover.image", group: "Soporte", label: "Portada: ilustración", description: "Genera la ilustración cuando no hay una imagen real adecuada.", kind: "image", defaultId: "spacexai/grok-imagine-image-2.0", defaultEffort: null, configurableEffort: false, requires: [] },
   ...(Object.keys(TIER_DEFAULTS) as Counsel[]).flatMap((by) => TIERS.map((tier): ModelRoleDefinition => ({
     key: `tier.${by}.${tier}`,

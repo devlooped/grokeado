@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { imageDescribed } from "../domain/court.ts";
 import { buildBaseBundle, rawPathFor, submissionContextFromBundle } from "./collect.ts";
+import { formatImageDescription } from "./describe.ts";
 import { buildFixturePdf } from "./fixture-pdf.ts";
 import { confidenceFromTsv, extractEntities, extractPdf, type Recognize } from "./extract.ts";
 import { parseEvidenceDocument } from "./okf.ts";
@@ -42,6 +44,43 @@ test("keeps a failed download as an immutable pointer", async () => {
   assert.match(text(files, "evidence/base/docs/submission.md"), /Comentario: nota/);
   assert.match(text(files, "evidence/base/index.md"), /tokens/);
   assert.match(text(files, "evidence/base/index.md"), /Cronología/);
+});
+
+test("a submitted image is described once by a vision model and becomes the submission context", async () => {
+  const submission = { kind: "image" as const, mimeType: "image/png", note: "lo vi en X" };
+  const image = Uint8Array.of(137, 80, 78, 71);
+  const seen: string[] = [];
+  const describe: Recognize = async (bytes, mime) => {
+    seen.push(mime);
+    assert.deepEqual(bytes, image);
+    return { text: formatImageDescription({ description: "Captura de un posteo.", transcript: "La inflación fue del 2%" }), confidence: 1, tool: "vision:openai/test" };
+  };
+  const recognize: Recognize = async () => { throw new Error("OCR must not run when the description succeeds"); };
+  const files = await buildBaseBundle({ now, submission, asset: image, assetMimeType: "image/png", describe, recognize });
+  assert.deepEqual(validateEvidenceTree(files), []);
+  assert.deepEqual(seen, ["image/png"]);
+  const document = parseEvidenceDocument(text(files, "evidence/base/docs/submission.md"));
+  assert.equal(document.type === "evidence" && document.extraction.tool, "vision:openai/test");
+  assert.match(document.description, /modelo de visión/);
+  const context = submissionContextFromBundle(files, submission);
+  assert.match(context?.excerpt ?? "", /Descripción de la imagen:\nCaptura de un posteo\.\n\nTexto visible \(transcripción literal\):\nLa inflación fue del 2%/);
+  assert.equal(imageDescribed(submission, context), true);
+});
+
+test("a failed image description falls back to OCR, and the seats get the image again", async (t) => {
+  t.mock.method(console, "warn", () => {});
+  const submission = { kind: "image" as const, mimeType: "image/png" };
+  const files = await buildBaseBundle({
+    now,
+    submission,
+    asset: Uint8Array.of(137, 80, 78, 71),
+    assetMimeType: "image/png",
+    describe: async () => { throw new Error("gateway down"); },
+    recognize: async () => ({ text: "Texto reconocido", confidence: 0.8, tool: "tesseract-spa" }),
+  });
+  const context = submissionContextFromBundle(files, submission);
+  assert.equal(context?.tool, "tesseract-spa");
+  assert.equal(imageDescribed(submission, context), false);
 });
 
 test("preserves text submissions with Spanish metadata and catalogs", async () => {
