@@ -1,11 +1,23 @@
 "use client";
 
 import { useUser } from "@auth0/nextjs-auth0/client";
+import Link from "next/link";
 import { useEffect, useId, useRef, useState } from "react";
 import { isAdmin } from "@/lib/case-access.ts";
 import { ClaimsTable, extractClaimRows } from "./claims-table.tsx";
 
 export { extractClaimRows, formatClaimValue } from "./claims-table.tsx";
+
+const SHIELD_CLASS = "grid size-8 shrink-0 place-items-center rounded-full border transition ";
+
+function ShieldIcon() {
+  return (
+    <svg className="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+      <path d="m9 12 2 2 4-4" />
+    </svg>
+  );
+}
 
 export function UserClaimsPopover({
   claims,
@@ -20,6 +32,20 @@ export function UserClaimsPopover({
   const rows = extractClaimRows(claims);
   if (rows.length === 0) return null;
 
+  // Admins go straight to the admin page, which shows the same claims and the logout link.
+  if (isAdmin(claims)) {
+    return (
+      <Link
+        href="/admin"
+        aria-label="Administración"
+        title="Administración"
+        className={SHIELD_CLASS + "border-rule text-celeste-deep hover:bg-paper-deep"}
+      >
+        <ShieldIcon />
+      </Link>
+    );
+  }
+
   return (
     <div className="relative normal-case tracking-normal">
       <button
@@ -30,14 +56,11 @@ export function UserClaimsPopover({
         aria-label="Ver atributos de la sesión"
         title="Atributos del token de sesión"
         className={
-          "grid size-8 shrink-0 place-items-center rounded-full border transition " +
+          SHIELD_CLASS +
           (open ? "border-celeste-deep bg-celeste/15 text-celeste-deep" : "border-rule text-celeste-deep hover:bg-paper-deep")
         }
       >
-        <svg className="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-          <path d="m9 12 2 2 4-4" />
-        </svg>
+        <ShieldIcon />
       </button>
       {open && (
         <div
@@ -48,16 +71,9 @@ export function UserClaimsPopover({
         >
           <div className="flex items-baseline justify-between gap-3 border-b border-rule pb-2">
             <span className="font-display text-xl leading-none">Sesión activa</span>
-            <span className="flex items-baseline gap-3">
-              {isAdmin(claims) && (
-                <a href="/admin" className="text-xs text-celeste-deep underline hover:text-ink">
-                  Administración
-                </a>
-              )}
-              <a href="/auth/logout" className="text-xs text-ink-soft underline hover:text-celeste-deep">
-                Cerrar sesión
-              </a>
-            </span>
+            <a href="/auth/logout" className="text-xs text-ink-soft underline hover:text-celeste-deep">
+              Cerrar sesión
+            </a>
           </div>
           <div className="mt-3 max-h-80 overflow-auto">
             <ClaimsTable rows={rows} />

@@ -38,7 +38,12 @@ export default async function AdminPage() {
       </section>
 
       <section aria-labelledby="claims-heading">
-        <h2 id="claims-heading" className="border-b border-rule pb-2 font-display text-2xl leading-none">Sesión activa</h2>
+        <div className="flex items-baseline justify-between gap-3 border-b border-rule pb-2">
+          <h2 id="claims-heading" className="font-display text-2xl leading-none">Sesión activa</h2>
+          <a href="/auth/logout" className="text-sm text-ink-soft underline hover:text-celeste-deep">
+            Cerrar sesión
+          </a>
+        </div>
         <div className="mt-3">
           <ClaimsTable rows={extractClaimRows(session!.user)} />
         </div>
