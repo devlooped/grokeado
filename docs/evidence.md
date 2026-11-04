@@ -55,8 +55,11 @@ For new cases, each analyst's filed URLs are also downloaded under
 extraction status, and paths to the unchanged original and extracted text.
 When extraction succeeds, the text is translated into the case language if
 needed and saved separately as `translated.txt`; otherwise the extracted text
-remains unchanged. Unsupported formats, inaccessible sources, and unsuccessful
-OCR are recorded rather than presented as translations. Originals, raw research
+remains unchanged. If translation fails, processing continues with the original
+and extracted text retained; `source.json` records `translation_failed` and
+the `translationError`, and no translation is written for that attempt.
+Unsupported formats, inaccessible sources, and unsuccessful OCR are recorded
+rather than presented as translations. Originals, raw research
 responses, and audit transcripts are never replaced with translations. These
 downloads are archive artifacts, not new citable evidence; the source itself
 must still be checked. They use the existing public-URL and size checks.
@@ -68,8 +71,10 @@ Latin American Spanish. The resolved language is saved for retries. Analyst
 Markdown documents downloaded from the sandbox are translated when necessary;
 their originals are retained under the run's `originals/` directory. Model
 translation can introduce errors and is not a substitute for the original.
-Detection and translation make additional AI Gateway calls; a translation
-error fails the case rather than silently presenting untranslated content.
+Detection and translation make additional AI Gateway calls; an error translating
+promoted analyst evidence fails the case rather than silently presenting
+untranslated evidence. Downloaded archival source translation failures are
+recorded as described above and do not themselves fail the case.
 Mock mode uses
 fixed Spanish fixtures and does not download analyst URLs or call translation.
 Existing cases and archives are not retroactively translated.
