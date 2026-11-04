@@ -1,7 +1,18 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { CASES } from "./cases.ts";
-import { canonicalUrl, groundResearch, modelFor, unify, validCitations } from "./core.ts";
+import { canonicalUrl, describeError, groundResearch, modelFor, unify, validCitations } from "./core.ts";
+
+test("tool errors from Gateway keep their cause instead of collapsing to [object Object]", () => {
+  assert.equal(describeError({ error: "execution_error", statusCode: 502, message: "TLS handshake failed" }), "execution_error · HTTP 502 · TLS handshake failed");
+  assert.equal(describeError({ error: "timeout", message: "Fetch timed out" }), "timeout · Fetch timed out");
+  assert.equal(describeError({ code: "ECONNRESET" }), '{"code":"ECONNRESET"}');
+  assert.equal(describeError(new Error("boom")), "boom");
+  assert.equal(describeError("plain"), "plain");
+  const circular: Record<string, unknown> = {};
+  circular.self = circular;
+  assert.equal(describeError(circular), "[object Object]");
+});
 
 test("source unification retains contradictions and authors, removes fragments only, and rejects invented quotations", () => {
   const url = "https://example.test/report?year=2024";

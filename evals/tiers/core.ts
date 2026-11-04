@@ -82,6 +82,21 @@ export type Contribution = z.infer<typeof researchSchema>["evidence"][number] & 
 };
 export interface Source { id: string; url: string; contributions: Contribution[] }
 
+// Gateway tool errors arrive as plain objects such as { error, statusCode, message };
+// String() would reduce them to "[object Object]" and hide the cause from the moderator.
+export function describeError(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error !== "object" || error === null) return String(error);
+  const { error: kind, statusCode, message } = error as { error?: unknown; statusCode?: unknown; message?: unknown };
+  const parts = [
+    typeof kind === "string" ? kind : undefined,
+    typeof statusCode === "number" ? "HTTP " + statusCode : undefined,
+    typeof message === "string" && message ? message : undefined,
+  ].filter((part) => part !== undefined);
+  if (parts.length) return parts.join(" · ");
+  try { return JSON.stringify(error) ?? String(error); } catch { return String(error); }
+}
+
 export function canonicalUrl(value: string): string {
   const url = new URL(value);
   if (!["http:", "https:"].includes(url.protocol)) throw new Error("Only HTTP(S) sources are accepted");

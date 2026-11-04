@@ -6,7 +6,7 @@ import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { z } from "zod";
 import { AS_OF, CASES } from "../evals/tiers/cases.ts";
-import { assessmentSchema, EVALUATORS, gapRulingSchema, gradingSchema, groundResearch, modelFor as tierModelFor, researchSchema, routingSchema, type Evidence, type Observation, type Tier } from "../evals/tiers/core.ts";
+import { assessmentSchema, describeError, EVALUATORS, gapRulingSchema, gradingSchema, groundResearch, modelFor as tierModelFor, researchSchema, routingSchema, type Evidence, type Observation, type Tier } from "../evals/tiers/core.ts";
 import { loadModels } from "../src/court/model-config.ts";
 import { modelEffort, type CourtModel } from "../src/court/models.ts";
 import type { Counsel } from "../src/domain/court.ts";
@@ -83,7 +83,7 @@ async function checkBudget() {
   if (used >= maxUsd) throw new BudgetExceededError("Se alcanzó el límite de gasto Gateway: USD " + used.toFixed(4));
 }
 function safeError(error: unknown) {
-  let message = error instanceof Error ? error.message : String(error);
+  let message = describeError(error);
   for (const name of ["AI_GATEWAY_API_KEY", "VERCEL_OIDC_TOKEN", "DATABASE_URL", "POSTGRES_URL"]) {
     const secret = process.env[name];
     if (secret) message = message.replaceAll(secret, "[REDACTED]");
