@@ -9,6 +9,7 @@ import { auth0 } from "@/lib/auth0.ts";
 import { canRequestCase } from "@/lib/case-access.ts";
 import { BetaNotice } from "@/components/beta-notice.tsx";
 import { RequestForm } from "@/components/request-form.tsx";
+import { CaseLinkStatus } from "@/components/case-link-status.tsx";
 import { coverVersions, getEvents, listCases } from "@/store.ts";
 
 const MAX_CLAIMS = 3;
@@ -19,7 +20,7 @@ function CoverImage({ c, cover }: { c: CaseRecord; cover?: string }) {
   const src = c.status === "resolved" ? caseCardImageUrl(c.id, cover) : c.submission.kind === "image" ? caseHref(c.id) + "/imagen" : cover ? caseHref(c.id) + "/portada?v=" + cover : undefined;
   if (src) {
     // eslint-disable-next-line @next/next/no-img-element
-    return <img src={src} alt="" loading="lazy" className="size-full object-cover transition duration-500 group-hover:scale-[1.03]" />;
+    return <img src={src} alt="" loading="lazy" className="size-full object-cover transition duration-500 group-hover:scale-[1.03] motion-reduce:transform-none motion-reduce:transition-none" />;
   }
   return (
     <div className="flex size-full flex-col bg-paper-deep px-5 pb-20 pt-12">
@@ -47,7 +48,7 @@ function ClaimLine({ c, claim, voted }: { c: CaseRecord; claim: ClaimView; voted
   return (
     <li className="py-3 first:pt-0 last:pb-0">
       <Link href={caseHref(c.id) + "#" + claim.id} className="line-clamp-3 font-display text-lg leading-snug transition hover:text-celeste-deep">
-        {claim.text}
+        {claim.text}<CaseLinkStatus />
       </Link>
       {voted && (
         <div className="mt-2.5 flex items-center justify-between gap-3">
@@ -55,8 +56,8 @@ function ClaimLine({ c, claim, voted }: { c: CaseRecord; claim: ClaimView; voted
             {COUNSEL.map((m) => {
               const vote = claim.votes[m];
               return vote ? (
-                <Link key={m} href={caseHref(c.id) + "#" + voteId(claim.id, m)} aria-label={"Fundamento de " + MODEL_NAME[m] + ": " + VERDICT_LABEL[vote.verdict]} className="rounded-full transition hover:-translate-y-0.5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-celeste-deep">
-                  <VoteChip model={m} verdict={vote.verdict} />
+                <Link key={m} href={caseHref(c.id) + "#" + voteId(claim.id, m)} aria-label={"Fundamento de " + MODEL_NAME[m] + ": " + VERDICT_LABEL[vote.verdict]} className="rounded-full transition hover:-translate-y-0.5 motion-reduce:transform-none motion-reduce:transition-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-celeste-deep">
+                  <VoteChip model={m} verdict={vote.verdict} /><CaseLinkStatus />
                 </Link>
               ) : (
                 <VoteChip key={m} model={m} />
@@ -70,7 +71,7 @@ function ClaimLine({ c, claim, voted }: { c: CaseRecord; claim: ClaimView; voted
                   <GavelIcon className="size-4" />
                 </span>
               )}
-              <span className={"font-display text-xl leading-none " + VERDICT_TEXT[j.verdict]}>{VERDICT_LABEL[j.verdict]}</span>
+              <span className={"font-display text-xl leading-none " + VERDICT_TEXT[j.verdict]}>{VERDICT_LABEL[j.verdict]}</span><CaseLinkStatus />
             </Link>
           )}
         </div>
@@ -85,10 +86,11 @@ async function CaseCard({ c, cover, index }: { c: CaseRecord; cover?: string; in
   const claims = view?.claims ?? [];
   const hidden = claims.length - MAX_CLAIMS;
   return (
-    <li className="reveal" style={{ animationDelay: Math.min(index, 8) * 60 + "ms" }}>
+    <li className="reveal" style={{ animationDelay: Math.min(index, 4) * 45 + "ms" }}>
       <article className="flex h-full flex-col overflow-hidden rounded-sm border border-rule bg-paper/70 shadow-[0_1px_0_0_var(--color-rule)]">
         <Link href={caseHref(c.id)} aria-label={"Ver el caso Nº " + c.id} className="group relative block aspect-square overflow-hidden border-b border-rule bg-paper-deep">
           <CoverImage c={c} cover={cover} />
+          <CaseLinkStatus />
           {c.status !== "resolved" && (
             <>
               <span className="absolute left-3 top-3 rounded-sm bg-paper/90 px-2 py-1 font-mono text-[11px] text-ink-soft">Nº {c.id}</span>
@@ -114,7 +116,7 @@ async function CaseCard({ c, cover, index }: { c: CaseRecord; cover?: string; in
             )}
           </div>
           <Link href={caseHref(c.id)} className="mt-4 self-start text-sm text-celeste-deep hover:underline">
-            {hidden > 0 ? "Ver " + hidden + (hidden === 1 ? " afirmación más" : " afirmaciones más") + " y el debate →" : "Ver fundamentos y debate →"}
+            {hidden > 0 ? "Ver " + hidden + (hidden === 1 ? " afirmación más" : " afirmaciones más") + " y el debate →" : "Ver fundamentos y debate →"}<CaseLinkStatus />
           </Link>
         </div>
       </article>
@@ -147,7 +149,7 @@ export default async function Home() {
             </Link>
           </div>
         </div>
-        <div className="reveal [animation-delay:120ms]">
+        <div className="reveal [animation-delay:80ms]">
           {canRequestCase(session?.user) ? <RequestForm /> : <BetaNotice signedIn={!!session?.user.sub} />}
         </div>
       </section>

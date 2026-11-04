@@ -49,7 +49,7 @@ export default function MethodPage() {
 
       <section className="mt-14 grid gap-6 border-y border-rule py-8 sm:grid-cols-2 lg:grid-cols-4">
         {STEPS.map((s, i) => (
-          <div key={s.n} className="reveal" style={{ animationDelay: 120 + i * 90 + "ms" }}>
+          <div key={s.n} className="reveal" style={{ animationDelay: 60 + i * 60 + "ms" }}>
             <span className="font-display text-3xl italic text-celeste-deep">{s.n}.</span>
             <h2 className="mt-1 font-display text-2xl">{s.title}</h2>
             <p className="mt-2 text-sm leading-relaxed text-ink-soft">{s.body}</p>

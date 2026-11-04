@@ -103,14 +103,52 @@ html[data-theme="dark"] .theme-icon-sun {
 }
 
 .reveal {
-  animation: reveal 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  animation: reveal 0.35s cubic-bezier(0.2, 0.7, 0.2, 1) both;
 }
 
 @keyframes reveal {
   from {
-    opacity: 0;
-    transform: translateY(10px);
+    opacity: 0.5;
+    transform: translateY(5px);
   }
+}
+
+/* Keep the destination visible while it settles, without moving anchor targets. */
+.case-enter {
+  animation: case-enter 0.25s ease-out both;
+}
+
+@keyframes case-enter {
+  from { opacity: 0.75; }
+}
+
+/* Confirm a slow click without shifting the link or flashing on fast navigations. */
+.navigation-hint {
+  position: fixed;
+  right: 1.25rem;
+  bottom: 1.25rem;
+  z-index: 50;
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius-sm);
+  background: var(--color-paper);
+  padding: 0.6rem 0.9rem;
+  color: var(--color-ink);
+  font-size: 0.875rem;
+  font-weight: normal;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.1);
+  animation: navigation-hint 0.15s ease-out 0.15s both;
+}
+
+@keyframes navigation-hint {
+  from { opacity: 0; }
+}
+
+.case-loading {
+  animation: case-loading 1.8s ease-in-out infinite;
+}
+
+@keyframes case-loading {
+  50% { opacity: 0.6; }
 }
 
 .gavel {
@@ -131,6 +169,12 @@ html[data-theme="dark"] .theme-icon-sun {
 
 @keyframes session-light {
   50% { opacity: 0.35; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal, .case-enter, .navigation-hint, .case-loading, .gavel, .session-light {
+    animation: none;
+  }
 }
 
 .struck {

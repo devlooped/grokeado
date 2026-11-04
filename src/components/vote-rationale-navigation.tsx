@@ -29,6 +29,9 @@ export function VoteRationaleNavigation() {
       } else if (link) reveal(href, false);
     };
     reveal(window.location.hash, true);
+    // A streamed loading state can be replaced after Next has tried to scroll.
+    const claim = document.getElementById(window.location.hash.slice(1));
+    if (claim?.matches("article[data-claim]")) claim.scrollIntoView();
     window.addEventListener("hashchange", onHashChange);
     document.addEventListener("click", onClick);
     return () => {

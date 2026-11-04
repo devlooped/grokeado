@@ -55,6 +55,18 @@ a summary remain readable; they are not silently backfilled with invented text.
 The result page places the summary before the individual claims and links the
 compact votes beside quoted claims to their respective reasons.
 
+## Case revisions and caching
+
+Resolved case events are cached by case ID and database revision and revalidated
+after an hour; active and failed cases are read dynamically. Closing a new run or adding
+new events to a resolved case advances its revision atomically. Duplicate events
+and repeated closes do not. Any future code that edits or removes resolved
+events must also advance the revision in the same transaction.
+
+The revision is a cache version, not a history of prior runs: opening a session
+currently clears its existing events. Preserving old results requires a separate
+revision-history design before offering a way to revisit resolved cases.
+
 ## Vercel setup
 
 1. Select your team in the Vercel dashboard, open **AI Gateway → API Keys**, and

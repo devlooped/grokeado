@@ -98,7 +98,7 @@ function ClaimCard({ claim }: { claim: ClaimView }) {
   const j = claim.judgment;
   const agreeing = j ? COUNSEL.filter((c) => claim.votes[c]?.verdict === j.verdict).length : 0;
   return (
-    <article id={claim.id} className="reveal scroll-mt-24 grid gap-4 border-b border-rule py-6 sm:grid-cols-[1fr_auto] sm:items-start">
+    <article id={claim.id} data-claim className="reveal scroll-mt-24 grid gap-4 border-b border-rule py-6 sm:grid-cols-[1fr_auto] sm:items-start">
       <div>
         <p className="font-mono text-xs text-ink-soft">{claim.id}</p>
         <h3 className="mt-1 font-display text-2xl leading-snug">{claim.text}</h3>

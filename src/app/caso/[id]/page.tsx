@@ -1,7 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { Suspense } from "react";
+import CaseLoading from "@/components/case-loading.tsx";
 import { notFound, permanentRedirect } from "next/navigation";
 import { connection } from "next/server";
+import { unstable_cache } from "next/cache";
 import { Suspended } from "@/components/suspended.tsx";
 import { Acta } from "@/components/acta.tsx";
 import { EvidencePanel } from "@/components/evidence-panel.tsx";
@@ -23,7 +26,7 @@ export async function generateMetadata(props: PageProps<"/caso/[id]">): Promise<
   const c = await getCase(id);
   if (!c) return { title: "Che, bot" };
   const [events, covers] = c.status === "resolved"
-    ? await Promise.all([getEvents(id), coverVersions([id])])
+    ? await Promise.all([getResolvedEvents(id, c.revision), coverVersions([id])])
     : [[], new Map<string, string>()];
   const { title, description } = caseShareMetadata(c, events);
   const image = c.status === "resolved" ? caseCardImageUrl(c.id, covers.get(c.id)) : undefined;
@@ -82,20 +85,30 @@ export default async function CasePage(props: PageProps<"/caso/[id]">) {
     if (renamed) permanentRedirect("/caso/" + renamed);
     notFound();
   }
-  if (c.status === "queued" || c.status === "in_session") return <InSession c={c} events={c.status === "queued" ? [] : await getEvents(id)} />;
+  if (c.status === "queued" || c.status === "in_session") return <div className="case-enter"><InSession c={c} events={c.status === "queued" ? [] : await getEvents(id)} /></div>;
   if (c.status === "failed") {
     const session = await auth0.getSession();
-    return <Suspended c={c} user={session?.user} />;
+    return <div className="case-enter"><Suspended c={c} user={session?.user} /></div>;
   }
 
-  const { events, aliases } = displayHistoricalCitations(await getEvents(id));
+  return <Suspense fallback={<CaseLoading />}><ResolvedCase c={c} id={id} revision={c.revision} /></Suspense>;
+}
+
+// Only closed cases use this cache; both the id and revision are part of the key.
+const getResolvedEvents = unstable_cache(async (id: string, revision: number) => {
+  void revision;
+  return getEvents(id);
+}, ["resolved-case-events-v1"], { revalidate: 3600 });
+
+async function ResolvedCase({ c, id, revision }: { c: CaseRecord; id: string; revision: number }) {
+  const { events, aliases } = displayHistoricalCitations(await getResolvedEvents(id, revision));
   const hasEvidence = blobConfigured() && Boolean(await findEvidenceArchive(id) || await hasEvidenceBase(id));
   const simulated = events.some((e) => e.type === "session_opened" && e.simulated);
   const view = project(events);
   const byJudge = view.claims.filter((cl) => cl.judgment?.method === "judge").length;
 
   return (
-    <>
+    <div className="case-enter">
       <BackToCases />
       <header className="reveal flex flex-wrap items-end justify-between gap-4 pt-4">
         <div>
@@ -125,6 +138,6 @@ export default async function CasePage(props: PageProps<"/caso/[id]">) {
       </section>
 
       {hasEvidence && <EvidencePanel caseId={id} />}
-    </>
+    </div>
   );
 }

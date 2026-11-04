@@ -42,6 +42,7 @@ async function db(): Promise<Pool> {
          error TEXT
        );
        ALTER TABLE cases ADD COLUMN IF NOT EXISTS owner_id TEXT;
+       ALTER TABLE cases ADD COLUMN IF NOT EXISTS revision INTEGER NOT NULL DEFAULT 0;
        CREATE TABLE IF NOT EXISTS events (
          case_id TEXT NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
          seq INTEGER NOT NULL,
@@ -84,10 +85,12 @@ async function db(): Promise<Pool> {
   return p;
 }
 
-type CaseRow = { id: string; created_at: string; status: CaseStatus; submission: Submission; owner_id: string | null; error: string | null };
+type CaseRow = { id: string; created_at: string; status: CaseStatus; submission: Submission; owner_id: string | null; error: string | null; revision: number };
 
-function toRecord(row: CaseRow): CaseRecord {
-  return { id: row.id, createdAt: row.created_at, status: row.status, submission: row.submission, ownerId: row.owner_id ?? undefined, error: row.error ?? undefined };
+export type StoredCaseRecord = CaseRecord & { revision: number };
+
+function toRecord(row: CaseRow): StoredCaseRecord {
+  return { id: row.id, createdAt: row.created_at, status: row.status, submission: row.submission, ownerId: row.owner_id ?? undefined, error: row.error ?? undefined, revision: row.revision };
 }
 
 export async function createCase(id: string, submission: Submission, image?: Buffer, ownerId?: string): Promise<void> {
@@ -137,7 +140,7 @@ export async function renameCase(oldId: string, newId: string): Promise<void> {
   try {
     await client.query("BEGIN");
     const { rowCount } = await client.query(
-      "INSERT INTO cases (id, created_at, status, submission, owner_id, error) SELECT $2, created_at, status, submission, owner_id, error FROM cases WHERE id = $1",
+      "INSERT INTO cases (id, created_at, status, submission, owner_id, error, revision) SELECT $2, created_at, status, submission, owner_id, error, revision FROM cases WHERE id = $1",
       [oldId, newId]
     );
     if (rowCount !== 1) throw new Error("case " + oldId + " does not exist");
@@ -156,12 +159,12 @@ export async function renameCase(oldId: string, newId: string): Promise<void> {
   }
 }
 
-export async function getCase(id: string): Promise<CaseRecord | undefined> {
+export async function getCase(id: string): Promise<StoredCaseRecord | undefined> {
   const { rows } = await (await db()).query<CaseRow>("SELECT * FROM cases WHERE id = $1", [id]);
   return rows[0] && toRecord(rows[0]);
 }
 
-export async function listCases(limit = 20): Promise<CaseRecord[]> {
+export async function listCases(limit = 20): Promise<StoredCaseRecord[]> {
   const { rows } = await (await db()).query<CaseRow>("SELECT * FROM cases ORDER BY created_at DESC LIMIT $1", [limit]);
   return rows.map(toRecord);
 }
@@ -213,7 +216,13 @@ export async function recordEvents(caseId: string, events: readonly RecordedEven
     values.push(seq, at, JSON.stringify(body));
     return "($1, $" + (values.length - 2) + ", $" + (values.length - 1) + ", $" + values.length + ")";
   });
-  await (await db()).query("INSERT INTO events (case_id, seq, at, body) VALUES " + rows.join(", ") + " ON CONFLICT (case_id, seq) DO NOTHING", values);
+  // If a closed case receives new events, invalidate its old revision atomically.
+  await (await db()).query(
+    "WITH inserted AS (INSERT INTO events (case_id, seq, at, body) VALUES " + rows.join(", ") +
+    " ON CONFLICT (case_id, seq) DO NOTHING RETURNING case_id) " +
+    "UPDATE cases SET revision = revision + 1 WHERE id = $1 AND status = 'resolved' AND EXISTS (SELECT 1 FROM inserted)",
+    values
+  );
 }
 
 // Idempotent: a restarted session always begins from an empty record.
@@ -241,5 +250,5 @@ export async function requeueCase(id: string): Promise<boolean> {
 }
 
 export async function finishCase(id: string, status: "resolved" | "failed", error?: string): Promise<void> {
-  await (await db()).query("UPDATE cases SET status = $1, error = $2 WHERE id = $3", [status, error ?? null, id]);
+  await (await db()).query("UPDATE cases SET status = $1, error = $2, revision = revision + CASE WHEN $1 = 'resolved' AND status <> 'resolved' THEN 1 ELSE 0 END WHERE id = $3", [status, error ?? null, id]);
 }
