@@ -4,6 +4,7 @@ import { VERDICT_LABEL } from "@/domain/acta.ts";
 import { COUNSEL, COUNSEL_NAMES, MODEL_NAME, VERDICTS, type Verdict } from "@/domain/court.ts";
 import { GavelIcon, ModelMark, VERDICT_TEXT, VerdictGlyph } from "@/components/marks.tsx";
 import { REQUEST_PANEL_ID } from "@/lib/request-panel.ts";
+import { ProcessDiagram } from "./process-diagram.tsx";
 
 export const metadata: Metadata = {
   title: "Método · Che bot, es cierto?",
@@ -86,6 +87,16 @@ export default function MethodPage() {
             Si no hay tres votos coincidentes, el moderador desempata con la evidencia del registro y su decisión lleva el sello de desempate. En cada caso podés ver qué modelo moderó y leer el fundamento de cada voto, el debate completo y las fuentes.
           </span>
         </p>
+      </section>
+
+      <section id="proceso" className="mt-14 scroll-mt-6">
+        <div className="rule-double pt-5">
+          <h2 className="font-display text-3xl">El proceso, paso a paso</h2>
+          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-ink-soft">
+            Desde el material que recibimos hasta la decisión final, así se desarrolla el debate que queda en el registro público.
+          </p>
+        </div>
+        <ProcessDiagram />
         <p className="mt-10">
           <Link href="/" className="text-celeste-deep underline decoration-celeste/40 underline-offset-4 hover:decoration-celeste-deep">
             ← Volver a los casos

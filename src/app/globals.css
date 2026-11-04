@@ -102,6 +102,23 @@ html[data-theme="dark"] .theme-icon-sun {
   border-top: 3px double var(--color-ink);
 }
 
+.process-diagram {
+  --pele-bg: var(--color-paper);
+  --pele-fg: var(--color-ink);
+  --pele-muted: var(--color-ink-soft);
+  --pele-line: var(--color-ink-soft);
+  --pele-surface: var(--color-paper);
+  --pele-surface-alt: var(--color-paper-deep);
+  --pele-border: var(--color-rule);
+  --pele-accent: var(--color-celeste-deep);
+}
+
+.process-diagram svg {
+  display: block;
+  max-width: none;
+  margin-inline: auto;
+}
+
 .reveal {
   animation: reveal 0.35s cubic-bezier(0.2, 0.7, 0.2, 1) both;
 }
