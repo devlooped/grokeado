@@ -4,6 +4,7 @@ import path from "node:path";
 // Every server trace that loads Playwright must carry its runtime browser registry.
 const serverDir = path.resolve(".next/server");
 const browserRegistry = path.resolve("node_modules/playwright-core/browsers.json");
+const instructionHarness = ["instruction-agent.ts", "compute.ts"].map((name) => path.resolve("sandbox/harness", name));
 let playwrightTraces = 0;
 
 async function checkDirectory(dir) {
@@ -17,6 +18,9 @@ async function checkDirectory(dir) {
       if (!resolved.some((name) => name !== browserRegistry && name.includes(`${path.sep}node_modules${path.sep}playwright-core${path.sep}`))) continue;
       playwrightTraces++;
       if (!resolved.includes(browserRegistry)) throw new Error(`Missing Playwright browser registry in ${path.relative(process.cwd(), file)}`);
+      for (const harness of instructionHarness) {
+        if (!resolved.includes(harness)) throw new Error(`Missing deployed instruction harness ${path.basename(harness)} in ${path.relative(process.cwd(), file)}`);
+      }
     }
   }
 }
@@ -24,3 +28,4 @@ async function checkDirectory(dir) {
 await checkDirectory(serverDir);
 if (!playwrightTraces) throw new Error("No server traces containing Playwright were found");
 console.log(`Verified Playwright browser registry in ${playwrightTraces} server traces.`);
+console.log(`Verified deployed instruction harness in ${playwrightTraces} server traces.`);

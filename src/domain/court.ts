@@ -106,6 +106,9 @@ export interface Evidence {
   stance?: "supports" | "opposes" | "context";
   // The filed text remains available when the displayed text was translated.
   translation?: { language: string; original: { title: string; excerpt: string } };
+  sourceId?: string;
+  blockIds?: string[];
+  commentary?: string;
 }
 
 export interface InstructionSearch {
@@ -119,6 +122,7 @@ export interface UnifiedSource {
   title: string;
   url: string;
   contributions: Evidence[];
+  sourceId?: string;
 }
 
 export interface SourceView extends UnifiedSource {
@@ -136,6 +140,7 @@ export type CourtEvent =
   | { type: "evidence_unified"; sources: UnifiedSource[] }
   | { type: "source_review_vote"; by: Counsel; sourceId: string; veto: boolean; reason: string }
   | { type: "source_decided"; sourceId: string; excluded: boolean }
+  | { type: "evidence_settled"; schemaVersion: 2; manifestHash: string }
   | { type: "instruction_closed" }
   | { type: "floor_granted"; to: Counsel; stage: Stage }
   | { type: "statement"; id: string; by: Counsel; stage: Stage; text: string; evidenceIds: string[]; evidenceRunId?: string; modelId?: string; effort?: string | null }
@@ -161,6 +166,7 @@ export type CaseRecord = {
   error?: string;
   // Absent until the session opens, and on cases recorded before snapshots existed.
   models?: ModelSnapshot;
+  pipelineVersion?: 1 | 2;
 };
 
 export function majority(verdicts: Verdict[]): Verdict | undefined {

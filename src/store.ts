@@ -1,8 +1,11 @@
 import { attachDatabasePool } from "@vercel/functions";
 import { Pool } from "pg";
 import type { ModelSetting } from "./court/models.ts";
-import type { CaseRecord, CaseStatus, ModelSnapshot, RecordedEvent, Submission } from "./domain/court.ts";
+import type { CaseRecord, CaseStatus, CourtEvent, ModelSnapshot, RecordedEvent, Submission } from "./domain/court.ts";
 import { newCaseId } from "./lib/case-id.ts";
+import type { Operation, OperationClaim, OperationRepository } from "./instruction/source-store.ts";
+import { randomUUID } from "node:crypto";
+import { authorizeSandboxBinding, committedPhase, type SandboxBinding } from "./instruction/authorization.ts";
 
 export { newCaseId };
 
@@ -54,6 +57,7 @@ async function db(): Promise<Pool> {
        ALTER TABLE cases ADD COLUMN IF NOT EXISTS owner_id TEXT;
        ALTER TABLE cases ADD COLUMN IF NOT EXISTS revision INTEGER NOT NULL DEFAULT 0;
        ALTER TABLE cases ADD COLUMN IF NOT EXISTS models JSONB;
+       ALTER TABLE cases ADD COLUMN IF NOT EXISTS pipeline_version INTEGER;
        CREATE TABLE IF NOT EXISTS events (
          case_id TEXT NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
          seq INTEGER NOT NULL,
@@ -85,6 +89,36 @@ async function db(): Promise<Pool> {
          effort TEXT,
          updated_at TEXT NOT NULL,
          updated_by TEXT NOT NULL
+       );
+       CREATE TABLE IF NOT EXISTS case_source_operations (
+         case_id TEXT NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
+         operation_key TEXT NOT NULL,
+         body JSONB NOT NULL,
+         PRIMARY KEY (case_id, operation_key)
+       );
+       CREATE TABLE IF NOT EXISTS case_source_aliases (
+         case_id TEXT NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
+         url TEXT NOT NULL,
+         source_id TEXT NOT NULL,
+         PRIMARY KEY (case_id, url)
+       );
+       CREATE TABLE IF NOT EXISTS case_phase_sessions (
+         case_id TEXT NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
+         session_key TEXT NOT NULL,
+         revision INTEGER NOT NULL DEFAULT 0,
+         body JSONB NOT NULL,
+         PRIMARY KEY (case_id, session_key)
+       );
+       CREATE TABLE IF NOT EXISTS case_audit_records (
+         case_id TEXT NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
+         record_id TEXT NOT NULL,
+         body JSONB NOT NULL,
+         PRIMARY KEY (case_id, record_id)
+       );
+       CREATE TABLE IF NOT EXISTS case_sandbox_bindings (
+         case_id TEXT NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
+         sandbox_id TEXT PRIMARY KEY,
+         body JSONB NOT NULL
        );`
     )
     .then(async () => {
@@ -103,12 +137,12 @@ async function db(): Promise<Pool> {
   return p;
 }
 
-type CaseRow = { id: string; created_at: string; status: CaseStatus; submission: Submission; owner_id: string | null; error: string | null; revision: number; models: ModelSnapshot | null };
+type CaseRow = { id: string; created_at: string; status: CaseStatus; submission: Submission; owner_id: string | null; error: string | null; revision: number; models: ModelSnapshot | null; pipeline_version: 1 | 2 | null };
 
 export type StoredCaseRecord = CaseRecord & { revision: number };
 
 function toRecord(row: CaseRow): StoredCaseRecord {
-  return { id: row.id, createdAt: row.created_at, status: row.status, submission: row.submission, ownerId: row.owner_id ?? undefined, error: row.error ?? undefined, revision: row.revision, ...(row.models ? { models: row.models } : {}) };
+  return { id: row.id, createdAt: row.created_at, status: row.status, submission: row.submission, ownerId: row.owner_id ?? undefined, error: row.error ?? undefined, revision: row.revision, ...(row.models ? { models: row.models } : {}), pipelineVersion: row.pipeline_version ?? 1 };
 }
 
 export async function createCase(id: string, submission: Submission, image?: Buffer, ownerId?: string): Promise<void> {
@@ -249,7 +283,7 @@ export async function renameCase(oldId: string, newId: string): Promise<void> {
   try {
     await client.query("BEGIN");
     const { rowCount } = await client.query(
-      "INSERT INTO cases (id, created_at, status, submission, owner_id, error, revision, models) SELECT $2, created_at, status, submission, owner_id, error, revision, models FROM cases WHERE id = $1",
+      "INSERT INTO cases (id, created_at, status, submission, owner_id, error, revision, models, pipeline_version) SELECT $2, created_at, status, submission, owner_id, error, revision, models, pipeline_version FROM cases WHERE id = $1",
       [oldId, newId]
     );
     if (rowCount !== 1) throw new Error("case " + oldId + " does not exist");
@@ -257,6 +291,9 @@ export async function renameCase(oldId: string, newId: string): Promise<void> {
     await client.query("UPDATE images SET case_id = $2 WHERE case_id = $1", [oldId, newId]);
     await client.query("UPDATE covers SET case_id = $2 WHERE case_id = $1", [oldId, newId]);
     await client.query("UPDATE case_aliases SET case_id = $2 WHERE case_id = $1", [oldId, newId]);
+    for (const table of ["case_source_operations", "case_source_aliases", "case_phase_sessions", "case_audit_records", "case_sandbox_bindings"]) {
+      await client.query(`UPDATE ${table} SET case_id = $2 WHERE case_id = $1`, [oldId, newId]);
+    }
     await client.query("DELETE FROM cases WHERE id = $1", [oldId]);
     await client.query("INSERT INTO case_aliases (old_id, case_id) VALUES ($1, $2)", [oldId, newId]);
     await client.query("COMMIT");
@@ -334,14 +371,20 @@ export async function recordEvents(caseId: string, events: readonly RecordedEven
   );
 }
 
-// Idempotent: a restarted session always begins from an empty record.
-export async function openSession(id: string): Promise<CaseRecord> {
+// Select a pipeline only on first opening; shared retries retain their record.
+export async function openSession(id: string, requestedPipeline: 1 | 2 | (() => 1 | 2) = 1): Promise<CaseRecord> {
   const client = await (await db()).connect();
   try {
     await client.query("BEGIN");
-    const { rows } = await client.query<CaseRow>("UPDATE cases SET status = 'in_session', error = NULL WHERE id = $1 RETURNING *", [id]);
+    let selected: 1 | 2 = 1;
+    if (typeof requestedPipeline === "function") {
+      const { rows } = await client.query("SELECT id FROM cases WHERE id = $1 AND pipeline_version IS NULL AND models IS NULL AND status = 'queued' AND NOT EXISTS (SELECT 1 FROM events WHERE case_id = $1) FOR UPDATE", [id]);
+      if (rows.length) selected = requestedPipeline();
+    } else selected = requestedPipeline;
+    if (selected === 2) await client.query("UPDATE cases SET pipeline_version = 2 WHERE id = $1 AND pipeline_version IS NULL AND models IS NULL AND status = 'queued' AND NOT EXISTS (SELECT 1 FROM events WHERE case_id = $1)", [id]);
+    const { rows } = await client.query<CaseRow>("UPDATE cases SET status = 'in_session', error = NULL, pipeline_version = COALESCE(pipeline_version, 1) WHERE id = $1 RETURNING *", [id]);
     if (!rows[0]) throw new Error("case " + id + " does not exist");
-    await client.query("DELETE FROM events WHERE case_id = $1", [id]);
+    if (rows[0].pipeline_version !== 2) await client.query("DELETE FROM events WHERE case_id = $1", [id]);
     await client.query("COMMIT");
     return toRecord(rows[0]);
   } catch (err) {
@@ -360,4 +403,147 @@ export async function requeueCase(id: string): Promise<boolean> {
 
 export async function finishCase(id: string, status: "resolved" | "failed", error?: string): Promise<void> {
   await (await db()).query("UPDATE cases SET status = $1, error = $2, revision = revision + CASE WHEN $1 = 'resolved' AND status <> 'resolved' THEN 1 ELSE 0 END WHERE id = $3", [status, error ?? null, id]);
+}
+
+// Short row-locked ownership claims; no external I/O runs in this transaction.
+async function changeOperation<T>(caseId: string, key: string, change: (operation: Operation) => T, initial?: Operation): Promise<T> {
+  const client = await (await db()).connect();
+  try {
+    await client.query("BEGIN");
+    if (initial) await client.query("INSERT INTO case_source_operations (case_id, operation_key, body) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING", [caseId, key, JSON.stringify(initial)]);
+    const { rows } = await client.query<{ body: Operation }>("SELECT body FROM case_source_operations WHERE case_id = $1 AND operation_key = $2 FOR UPDATE", [caseId, key]);
+    const operation = rows[0]?.body;
+    if (!operation) throw new Error("Source operation not found");
+    if (operation.status === "running" && Date.parse(operation.expiresAt!) <= Date.now()) {
+      operation.status = "uncertain";
+      operation.error = "Owner expired before checkpoint";
+    }
+    const value = change(operation);
+    await client.query("UPDATE case_source_operations SET body = $3 WHERE case_id = $1 AND operation_key = $2", [caseId, key, JSON.stringify(operation)]);
+    await client.query("COMMIT");
+    return value;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally { client.release(); }
+}
+
+function requireOperationOwner(operation: Operation, owner: string): void {
+  if (operation.status !== "running" || operation.owner !== owner) throw new Error("Operation ownership lost");
+}
+
+export const sourceOperationRepository: OperationRepository = {
+  claim: async (caseId, key, stage, leaseMs): Promise<OperationClaim> => changeOperation(caseId, key, (operation) => {
+    if (operation.stage !== stage) throw new Error("Source operation stage mismatch");
+    if (operation.status !== "pending") return { owned: false, operation };
+    const owner = randomUUID();
+    Object.assign(operation, { status: "running", owner, at: new Date().toISOString(), expiresAt: new Date(Date.now() + leaseMs).toISOString() });
+    return { owned: true, operation, owner };
+  }, { key, stage, status: "pending", at: new Date().toISOString(), recoveries: [] }),
+  get: async (caseId, key) => {
+    const { rows } = await (await db()).query<{ body: Operation }>("SELECT body FROM case_source_operations WHERE case_id = $1 AND operation_key = $2", [caseId, key]);
+    const operation = rows[0]?.body;
+    if (operation?.status === "running" && Date.parse(operation.expiresAt!) <= Date.now()) return changeOperation(caseId, key, (current) => current);
+    return operation;
+  },
+  publish: async (caseId, key, owner, result) => changeOperation(caseId, key, (operation) => {
+    requireOperationOwner(operation, owner);
+    Object.assign(operation, { status: "ready", at: new Date().toISOString(), result });
+  }),
+  fail: async (caseId, key, owner, error, uncertain) => changeOperation(caseId, key, (operation) => {
+    requireOperationOwner(operation, owner);
+    Object.assign(operation, { status: uncertain ? "uncertain" : "failed", at: new Date().toISOString(), error });
+  }),
+  defer: async (caseId, key, owner) => changeOperation(caseId, key, (operation) => {
+    requireOperationOwner(operation, owner);
+    if (operation.stage !== "canonical") throw new Error("External stages cannot be deferred");
+    operation.status = "pending";
+    delete operation.owner; delete operation.expiresAt;
+  }),
+  recover: async (caseId, key, reason) => {
+    if (!reason.trim()) throw new Error("Recovery requires an explicit reason");
+    await changeOperation(caseId, key, (operation) => {
+      if (!["failed", "uncertain"].includes(operation.status)) throw new Error("Only failed/uncertain operations can be recovered");
+      operation.recoveries.push({ at: new Date().toISOString(), reason });
+      operation.status = "pending";
+      delete operation.owner; delete operation.error; delete operation.expiresAt;
+    });
+  },
+  alias: async (caseId, url, sourceId) => {
+    const { rows } = await (await db()).query<{ source_id: string }>(
+      `INSERT INTO case_source_aliases (case_id, url, source_id) VALUES ($1, $2, $3)
+       ON CONFLICT (case_id, url) DO UPDATE SET url = EXCLUDED.url RETURNING source_id`, [caseId, url, sourceId]);
+    return rows[0]!.source_id;
+  },
+  resolve: async (caseId, url) => {
+    const { rows } = await (await db()).query<{ source_id: string }>("SELECT source_id FROM case_source_aliases WHERE case_id = $1 AND url = $2", [caseId, url]);
+    return rows[0]?.source_id;
+  },
+};
+
+export async function loadPhaseCheckpoint<T>(caseId: string, key: string): Promise<{ revision: number; body: T } | undefined> {
+  const { rows } = await (await db()).query<{ revision: number; body: T }>("SELECT revision, body FROM case_phase_sessions WHERE case_id = $1 AND session_key = $2", [caseId, key]);
+  return rows[0];
+}
+
+// expectedRevision=-1 creates a checkpoint; all further updates use CAS.
+export async function savePhaseCheckpoint<T>(caseId: string, key: string, expectedRevision: number, body: T): Promise<number> {
+  const result = expectedRevision === -1
+    ? await (await db()).query("INSERT INTO case_phase_sessions (case_id, session_key, body) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING", [caseId, key, JSON.stringify(body)])
+    : await (await db()).query("UPDATE case_phase_sessions SET body = $4, revision = revision + 1 WHERE case_id = $1 AND session_key = $2 AND revision = $3", [caseId, key, expectedRevision, JSON.stringify(body)]);
+  if (result.rowCount !== 1) throw new Error("Concurrent phase-session checkpoint; retry from durable state");
+  return expectedRevision + 1;
+}
+
+export async function saveCaseAuditRecord(caseId: string, id: string, body: unknown): Promise<void> {
+  // The WHERE guard reports conflicts without replacing the first published record.
+  const { rowCount } = await (await db()).query(
+    `INSERT INTO case_audit_records (case_id, record_id, body) VALUES ($1, $2, $3)
+     ON CONFLICT (case_id, record_id) DO UPDATE SET record_id = EXCLUDED.record_id
+     WHERE case_audit_records.body = EXCLUDED.body`, [caseId, id, JSON.stringify(body)]);
+  if (rowCount !== 1) throw new Error("Public audit record changed on retry");
+}
+
+export async function getCaseAuditRecords(caseId: string): Promise<unknown[]> {
+  const { rows } = await (await db()).query<{ body: unknown }>("SELECT body FROM case_audit_records WHERE case_id = $1 ORDER BY record_id", [caseId]);
+  return rows.map((row) => row.body);
+}
+
+export async function getSourceOperations(caseId: string): Promise<Operation[]> {
+  const { rows } = await (await db()).query<{ body: Operation }>("SELECT body FROM case_source_operations WHERE case_id = $1 ORDER BY operation_key", [caseId]);
+  return rows.map((row) => row.body);
+}
+
+export async function saveSandboxBinding(caseId: string, sandboxId: string, body: SandboxBinding): Promise<void> {
+  const { rowCount } = await (await db()).query(
+    `INSERT INTO case_sandbox_bindings (case_id, sandbox_id, body) VALUES ($1, $2, $3)
+     ON CONFLICT (sandbox_id) DO UPDATE SET body = EXCLUDED.body
+     WHERE case_sandbox_bindings.case_id = EXCLUDED.case_id
+       AND case_sandbox_bindings.body->>'phaseSessionId' = EXCLUDED.body->>'phaseSessionId'
+       AND case_sandbox_bindings.body->>'revoked' = 'false'`, [caseId, sandboxId, JSON.stringify(body)]);
+  if (rowCount !== 1) throw new Error("Sandbox binding cannot be reassigned or unrevoked");
+}
+
+export async function consumeSandboxBinding(sandboxId: string, caseId?: string): Promise<{ caseId: string; binding: SandboxBinding }> {
+  const client = await (await db()).connect();
+  try {
+    await client.query("BEGIN");
+    const result = await client.query<{ case_id: string; body: SandboxBinding; status: string; pipeline_version: number }>(
+      `SELECT b.case_id, b.body, c.status, c.pipeline_version FROM case_sandbox_bindings b
+       JOIN cases c ON c.id = b.case_id WHERE b.sandbox_id = $1 FOR UPDATE OF b`, [sandboxId]);
+    const row = result.rows[0];
+    if (!row || (caseId && row.case_id !== caseId)) throw new Error("sandbox_forbidden");
+    const events = await client.query<{ body: CourtEvent }>("SELECT body FROM events WHERE case_id = $1 ORDER BY seq", [row.case_id]);
+    const session = await client.query<{ body: { id?: string; activeTurn?: { id?: string } } }>("SELECT body FROM case_phase_sessions WHERE case_id = $1 AND session_key = $2", [row.case_id, row.body.sessionKey]);
+    authorizeSandboxBinding(row.body, { phase: committedPhase(events.rows.map((event) => event.body)), status: row.status, pipelineVersion: row.pipeline_version, phaseSessionId: session.rows[0]?.body.id, activeTurnId: session.rows[0]?.body.activeTurn?.id });
+    row.body.activeTurn!.remainingRequests--;
+    await client.query("UPDATE case_sandbox_bindings SET body = $2 WHERE sandbox_id = $1", [sandboxId, JSON.stringify(row.body)]);
+    await client.query("COMMIT");
+    return { caseId: row.case_id, binding: row.body };
+  } catch (error) { await client.query("ROLLBACK"); throw error; }
+  finally { client.release(); }
+}
+
+export async function revokeSandboxBindings(caseId: string, phase?: string): Promise<void> {
+  await (await db()).query("UPDATE case_sandbox_bindings SET body = jsonb_set(body - 'activeTurn', '{revoked}', 'true'::jsonb) WHERE case_id = $1 AND ($2::text IS NULL OR body->>'phase' = $2)", [caseId, phase ?? null]);
 }

@@ -80,6 +80,27 @@ const judgeScript: Script = (prompt, tools) => {
   return [];
 };
 
+test("settlement is committed after source decisions and before instruction closes", async () => {
+  const { bench, events } = makeBench({ judge: judgeScript, grok: counsel("grok", { A1: "verdadero", A2: "verdadero" }), gemini: counsel("gemini", { A1: "verdadero", A2: "verdadero" }), claude: counsel("claude", { A1: "verdadero", A2: "verdadero" }), chatgpt: counsel("chatgpt", { A1: "verdadero", A2: "verdadero" }) });
+  bench.settle = async (record) => {
+    assert.ok(record.some((event) => event.type === "source_decided"));
+    assert.ok(events.some((event) => event.type === "source_decided"), "source decisions must already be durable");
+    assert.ok(!record.some((event) => event.type === "instruction_closed"));
+    return { type: "evidence_settled", schemaVersion: 2, manifestHash: "a".repeat(64) };
+  };
+  await holdSession(bench);
+  const settled = events.findIndex((event) => event.type === "evidence_settled");
+  assert.ok(settled > events.findIndex((event) => event.type === "source_decided"));
+  assert.equal(events[settled + 1]?.type, "instruction_closed");
+});
+
+test("settlement failure blocks closure and every debate turn", async () => {
+  const { bench, events } = makeBench({ judge: judgeScript, grok: counsel("grok", {}), gemini: counsel("gemini", {}), claude: counsel("claude", {}), chatgpt: counsel("chatgpt", {}) });
+  bench.settle = async () => { throw new Error("Required admitted source missing"); };
+  await assert.rejects(holdSession(bench), /Required admitted source missing/);
+  assert.ok(!events.some((event) => event.type === "instruction_closed" || event.type === "floor_granted"));
+});
+
 test("translated contributions reach unification and source review, including after an incomplete instruction attempt", async () => {
   let instructionAttempts = 0;
   const grok: Script = (prompt, tools) => {

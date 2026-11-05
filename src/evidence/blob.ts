@@ -1,6 +1,7 @@
 import { BlobNotFoundError, copy, del, head, list, put } from "@vercel/blob";
 import { normalizeEvidenceBytes, sha256, type EvidenceFiles } from "./validate.ts";
 import { withCaseWriteLock } from "../store.ts";
+import { normalizeArtifactBytes, type ArtifactStore } from "./artifacts.ts";
 
 const ROOT = (caseId: string) => `cases/${encodeURIComponent(caseId)}/evidence/`;
 const ARCHIVE = (caseId: string) => `cases/${encodeURIComponent(caseId)}/case.zip`;
@@ -175,7 +176,7 @@ export async function findEvidenceArchive(caseId: string): Promise<EvidenceArchi
 }
 
 export async function hasEvidenceBase(caseId: string): Promise<boolean> {
-  return Boolean(await findBlob(`${ROOT(caseId)}base/index.md`));
+  return Boolean(await findBlob(`${ROOT(caseId)}base/index.md`) || await findBlob(`cases/${encodeURIComponent(caseId)}/instruction/base/submission.json`));
 }
 
 export async function writeEvidenceArchive(caseId: string, bytes: Uint8Array): Promise<EvidenceArchive> {
@@ -211,6 +212,7 @@ export async function writeEvidenceTree(caseId: string, files: EvidenceFiles): P
     const prefix = ROOT(caseId);
     let totalSize = 0;
     for (const [path, content] of files) {
+      if (/^evidence\/(?:E\d+\.md|manifest\.json|question\.json|index\.md)$/.test(path)) throw new Error("Settled evidence requires the immutable host artifact writer");
       const bytes = normalizeEvidenceBytes(path, content);
       totalSize += bytes.byteLength;
       if (totalSize > 25 * 1024 * 1024) throw new Error("Evidence upload exceeds 25 MiB.");
@@ -235,3 +237,61 @@ export async function writeEvidenceTree(caseId: string, files: EvidenceFiles): P
     }
   });
 }
+
+export const caseArtifactStore: ArtifactStore = {
+  read: async (caseId) => {
+    const prefix = `cases/${encodeURIComponent(caseId)}/`;
+    const auth = blobAuth();
+    const files = new Map<string, Uint8Array>();
+    const hashes = new Map<string, string>();
+    let cursor: string | undefined;
+    do {
+      const page = await list({ prefix, cursor, limit: 1000, mode: "expanded", ...auth });
+      for (const blob of page.blobs) {
+        if (!blob.pathname.startsWith(prefix)) throw new EvidenceConsistencyError("Artifact outside requested case");
+        const path = blob.pathname.slice(prefix.length);
+        const hash = /^\.sha256\/([a-f0-9]{64})\/(.+)\.json$/.exec(path);
+        if (hash) {
+          if (hashes.has(hash[2]!) && hashes.get(hash[2]!) !== hash[1]) throw new EvidenceConsistencyError("Conflicting immutable artifact hashes");
+          hashes.set(hash[2]!, hash[1]!);
+        } else if (/^(?:instruction|evidence|discussion)\//.test(path) || path === "case.jsonl") {
+          files.set(path, await readPublicBlob(blob));
+        }
+      }
+      if (page.hasMore && (!page.cursor || page.cursor === cursor)) throw new Error("Artifact pagination failed");
+      cursor = page.hasMore ? page.cursor : undefined;
+    } while (cursor);
+    for (const [path, bytes] of files) {
+      // Bytes written before a crash are not published until their hash exists.
+      if (!hashes.has(path)) { files.delete(path); continue; }
+      if (sha256(bytes) !== hashes.get(path)) throw new EvidenceConsistencyError(`Artifact hash verification failed: ${path}`);
+    }
+    for (const path of hashes.keys()) if (!files.has(path)) throw new EvidenceConsistencyError(`Artifact is missing: ${path}`);
+    return files;
+  },
+  write: async (caseId, files) => withCaseWriteLock(caseId, async () => {
+    const prefix = `cases/${encodeURIComponent(caseId)}/`;
+    const auth = blobAuth();
+    let total = 0;
+    for (const [path, content] of files) {
+      const bytes = normalizeArtifactBytes(path, content);
+      total += bytes.byteLength;
+      if (total > 25 * 1024 * 1024) throw new Error("Artifact batch exceeds 25 MiB");
+      const digest = sha256(bytes);
+      try {
+        await put(prefix + path, Buffer.from(bytes), { access: BLOB_ACCESS, addRandomSuffix: false, allowOverwrite: false, contentType: path.endsWith(".md") ? "text/markdown; charset=utf-8" : "application/octet-stream", ...auth });
+      } catch (error) {
+        // A retry can accept existing bytes, never overwrite a conflicting object.
+        const existing = await findBlob(prefix + path);
+        if (!existing || sha256(await readPublicBlob(existing)) !== digest) throw error;
+      }
+      const hashPath = `${prefix}.sha256/${digest}/${path}.json`;
+      try {
+        await put(hashPath, JSON.stringify({ path, sha256: digest }), { access: BLOB_ACCESS, addRandomSuffix: false, allowOverwrite: false, contentType: "application/json", ...auth });
+      } catch (error) {
+        const existing = await findBlob(hashPath);
+        if (!existing || sha256(await readPublicBlob(existing)) !== sha256(JSON.stringify({ path, sha256: digest }))) throw error;
+      }
+    }
+  }),
+};

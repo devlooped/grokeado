@@ -20,15 +20,18 @@ export function citationRefs(events: readonly RecordedEvent[], view: CaseView): 
     if (e.type === "evidence_filed") refs.set(e.evidence.id, "#" + e.evidence.id);
   }
   for (const claim of view.claims) refs.set(claim.id, "#" + claim.id);
-  for (const id of view.sources.keys()) refs.set(id, "#" + id);
+  for (const [id, source] of view.sources) refs.set(id, source.sourceId && source.excluded === false ? `/evidence/${id}.md` : "#" + id);
   return refs;
 }
 
 // Treat external URLs as whole tokens so an ID in a URL is not mistaken for a case reference.
-const MENTION = /https?:\/\/[^\s<>"']+|\/evidence\/[^\s)\]},;]+|\b[A-Z]\d{1,3}\b/g;
+const MENTION = /https?:\/\/[^\s<>"']+|\/evidence\/[^\s)\]},;]+|\bE\d+(?:#p\d+(?::b\d+)?)\b|\b[A-Z]\d{1,3}\b/g;
 
 export function citationHref(token: string, ctx: Citations): string | undefined {
-  return token.startsWith("/evidence/") ? evidenceHref(ctx.caseId, token) : ctx.refs.get(token);
+  if (token.startsWith("/evidence/")) return evidenceHref(ctx.caseId, token);
+  const section = /^(E\d+)(#p\d+(?::b\d+)?)$/.exec(token);
+  const reference = ctx.refs.get(section?.[1] ?? token);
+  return reference?.startsWith("/evidence/") ? evidenceHref(ctx.caseId, reference + (section?.[2] ?? "")) : section ? undefined : reference;
 }
 
 export function mentions(text: string, ctx: Citations): { token: string; index: number; href: string }[] {

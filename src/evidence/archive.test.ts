@@ -5,6 +5,9 @@ import { archiveEvidence, createEvidenceArchive, getOrCreateEvidenceArchive } fr
 import { evidenceDownloadResponse } from "./archive-download.ts";
 import type { RecordedEvent } from "../domain/court.ts";
 import type { EvidenceFiles } from "./validate.ts";
+import { MemoryArtifactStore } from "./artifacts.ts";
+import { settleEvidence } from "./settled.ts";
+import { parseCaseLog } from "./case-log.ts";
 
 // Read the central directory and inflate each entry independently of the writer.
 function unzip(zip: Buffer): Map<string, Buffer> {
@@ -57,6 +60,34 @@ const files: EvidenceFiles = new Map<string, Uint8Array | string>([
   ["evidence/claude/runs/1/transcript.jsonl", ""],
   ["evidence/base/raw/checksum.txt", "123456789"],
 ]);
+
+test("new archives contain instruction/evidence/discussion and one complete root case.jsonl, never private checkpoints or duplicate logs", async () => {
+  const artifacts = new MemoryArtifactStore();
+  await artifacts.write("fixture", new Map([
+    ["instruction/base/submission.json", '{"kind":"text","text":"Sanitized fixture"}'],
+    ["instruction/runs/grok/fixture/transcript.jsonl", "legacy duplicate should not export"],
+    ["discussion/grok/fixture/draft.md", "Analysis, not proof"],
+  ]));
+  const event = await settleEvidence("fixture", "en", [], { source: async () => { throw new Error("No sources"); } }, artifacts);
+  const events: RecordedEvent[] = [{ ...event, seq: 1, at: "2026-11-05T00:00:00.000Z" }, { type: "instruction_closed", seq: 2, at: "2026-11-05T00:00:01.000Z" }, { type: "session_closed", seq: 3, at: "2026-11-05T00:00:02.000Z" }];
+  let zip = Buffer.alloc(0);
+  const dependencies = {
+    getCase: async () => ({ id: "fixture", createdAt: events[0]!.at, status: "resolved" as const, submission: { kind: "text" as const, text: "Sanitized fixture" }, revision: 1, pipelineVersion: 2 as const }),
+    artifacts, getEvents: async () => events, getCaseAuditRecords: async () => [], getSourceOperations: async () => [],
+    readEvidenceTree: async () => { throw new Error("Legacy reader must not run"); },
+    writeEvidenceTree: async () => { throw new Error("Legacy writer must not run"); },
+    writeCaseTranscript: async () => { throw new Error("Legacy transcript must not run"); },
+    writeEvidenceArchive: async (_id: string, value: Uint8Array) => { zip = Buffer.from(value); return { downloadUrl: "fixture", etag: "v1" }; },
+  };
+  await archiveEvidence("fixture", dependencies);
+  const extracted = unzip(zip);
+  for (const path of ["instruction/base/submission.json", "evidence/manifest.json", "discussion/grok/fixture/draft.md", "case.jsonl"]) assert.ok(extracted.has(path));
+  assert.ok([...extracted.keys()].every((path) => !/(?:acta|transcript)\.jsonl$|phase_session|checkpoint/.test(path)));
+  assert.deepEqual(parseCaseLog(extracted.get("case.jsonl")!.toString()).map((record) => record.data), events);
+  const first = zip;
+  await archiveEvidence("fixture", dependencies);
+  assert.deepEqual(zip, first);
+});
 
 test("archives the entire evidence tree with reproducible UTF-8 paths and original bytes", async () => {
   const zip = await createEvidenceArchive(files);

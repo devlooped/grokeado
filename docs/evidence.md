@@ -1,5 +1,9 @@
 # Evidence bundle format
 
+This page describes the legacy pipeline 1 bundle. New cases default to pipeline 2,
+which uses [shared instruction and settled evidence](shared-instruction.md); existing
+cases and archives retain the format below.
+
 Cases store an OKF-style tree in public-read Vercel Blob storage at
 `cases/{caseId}/evidence/`. `evidence/base/` is collector-owned and read-only.
 Each assistant writes only under `evidence/{seat}/`, where the seat is `grok`,

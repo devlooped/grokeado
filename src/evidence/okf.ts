@@ -1,15 +1,20 @@
 import { parseDocument, stringify } from "yaml";
+import { renderEvidenceMarkdown } from "./markdown.ts";
 import { EvidenceDocumentSchema, type EvidenceDocument } from "./schema.ts";
 
 const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/;
 
-export function parseEvidenceDocument(source: string): EvidenceDocument {
+export function parseYamlFrontmatter(source: string): { metadata: unknown; body: string } {
   const match = FRONTMATTER.exec(source);
   if (!match) throw new Error("Missing YAML frontmatter");
 
   const document = parseDocument(match[1]!, { uniqueKeys: true });
   if (document.errors.length) throw new Error(document.errors.map((error) => error.message).join("; "));
-  return EvidenceDocumentSchema.parse(document.toJS());
+  return { metadata: document.toJS(), body: source.slice(match[0].length) };
+}
+
+export function parseEvidenceDocument(source: string): EvidenceDocument {
+  return EvidenceDocumentSchema.parse(parseYamlFrontmatter(source).metadata);
 }
 
 export function serializeEvidenceDocument(document: EvidenceDocument, body = ""): string {
@@ -65,18 +70,9 @@ export function evidencePageLink(path: string, page: number): string {
   return `/${path}#p${page}`;
 }
 
-function escapeHtml(value: string): string {
-  return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
-}
-
 export function renderEvidenceHtml(source: string): string {
   const document = parseEvidenceDocument(source);
   const body = source.replace(FRONTMATTER, "").trim();
-  const markedPages = new Set([...body.matchAll(/\[p\.(\d+)\]/gi)].map((match) => Number(match[1])));
-  const escaped = escapeHtml(body);
-  const anchored = escaped.replace(/\[p\.(\d+)\]/gi, (_marker, page: string) => `<span id="p${page}" class="page">Página ${page}</span>`);
   const pages = document.type === "fragment" ? [document.page] : document.type === "evidence" ? document.pages : [];
-  const missingAnchors = pages.filter((page) => !markedPages.has(page)).map((page) => `<span id="p${page}"></span>`).join("");
-  const title = escapeHtml(document.title || "Documento de evidencia");
-  return `<!doctype html><html lang="es-AR"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${title} · CheBot</title><style>body{font:16px/1.6 system-ui,sans-serif;margin:2rem auto;max-width:70rem;padding:0 1rem}pre{white-space:pre-wrap;overflow-wrap:anywhere}.page{display:block;font-weight:700;margin:1.5rem 0 .5rem}</style><main>${missingAnchors}<pre>${anchored}</pre></main></html>`;
+  return renderEvidenceMarkdown({ title: document.title, body, pages, language: "es-AR" });
 }

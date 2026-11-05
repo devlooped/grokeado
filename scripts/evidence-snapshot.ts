@@ -29,14 +29,18 @@ async function run(command: string, args: string[], sudo = false, env?: Record<s
 }
 
 try {
-  const [packageJson, harness] = await Promise.all([
+  const [packageJson, harness, instructionHarness, compute] = await Promise.all([
     readFile("sandbox/harness/package.json", "utf8"),
     readFile("sandbox/harness/agent.ts", "utf8"),
+    readFile("sandbox/harness/instruction-agent.ts", "utf8"),
+    readFile("sandbox/harness/compute.ts", "utf8"),
   ]);
   await run("bash", ["-lc", "mkdir -p /opt/evidence-harness && chown -R \"$(id -un):$(id -gn)\" /opt/evidence-harness"], true);
   await sandbox.writeFiles([
     { path: "/opt/evidence-harness/package.json", content: packageJson },
     { path: "/opt/evidence-harness/agent.ts", content: harness },
+    { path: "/opt/evidence-harness/instruction-agent.ts", content: instructionHarness },
+    { path: "/opt/evidence-harness/compute.ts", content: compute },
   ]);
   await run("apt-get", ["update"], true, { DEBIAN_FRONTEND: "noninteractive" });
   await run("apt-get", ["install", "-y", "python3", "python3-pip", "tesseract-ocr", "tesseract-ocr-spa", "poppler-utils", "imagemagick"], true, { DEBIAN_FRONTEND: "noninteractive" });
@@ -47,6 +51,7 @@ try {
   snapshotted = true;
   console.log("Evidence snapshot: " + snapshot.snapshotId);
   console.log("Set EVIDENCE_SANDBOX_SNAPSHOT_ID to this value.");
+  console.log("Shared instruction reuses this snapshot and uploads its current harness from the application deployment.");
 } finally {
   if (!snapshotted) await sandbox.stop();
 }

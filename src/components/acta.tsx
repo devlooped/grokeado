@@ -181,6 +181,8 @@ function Entry({ e, ctx }: { e: RecordedEvent; ctx: Context }) {
       return <p className={"text-sm " + (e.excluded ? "text-seal" : "text-ink-soft")}><a href={"#" + e.sourceId} className="font-mono hover:underline">{e.sourceId}</a>: {e.excluded ? "anulada por mayoría (al menos 3 de 4 votos)." : "admitida; no hubo mayoría para anularla."}</p>;
     case "instruction_closed":
       return <Clerk>Termina la instrucción · fuentes fijadas para las exposiciones</Clerk>;
+    case "evidence_settled":
+      return <Clerk>Evidencia fijada · <a href={`/c/${encodeURIComponent(ctx.caseId)}/evidence/index.md`} className="underline">Índice del corpus admitido</a></Clerk>;
     case "floor_granted":
       return <Clerk>El moderador da la palabra a {MODEL_NAME[e.to]} · {STAGE_LABEL[e.stage]}</Clerk>;
     case "statement":

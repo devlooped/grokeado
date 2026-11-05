@@ -83,6 +83,8 @@ export function describe(e: CourtEvent): string {
       return "Fuente " + e.sourceId + ": " + (e.excluded ? "ANULADA por mayoría absoluta (al menos 3 de 4 votos); no puede usarse como prueba." : "admitida; no hubo mayoría absoluta para anularla.");
     case "instruction_closed":
       return "Termina la instrucción. El expediente común queda cerrado antes de las exposiciones; solo pueden citarse fuentes admitidas.";
+    case "evidence_settled":
+      return "Expediente de evidencia fijado y verificado (versión 2).";
     case "floor_granted":
       return "El moderador da la palabra a " + MODEL_NAME[e.to] + " para su " + STAGE_LABEL[e.stage] + ".";
     case "statement":

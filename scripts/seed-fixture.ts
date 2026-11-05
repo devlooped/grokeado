@@ -1,7 +1,10 @@
 import type { RecordedEvent } from "../src/domain/court.ts";
 import { createCase, finishCase, recordEvents } from "../src/store.ts";
+import nextEnv from "@next/env";
+import { requireLocalDatabase } from "../src/lib/local-database.ts";
 
-if (!process.env.DATABASE_URL?.includes("fixture")) throw new Error("point DATABASE_URL at a throwaway database whose URL contains 'fixture'; this never writes to the real database");
+nextEnv.loadEnvConfig(process.cwd(), true);
+requireLocalDatabase();
 
 const id = "fixture1";
 await createCase(id, { kind: "text", text: "[Fixture visual] El dulce de leche se inventó en la Argentina y la birome es un invento argentino." });

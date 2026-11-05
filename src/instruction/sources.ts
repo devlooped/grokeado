@@ -1,0 +1,331 @@
+import { modelEffort, type CourtModel } from "../court/models.ts";
+import { caseArtifactStore } from "../evidence/blob.ts";
+import type { ArtifactStore } from "../evidence/artifacts.ts";
+import { downloadUrl, sniffExtension, type DownloadResult } from "../evidence/download.ts";
+import { defaultRecognize, extractHtml, extractPdf } from "../evidence/extract.ts";
+import { languageVerifierFor, translatorFor, type LanguageVerifier, type Translator } from "../evidence/translate.ts";
+import { sha256 } from "../evidence/validate.ts";
+import { sourceOperationRepository } from "../store.ts";
+import type { OperationRepository, OperationStatus } from "./source-store.ts";
+import { z } from "zod";
+
+export const EXTRACTION_VERSION = "markdown-blocks-v1";
+export const TRANSLATION_VERSION = "canonical-markdown-verified-v2";
+
+// A completed, rejected result is different from an interrupted external call.
+export class SourceProcessingFailure extends Error {}
+
+export type SourceBlock = { id: string; page: number; text: string };
+export type ExtractedSource = { title: string; blocks: SourceBlock[]; tool: string; confidence: number };
+type BlockLocation = { id: string; page: number; offset: number; length: number };
+type StoredDocument = { title: string; path: string; hash: string; blocks: BlockLocation[]; tool: string; confidence: number };
+type Acquisition = { sourceId: string; url: string; finalUrl: string; at: string; originalPath: string; rawHash: string; contentType: string; extension: string };
+
+export type CanonicalSource = {
+  schemaVersion: 2;
+  sourceId: string;
+  language: string;
+  acquisition: Acquisition;
+  extraction: { version: string; path: string; hash: string; tool: string; confidence: number };
+  translation: { version: string; modelId: string; fingerprint: string };
+  document: StoredDocument;
+};
+
+export type SourceReadInput = { url: string; page?: number; blockIds?: string[]; maxChars?: number; cursor?: { block: number; offset: number } };
+export const SourceReadSchema = z.object({
+  url: z.string().url(), page: z.number().int().positive().optional(),
+  blockIds: z.array(z.string().regex(/^p[1-9]\d*:b[1-9]\d*$/)).min(1).max(100).optional(),
+  maxChars: z.number().int().min(1).max(20_000).optional(),
+  cursor: z.object({ block: z.number().int().nonnegative(), offset: z.number().int().nonnegative() }).strict().optional(),
+}).strict();
+export type SourceReadResult = {
+  sourceId: string; status: "ready"; reused: boolean; language: string; title: string;
+  blocks: SourceBlock[]; truncated: boolean; next?: { block: number; offset: number };
+} | { sourceId: string; status: Exclude<OperationStatus, "ready" | "running">; operation: string; errorCode?: string };
+
+export function normalizeSourceUrl(raw: string): string {
+  const url = new URL(raw);
+  if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) throw new Error("Invalid source URL");
+  url.hash = "";
+  return url.href;
+}
+
+function sourceIdFor(url: string) { return `src_${sha256(url).slice(0, 24)}`; }
+function sourceRoot(id: string) {
+  if (!/^src_[a-f0-9]{24}$/.test(id)) throw new Error("Invalid source ID");
+  return `instruction/sources/${id}`;
+}
+
+// Chunk at Markdown block/line boundaries, never silently truncate extraction.
+export function markdownBlocks(pages: Array<{ page: number; text: string }>): SourceBlock[] {
+  return pages.flatMap(({ page, text }) => {
+    const parts: string[] = [];
+    for (const paragraph of text.trim().split(/\n\s*\n/)) {
+      if (!paragraph.trim()) continue;
+      if (paragraph.length <= 10_000) { parts.push(paragraph); continue; }
+      let chunk = "";
+      for (const line of paragraph.split("\n")) {
+        if (line.length > 10_000) throw new SourceProcessingFailure("Unbounded Markdown line");
+        if (chunk.length + line.length + 1 > 10_000) { parts.push(chunk); chunk = ""; }
+        chunk += (chunk ? "\n" : "") + line;
+      }
+      if (chunk) parts.push(chunk);
+    }
+    return parts.map((part, index) => ({ id: `p${page}:b${index + 1}`, page, text: part }));
+  });
+}
+
+export async function extractSource(download: Extract<DownloadResult, { ok: true }>, extension: string): Promise<ExtractedSource> {
+  if (["html", "htm"].includes(extension)) {
+    const result = await extractHtml(new TextDecoder().decode(download.bytes), download.finalUrl);
+    return { title: result.title ?? download.finalUrl, blocks: markdownBlocks([{ page: 1, text: result.markdown }]), tool: result.tool, confidence: result.confidence };
+  }
+  if (extension === "pdf") {
+    const result = await extractPdf(download.bytes);
+    if (!result.ok) throw new SourceProcessingFailure("Source extraction failed");
+    return { title: "", blocks: markdownBlocks(result.pages), tool: result.tool, confidence: result.confidence };
+  }
+  if (["png", "jpg", "jpeg", "webp", "gif"].includes(extension)) {
+    const mime = extension === "jpg" ? "image/jpeg" : `image/${extension}`;
+    const result = await defaultRecognize(download.bytes, mime);
+    return { title: "", blocks: markdownBlocks([{ page: 1, text: result.text }]), tool: result.tool, confidence: result.confidence };
+  }
+  if (["txt", "md", "csv"].includes(extension)) {
+    let text: string;
+    try { text = new TextDecoder("utf-8", { fatal: true }).decode(download.bytes); }
+    catch { throw new SourceProcessingFailure("Invalid source text encoding"); }
+    return { title: "", blocks: markdownBlocks([{ page: 1, text }]), tool: "text-markdown", confidence: 1 };
+  }
+  throw new SourceProcessingFailure("Unsupported source format");
+}
+
+function renderDocument(source: ExtractedSource, path: string): { markdown: string; document: StoredDocument } {
+  let markdown = "";
+  let page = 0;
+  const blocks: BlockLocation[] = [];
+  for (const block of source.blocks) {
+    if (block.page !== page) { markdown += `[p.${block.page}]\n\n`; page = block.page; }
+    markdown += `[${block.id}]\n\n`;
+    blocks.push({ id: block.id, page: block.page, offset: markdown.length, length: block.text.length });
+    markdown += block.text + "\n\n";
+  }
+  return { markdown, document: { title: source.title, path, hash: sha256(markdown), blocks, tool: source.tool, confidence: source.confidence } };
+}
+
+const protectedParts = (text: string) => [...text.matchAll(/https?:\/\/[^\s)<>]+|\]\([^)]*\)|\d+(?:[.,]\d+)*|^\s*#{1,6}\s|\|/gm)].map((match) => match[0]);
+
+class StageUnavailable extends Error {
+  constructor(readonly operation: string, readonly status: "pending" | "failed" | "uncertain") { super(status); }
+}
+
+export type SourceDependencies = {
+  operations: OperationRepository;
+  artifacts: ArtifactStore;
+  download: typeof downloadUrl;
+  extract: typeof extractSource;
+  translate: Translator;
+  verifyLanguage: LanguageVerifier;
+  translatorModelId: string;
+  translatorEffort?: string | null;
+  translatorFingerprint: string;
+  extractionVersion?: string;
+};
+
+export function liveSourceDependencies(translator: CourtModel): SourceDependencies {
+  return { operations: sourceOperationRepository, artifacts: caseArtifactStore, download: downloadUrl, extract: extractSource, translate: translatorFor(translator), verifyLanguage: languageVerifierFor(translator), translatorModelId: translator.id, translatorEffort: modelEffort(translator), translatorFingerprint: sha256(JSON.stringify([translator.id, translator.providerOptions, TRANSLATION_VERSION])) };
+}
+
+export class SourceService {
+  constructor(readonly caseId: string, readonly language: string, private readonly deps: SourceDependencies) {}
+
+  async hostStage<T>(key: string, stage: string, run: () => Promise<T>): Promise<T> {
+    return (await this.stage(key, stage, run)).value;
+  }
+
+  private async translationStage<T>(key: string, run: () => Promise<T>): Promise<{ value: T; reused: boolean }> {
+    const deadline = Date.now() + 2000;
+    for (;;) {
+      try { return await this.stage(key, "translation", run); }
+      catch (error) {
+        if (!(error instanceof StageUnavailable) || error.status !== "pending" || Date.now() >= deadline) throw error;
+        // Briefly await another owner's publication, never take over its job.
+        await new Promise((resolve) => setTimeout(resolve, 40));
+      }
+    }
+  }
+
+  private async stage<T>(key: string, stage: string, run: () => Promise<T>): Promise<{ value: T; reused: boolean }> {
+    const claim = await this.deps.operations.claim(this.caseId, key, stage, 300_000);
+    if (!claim.owned) {
+      if (claim.operation.status === "ready") return { value: claim.operation.result as T, reused: true };
+      throw new StageUnavailable(key, claim.operation.status === "running" ? "pending" : claim.operation.status);
+    }
+    try {
+      const value = await run();
+      await this.deps.operations.publish(this.caseId, key, claim.owner, value);
+      return { value, reused: false };
+    } catch (error) {
+      if (error instanceof StageUnavailable && stage === "canonical") {
+        // Assembly has no uncheckpointed external work of its own. Its child
+        // operations retain ownership/failure; another reader may finish assembly.
+        await this.deps.operations.defer(this.caseId, key, claim.owner);
+        throw error;
+      }
+      // An interrupted external operation must never be silently repeated.
+      const uncertain = !(error instanceof SourceProcessingFailure);
+      await this.deps.operations.fail(this.caseId, key, claim.owner, error instanceof Error ? error.message : "Source processing failed", uncertain).catch(() => {});
+      throw new StageUnavailable(key, uncertain ? "uncertain" : "failed");
+    }
+  }
+
+  private async file(path: string, expectedHash: string): Promise<string> {
+    const bytes = (await this.deps.artifacts.read(this.caseId)).get(path);
+    if (!bytes || sha256(bytes) !== expectedHash) throw new Error("Required source artifact missing or changed");
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  }
+
+  private async writeDocument(source: ExtractedSource, path: string): Promise<StoredDocument> {
+    const rendered = renderDocument(source, path);
+    await this.deps.artifacts.write(this.caseId, new Map([[path, rendered.markdown]]));
+    return rendered.document;
+  }
+
+  private async blocks(document: StoredDocument): Promise<SourceBlock[]> {
+    const markdown = await this.file(document.path, document.hash);
+    return document.blocks.map(({ id, page, offset, length }) => ({ id, page, text: markdown.slice(offset, offset + length) }));
+  }
+
+  // Used for snippets, submission descriptions, court prose, and source titles.
+  // Each chunk's language decision is checkpointed along with its translation.
+  async normalize(title: string, body: string): Promise<{ title: string; body: string }> {
+    const chunks = markdownBlocks([{ page: 1, text: body }]);
+    if (!chunks.length) chunks.push({ id: "p1:b1", page: 1, text: "" });
+    const output: string[] = [];
+    let translatedTitle = title;
+    for (const [index, chunk] of chunks.entries()) {
+      const input = { title: index === 0 ? title : "", description: "", body: chunk.text };
+      const key = `translation:${sha256(JSON.stringify([input, this.language, this.deps.translatorFingerprint, TRANSLATION_VERSION]))}`;
+      const result = await this.translationStage<{ path: string; hash: string; modelId: string; effort: string | null; usage: unknown }>(key, async () => {
+        const translated = await this.deps.translate(input, this.language);
+        if ((input.title && !translated.title.trim()) || (input.body && !translated.body.trim()) ||
+            JSON.stringify(protectedParts(input.title)) !== JSON.stringify(protectedParts(translated.title)) ||
+            JSON.stringify(protectedParts(input.body)) !== JSON.stringify(protectedParts(translated.body))) throw new SourceProcessingFailure("Translation changed protected Markdown, links, or numbers");
+        const verification = await this.deps.verifyLanguage({ title: translated.title, body: translated.body }, this.language);
+        if (!verification.matches) throw new SourceProcessingFailure("Translation language could not be confirmed");
+        const content = JSON.stringify({ title: translated.title, body: translated.body, changed: translated.changed, language: this.language, verification, usage: translated.usage ?? null });
+        const path = `instruction/operations/${sha256(key)}/translation.json`;
+        await this.deps.artifacts.write(this.caseId, new Map([[path, content]]));
+        return { path, hash: sha256(content), modelId: this.deps.translatorModelId, effort: this.deps.translatorEffort ?? null, usage: translated.usage ?? null, verificationUsage: verification.usage ?? null };
+      });
+      const translated = JSON.parse(await this.file(result.value.path, result.value.hash)) as { title: string; body: string };
+      if (index === 0) translatedTitle = translated.title;
+      output.push(translated.body);
+    }
+    return { title: translatedTitle, body: output.join("\n\n") };
+  }
+
+  async source(sourceId: string): Promise<CanonicalSource> {
+    const file = (await this.deps.artifacts.read(this.caseId)).get(`${sourceRoot(sourceId)}/source.json`);
+    if (!file) throw new Error("Canonical source unavailable");
+    const source = JSON.parse(new TextDecoder().decode(file)) as CanonicalSource;
+    if (source.sourceId !== sourceId || source.language !== this.language || source.schemaVersion !== 2) throw new Error("Canonical source mismatch");
+    await this.file(source.document.path, source.document.hash);
+    return source;
+  }
+
+  async passages(sourceId: string, ids: readonly string[]): Promise<{ source: CanonicalSource; blocks: SourceBlock[] }> {
+    const source = await this.source(sourceId);
+    const blocks = await this.blocks(source.document);
+    if (!ids.length || new Set(ids).size !== ids.length || ids.some((id) => !blocks.some((block) => block.id === id))) throw new Error("Unknown source blocks");
+    return { source, blocks: blocks.filter((block) => ids.includes(block.id)) };
+  }
+
+  // Host-only intake: detect the case language from extraction, without exposing
+  // the source language to a participating seat or translating prematurely.
+  async inspect(rawUrl: string): Promise<{ sourceId: string; acquisition: Acquisition; document: StoredDocument; blocks: SourceBlock[] }> {
+    const url = normalizeSourceUrl(rawUrl);
+    const sourceId = await this.deps.operations.alias(this.caseId, url, sourceIdFor(url));
+      const acquired = await this.stage<Acquisition>(`acquisition:${sourceId}`, "acquisition", async () => {
+        const downloaded = await this.deps.download(url);
+        if (!downloaded.ok) throw new SourceProcessingFailure(downloaded.error);
+        const finalUrl = normalizeSourceUrl(downloaded.finalUrl);
+        const originalPath = `${sourceRoot(sourceId)}/original.bin`;
+        await this.deps.artifacts.write(this.caseId, new Map([[originalPath, downloaded.bytes]]));
+        return { sourceId, url, finalUrl, at: new Date().toISOString(), originalPath, rawHash: sha256(downloaded.bytes), contentType: downloaded.contentType, extension: sniffExtension(downloaded.bytes, downloaded.contentType, new URL(finalUrl).pathname) };
+      });
+      const acquisition = acquired.value;
+      const canonicalId = await this.deps.operations.alias(this.caseId, acquisition.finalUrl, sourceId);
+      if (canonicalId !== sourceId) return this.inspect(acquisition.finalUrl);
+      const extractionKey = `extraction:${sha256(JSON.stringify([acquisition.rawHash, this.deps.extractionVersion ?? EXTRACTION_VERSION, ["html", "htm"].includes(acquisition.extension) ? acquisition.finalUrl : acquisition.extension]))}`;
+      const extracted = await this.stage<StoredDocument>(extractionKey, "extraction", async () => {
+        const bytes = (await this.deps.artifacts.read(this.caseId)).get(acquisition.originalPath);
+        if (!bytes || sha256(bytes) !== acquisition.rawHash) throw new SourceProcessingFailure("Original source missing or changed");
+        const result = await this.deps.extract({ ok: true, bytes, contentType: acquisition.contentType, finalUrl: acquisition.finalUrl, redirects: 0 }, acquisition.extension);
+        if (!result.blocks.length || !result.blocks.some((block) => block.text.trim())) throw new SourceProcessingFailure("Source extraction empty");
+        return this.writeDocument(result, `instruction/operations/${sha256(extractionKey)}/extracted.md`);
+      });
+      return { sourceId, acquisition, document: extracted.value, blocks: await this.blocks(extracted.value) };
+  }
+
+  async read(input: SourceReadInput): Promise<SourceReadResult> {
+    input = SourceReadSchema.parse(input);
+    const fallbackId = await this.deps.operations.resolve(this.caseId, normalizeSourceUrl(input.url)) ?? sourceIdFor(normalizeSourceUrl(input.url));
+    const previous = (await this.deps.artifacts.read(this.caseId)).get(`${sourceRoot(fallbackId)}/source.json`);
+    if (previous) {
+      const source = JSON.parse(new TextDecoder().decode(previous)) as CanonicalSource;
+      if (source.language !== this.language || source.translation.fingerprint !== this.deps.translatorFingerprint || source.extraction.version !== (this.deps.extractionVersion ?? EXTRACTION_VERSION)) throw new Error("Source processing snapshot changed; a reviewed revision is required");
+    }
+    try {
+      const { sourceId, acquisition, document: extracted, blocks: originalBlocks } = await this.inspect(input.url);
+      const sourceKey = `canonical:${sha256(JSON.stringify([sourceId, extracted.hash, extracted.title, this.language, this.deps.translatorFingerprint]))}`;
+      const canonical = await this.stage<{ path: string; hash: string }>(sourceKey, "canonical", async () => {
+        const blocks: SourceBlock[] = [];
+        let title = extracted.title;
+        for (const [index, block] of originalBlocks.entries()) {
+          const translated = await this.normalize(index === 0 ? title : "", block.text);
+          if (index === 0) title = translated.title;
+          blocks.push({ ...block, text: translated.body });
+        }
+        const document = await this.writeDocument({ ...extracted, title: title || acquisition.finalUrl, blocks }, `${sourceRoot(sourceId)}/translations/${this.language}/${this.deps.translatorFingerprint}.md`);
+        const source: CanonicalSource = { schemaVersion: 2, sourceId, language: this.language, acquisition,
+          extraction: { version: this.deps.extractionVersion ?? EXTRACTION_VERSION, path: extracted.path, hash: extracted.hash, tool: extracted.tool, confidence: extracted.confidence },
+          translation: { version: TRANSLATION_VERSION, modelId: this.deps.translatorModelId, fingerprint: this.deps.translatorFingerprint }, document };
+        const content = JSON.stringify(source);
+        const path = `${sourceRoot(sourceId)}/source.json`;
+        await this.deps.artifacts.write(this.caseId, new Map([[`${sourceRoot(sourceId)}/extracted.md`, await this.file(extracted.path, extracted.hash)], [path, content]]));
+        return { path, hash: sha256(content) };
+      });
+      const source = JSON.parse(await this.file(canonical.value.path, canonical.value.hash)) as CanonicalSource;
+      let blocks = await this.blocks(source.document);
+      if (input.page !== undefined) {
+        if (!blocks.some((block) => block.page === input.page)) throw new Error("Unknown source page");
+        blocks = blocks.filter((block) => block.page === input.page);
+      }
+      if (input.blockIds) {
+        if (input.blockIds.some((id) => !blocks.some((block) => block.id === id))) throw new Error("Unknown source blocks");
+        blocks = blocks.filter((block) => input.blockIds!.includes(block.id));
+      }
+      const result = boundBlocks(blocks, input.maxChars, input.cursor);
+      return { sourceId, status: "ready", reused: canonical.reused, language: this.language, title: source.document.title, ...result };
+    } catch (error) {
+      if (error instanceof StageUnavailable) return { sourceId: fallbackId, status: error.status, operation: error.operation, errorCode: `source_${error.status}` };
+      throw error;
+    }
+  }
+}
+
+export function boundBlocks(blocks: SourceBlock[], maxChars = 6000, cursor = { block: 0, offset: 0 }): { blocks: SourceBlock[]; truncated: boolean; next?: { block: number; offset: number } } {
+  if (!Number.isInteger(maxChars) || maxChars < 1 || maxChars > 20_000 || !Number.isInteger(cursor.block) || cursor.block < 0 || cursor.block > blocks.length || !Number.isInteger(cursor.offset) || cursor.offset < 0 || cursor.offset > (blocks[cursor.block]?.text.length ?? 0)) throw new Error("Invalid bounded read range");
+  const output: SourceBlock[] = [];
+  let remaining = maxChars;
+  for (let index = cursor.block; index < blocks.length; index++) {
+    const block = blocks[index]!;
+    const offset = index === cursor.block ? cursor.offset : 0;
+    const text = block.text.slice(offset, offset + remaining);
+    if (text) output.push({ ...block, text });
+    remaining -= text.length;
+    if (offset + text.length < block.text.length) return { blocks: output, truncated: true, next: { block: index, offset: offset + text.length } };
+    if (!remaining && index + 1 < blocks.length) return { blocks: output, truncated: true, next: { block: index + 1, offset: 0 } };
+  }
+  return { blocks: output, truncated: false };
+}

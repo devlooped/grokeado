@@ -19,7 +19,7 @@ test("links only statements to the promoted evidence run for their own attempt",
 });
 
 test("a collection failure after opening marks the case as failed and rethrows", async (t) => {
-  const env = ["DATABASE_URL", "COURT_AI_MODE", "BLOB_READ_WRITE_TOKEN", "VERCEL_OIDC_TOKEN", "BLOB_STORE_ID"] as const;
+  const env = ["DATABASE_URL", "COURT_AI_MODE", "COURT_PIPELINE_VERSION", "BLOB_READ_WRITE_TOKEN", "VERCEL_OIDC_TOKEN", "BLOB_STORE_ID"] as const;
   const originalEnv = env.map((key) => [key, process.env[key]] as const);
   t.after(() => {
     for (const [key, value] of originalEnv) {
@@ -29,6 +29,8 @@ test("a collection failure after opening marks the case as failed and rethrows",
   });
   process.env.DATABASE_URL = "postgres://example.invalid/test";
   process.env.COURT_AI_MODE = "live";
+  // A recorded legacy case must resume without the new-case bridge preflight.
+  delete process.env.COURT_PIPELINE_VERSION;
   delete process.env.BLOB_READ_WRITE_TOKEN;
   delete process.env.VERCEL_OIDC_TOKEN;
   delete process.env.BLOB_STORE_ID;
@@ -38,6 +40,7 @@ test("a collection failure after opening marks the case as failed and rethrows",
     id: caseId,
     created_at: "2026-11-03T00:00:00.000Z",
     status: "queued",
+    pipeline_version: 1,
     submission: { kind: "image", mimeType: "image/png" },
     owner_id: null,
     error: null as string | null,
@@ -47,6 +50,10 @@ test("a collection failure after opening marks the case as failed and rethrows",
   const client = {
     query: async (sql: string, values?: unknown[]) => {
       if (sql === "BEGIN" || sql === "COMMIT" || sql === "DELETE FROM events WHERE case_id = $1") return { rows: [] };
+      if (sql.startsWith("SELECT id FROM cases WHERE")) {
+        assert.deepEqual(values, [caseId]);
+        return { rows: [] };
+      }
       if (sql.startsWith("UPDATE cases SET status = 'in_session'")) {
         assert.deepEqual(values, [caseId]);
         row.status = "in_session";

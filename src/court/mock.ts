@@ -2,6 +2,7 @@ import { tool, type ToolSet } from "ai";
 import { MockLanguageModelV4 } from "ai/test";
 import { MOCK_MODEL_ID } from "./models.ts";
 import { z } from "zod";
+import { createHash } from "node:crypto";
 import { project, type CourtEvent, type Submission } from "../domain/court.ts";
 import type { TurnSpec } from "./turns.ts";
 
@@ -15,6 +16,7 @@ export interface MockTurn {
   spec: TurnSpec;
   record: readonly CourtEvent[];
   submission: Submission;
+  shared?: boolean;
 }
 
 type Call = { name: string; input: unknown };
@@ -96,7 +98,16 @@ function responses({ spec, record, submission }: MockTurn): Call[][] {
 }
 
 export function createMockSeat(turn: MockTurn, search: boolean) {
-  const script = responses(turn);
+  const script = responses(turn).map((step) => step.map((call) => {
+    if (!turn.shared) return call;
+    if (call.name === "web_fetch") return { ...call, name: "read_source" };
+    if (call.name === "unify_evidence") return { ...call, input: {} };
+    if (call.name === "file_evidence") {
+      const input = call.input as { url: string; claimId: string; stance: string };
+      return { ...call, input: { sourceId: `src_${createHash("sha256").update(input.url).digest("hex").slice(0, 24)}`, blockIds: ["p1:b1"], claimId: input.claimId, stance: input.stance } };
+    }
+    return call;
+  }));
   let generation = 0;
   const model = new MockLanguageModelV4({
     provider: "local-mock",

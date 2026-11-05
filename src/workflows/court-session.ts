@@ -1,6 +1,6 @@
 import { illustrateCase, liveCoverDeps, type CoverModels } from "../court/cover.ts";
 import { loadModels } from "../court/model-config.ts";
-import { counselModels, DEFAULT_MODELS, MOCK_MODEL_ID, modelEffort, modelSnapshot, seatModel, type CourtModel, type ModelConfig } from "../court/models.ts";
+import { counselModels, courtModel, DEFAULT_MODELS, MOCK_MODEL_ID, modelEffort, modelSnapshot, seatModel, type CourtModel, type ModelConfig } from "../court/models.ts";
 import { playTurn } from "../court/play.ts";
 import { resolveCaseLanguage } from "../court/language.ts";
 import { holdSession } from "../court/procedure.ts";
@@ -12,18 +12,66 @@ import { imageDescriber } from "../evidence/describe.ts";
 import { liveContributionDeps, saveContributedSources } from "../evidence/contributions.ts";
 import { translateFiledEvidence, translatorFor } from "../evidence/translate.ts";
 import { archiveEvidence } from "../evidence/archive.ts";
-import { blobConfigured } from "../evidence/blob.ts";
+import { blobConfigured, caseArtifactStore } from "../evidence/blob.ts";
 import { runEvidenceStep, type EvidenceStepResult } from "../evidence/sandbox.ts";
 import type { EvidenceSeat, EvidenceStage } from "../evidence/schema.ts";
 import { closeCase, openCase, saveEvents } from "./steps.ts";
-import { saveCaseLanguage, saveCaseModels } from "../store.ts";
+import { getCase, getImage, revokeSandboxBindings, saveCaseLanguage, saveCaseModels } from "../store.ts";
+import { collectInstruction } from "../instruction/intake.ts";
+import { liveSourceDependencies, SourceService } from "../instruction/sources.ts";
+import { sourceDownloader } from "../instruction/research.ts";
+import { mockInstructionArtifacts, mockInstructionSources, mockResearchWorker } from "../instruction/mock.ts";
+import { createMockSeat } from "../court/mock.ts";
+import { playSharedTurn } from "../court/settled-play.ts";
+import { settleEvidence } from "../evidence/settled.ts";
+import { caseSourceService } from "../instruction/proxy.ts";
 
 // One snapshot per session: every turn uses, and the case records, the same models.
-async function configuredModels(caseId: string): Promise<ModelConfig> {
+async function configuredModels(caseId: string, shared = false): Promise<ModelConfig> {
   "use step";
+  if (shared) {
+    const stored = await getCase(caseId);
+    if (stored?.models) return Object.fromEntries(Object.entries(stored.models).map(([role, model]) => [role, courtModel(model.id, model.effort)])) as ModelConfig;
+  }
   const models = await loadModels();
   await saveCaseModels(caseId, modelSnapshot(models));
   return models;
+}
+
+async function collectShared(caseId: string, submission: Submission, simulated: boolean, models: ModelConfig) {
+  "use step";
+  const sources = simulated ? mockInstructionSources : liveSourceDependencies(models.translator);
+  if (!simulated) sources.download = sourceDownloader(models["research.x"]);
+  return collectInstruction(caseId, submission, models, simulated, {
+    sources, artifacts: simulated ? mockInstructionArtifacts : caseArtifactStore, getImage, saveLanguage: saveCaseLanguage, detect: resolveCaseLanguage,
+    ...(simulated ? { describe: async () => ({ text: "SIMULACIÓN LOCAL: Imagen ficticia para el procedimiento.", tool: "fixture", confidence: 1 }) } : {}),
+  });
+}
+
+async function playShared(caseId: string, docket: Docket, spec: TurnSpec, record: readonly CourtEvent[], attempt: number): Promise<TurnOutcome> {
+  "use step";
+  const stored = await getCase(caseId);
+  if (!stored) throw new Error("Shared case unavailable");
+  const outcome = await playSharedTurn(caseId, docket, spec, record, attempt, docket.simulated ? {
+    record: stored, reader: new SourceService(caseId, docket.language!, mockInstructionSources), artifacts: mockInstructionArtifacts,
+    model: createMockSeat({ spec, record, submission: docket.submission, shared: true }, false).model,
+    prepare: async () => "SIMULACIÓN LOCAL: Análisis preparatorio ficticio; no agrega pruebas.", worker: mockResearchWorker,
+    audit: async () => {},
+  } : undefined);
+  return linkEvidenceRun(outcome, undefined, docket.simulated, docket.models);
+}
+
+async function settleShared(caseId: string, language: string, events: readonly RecordedEvent[], simulated: boolean) {
+  "use step";
+  await revokeSandboxBindings(caseId);
+  const stored = await getCase(caseId);
+  if (!stored) throw new Error("Shared case unavailable");
+  return settleEvidence(caseId, language, events, simulated ? new SourceService(caseId, language, mockInstructionSources) : caseSourceService(stored), simulated ? mockInstructionArtifacts : caseArtifactStore);
+}
+
+async function revokeShared(caseId: string) {
+  "use step";
+  await revokeSandboxBindings(caseId);
 }
 
 async function collect(caseId: string, submission: Submission, simulated: boolean, describer: CourtModel) {
@@ -115,13 +163,15 @@ function describeError(err: unknown): string {
 
 export async function courtSession(caseId: string): Promise<void> {
   "use workflow";
-  const { submission, today, simulated } = await openCase(caseId);
+  const { submission, today, simulated, pipelineVersion } = await openCase(caseId);
+  const shared = pipelineVersion === 2;
   try {
-    const models = await configuredModels(caseId);
+    const models = await configuredModels(caseId, shared);
     const counsel = counselModels(models);
-    const submissionContext = await collect(caseId, submission, simulated, models["image.description"]);
-    const language = await determineLanguage(caseId, submission, submissionContext, simulated, models.language);
-    const docket: Docket = { submission, today, simulated, language, models, ...(submissionContext ? { submissionContext } : {}) };
+    const collected = shared ? await collectShared(caseId, submission, simulated, models) : undefined;
+    const submissionContext = collected?.context ?? (shared ? undefined : await collect(caseId, submission, simulated, models["image.description"]));
+    const language = collected?.language ?? await determineLanguage(caseId, submission, submissionContext, simulated, models.language);
+    const docket: Docket = { submission: collected?.submission ?? submission, today, simulated, language, models, ...(submissionContext ? { submissionContext } : {}) };
     const effort = (model: CourtModel) => simulated ? null : modelEffort(model);
     await holdSession({
       submission,
@@ -135,6 +185,7 @@ export async function courtSession(caseId: string): Promise<void> {
         counsel: { grok: effort(counsel.grok), gemini: effort(counsel.gemini), claude: effort(counsel.claude), chatgpt: effort(counsel.chatgpt) },
       },
       play: async (spec, record, attempt) => {
+        if (shared) return playShared(caseId, docket, spec, record, attempt);
         const evidence = await prepareEvidence(caseId, spec, simulated, language, models);
         let outcome = await play(caseId, docket, spec, record, attempt, evidence);
         if (!simulated && spec.kind === "instruction") {
@@ -144,11 +195,14 @@ export async function courtSession(caseId: string): Promise<void> {
         return outcome;
       },
       commit: (events: readonly RecordedEvent[]) => saveEvents(caseId, [...events]),
+      ...(shared ? { settle: (events: readonly RecordedEvent[]) => settleShared(caseId, language, events, simulated) } : {}),
     });
     await illustrate(caseId, simulated, models);
-    await archive(caseId);
+    if (!shared || !simulated) await archive(caseId);
+    if (shared) await revokeShared(caseId);
     await closeCase(caseId, "resolved");
   } catch (err) {
+    if (shared) await revokeShared(caseId);
     await closeCase(caseId, "failed", describeError(err));
     throw err;
   }

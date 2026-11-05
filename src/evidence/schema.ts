@@ -47,3 +47,32 @@ export type EvidenceSeat = Exclude<EvidenceAuthor, "base">;
 
 export const EvidenceStageSchema = z.enum(["exposicion", "objecion", "conclusion"]);
 export type EvidenceStage = z.infer<typeof EvidenceStageSchema>;
+
+const digest = z.string().regex(/^[a-f0-9]{64}$/);
+export const SettledEvidenceSchema = z.object({
+  schemaVersion: z.literal(2),
+  id: z.string().regex(/^E[1-9]\d*$/),
+  title: z.string().min(1),
+  language: z.string().min(2),
+  sourceId: z.string().regex(/^src_[a-f0-9]{24}$/),
+  url: z.url(),
+  acquiredAt: z.iso.datetime(),
+  rawHash: digest,
+  bodyHash: digest,
+  pages: z.array(z.number().int().positive()),
+  extraction: z.object({ version: z.string(), hash: digest, tool: z.string(), confidence: z.number().min(0).max(1) }).strict(),
+  translation: z.object({ version: z.string(), modelId: z.string(), fingerprint: z.string() }).strict(),
+  admission: z.object({ vetoes: z.number().int().min(0).max(2), excluded: z.literal(false), reviewSeqs: z.array(z.number().int().positive()) }).strict(),
+}).strict();
+export type SettledEvidence = z.infer<typeof SettledEvidenceSchema>;
+
+export const SettledManifestSchema = z.object({
+  schemaVersion: z.literal(2),
+  language: z.string().min(2),
+  files: z.record(z.string(), digest),
+  documents: z.array(z.object({
+    id: z.string().regex(/^E[1-9]\d*$/), sourceId: z.string().regex(/^src_[a-f0-9]{24}$/), path: z.string(), hash: digest,
+    blocks: z.array(z.object({ id: z.string().regex(/^p[1-9]\d*:b[1-9]\d*$/), page: z.number().int().positive(), offset: z.number().int().nonnegative(), length: z.number().int().nonnegative() }).strict()),
+  }).strict()),
+}).strict();
+export type SettledManifest = z.infer<typeof SettledManifestSchema>;

@@ -10,6 +10,7 @@ export interface Bench {
   play(spec: TurnSpec, record: readonly CourtEvent[], attempt: number): Promise<TurnOutcome>;
   // Persists newly recorded events; must be idempotent by seq.
   commit(events: readonly RecordedEvent[]): Promise<void>;
+  settle?(events: readonly RecordedEvent[]): Promise<Extract<CourtEvent, { type: "evidence_settled" }>>;
 }
 
 const MAX_ATTEMPTS = 2;
@@ -118,6 +119,11 @@ export async function holdSession(bench: Bench): Promise<void> {
       const vetoes = COUNSEL.filter((c) => source.votes[c]?.veto).length;
       note({ type: "source_decided", sourceId: source.id, excluded: vetoes > COUNSEL.length / 2 });
     }
+  }
+  if (bench.settle) {
+    await flush();
+    note(await bench.settle(log));
+    await flush();
   }
   note({ type: "instruction_closed" });
   await flush();

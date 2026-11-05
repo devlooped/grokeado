@@ -127,7 +127,7 @@ async function ResolvedCase({ c, id, revision }: { c: CaseRecord; id: string; re
         </div>
       </section>
 
-      {hasEvidence && <EvidencePanel caseId={id} />}
+      {hasEvidence && <EvidencePanel caseId={id} settled={c.pipelineVersion === 2} />}
     </div>
   );
 }
