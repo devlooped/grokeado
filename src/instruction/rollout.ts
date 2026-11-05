@@ -10,6 +10,6 @@ export async function requestedPipeline(_caseId: string, simulated: boolean): Pr
   if (version && version !== "2") throw new Error("COURT_PIPELINE_VERSION must be 1 or 2");
   if (simulated) { requireLocalDatabase(); return 2; }
   await instructionBridgeConfig();
-  if (!blobConfigured() || !process.env.EVIDENCE_AI_GATEWAY_API_KEY?.trim() || process.env.EVIDENCE_AI_GATEWAY_API_KEY.trim() === "placeholder") throw new Error("Durable storage and the authenticated sandbox bridge are required before research");
+  if (!blobConfigured() || !process.env.AI_GATEWAY_API_KEY?.trim() || process.env.AI_GATEWAY_API_KEY.trim() === "placeholder") throw new Error("Durable storage and the authenticated sandbox bridge are required before research");
   return 2;
 }

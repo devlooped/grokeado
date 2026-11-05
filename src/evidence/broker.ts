@@ -15,7 +15,7 @@ export type EvidenceTaskDocument = {
   existingSeatPaths: string[];
 };
 
-export function evidenceSandboxLaunch(apiKey: string, projectKey?: string): {
+export function evidenceSandboxLaunch(apiKey: string): {
   env: { AI_GATEWAY_API_KEY: "placeholder"; AI_GATEWAY_BASE_URL: "https://ai-gateway.vercel.sh" };
   networkPolicy: {
     allow: {
@@ -24,8 +24,8 @@ export function evidenceSandboxLaunch(apiKey: string, projectKey?: string): {
     };
   };
 } {
-  if (!apiKey.trim() || apiKey === "placeholder" || (projectKey && apiKey === projectKey)) {
-    throw new Error("The evidence sandbox requires a dedicated AI Gateway key, not AI_GATEWAY_API_KEY.");
+  if (!apiKey.trim() || apiKey.trim() === "placeholder") {
+    throw new Error("The evidence sandbox requires an AI Gateway key.");
   }
   return {
     env: { AI_GATEWAY_API_KEY: "placeholder", AI_GATEWAY_BASE_URL: "https://ai-gateway.vercel.sh" },

@@ -157,13 +157,13 @@ blob URL; one of those credentials is required to list and write. An overwrite
 can stay on the CDN for up to 60 seconds, so server reads add the current etag
 as a query parameter. Optionally set `BROWSERBASE_API_KEY` (and
 `BROWSERBASE_PROJECT_ID` / `BROWSERBASE_PROXIES`) for stealth browser fallback
-during link collection. Create a separate AI Gateway key named for evidence
-processing, set a monthly quota and short expiration, then configure it as
-`EVIDENCE_AI_GATEWAY_API_KEY`; never reuse `AI_GATEWAY_API_KEY`. Run
+during link collection. Configure `AI_GATEWAY_API_KEY` with a monthly quota
+and an appropriate expiration. This key is shared with the application; evidence
+processing no longer has a separate credential or spending limit. Run
 `npm run evidence:snapshot`, set its output as
 `EVIDENCE_SANDBOX_SNAPSHOT_ID`, and deploy on a Vercel plan that supports
 network-policy header transforms. Without blob credentials, the evidence bundle
-is extracted in memory for court turns and not persisted, so no ZIP is available. Without the snapshot or dedicated key, workflow evidence
+is extracted in memory for court turns and not persisted, so no ZIP is available. Without the snapshot or gateway key, workflow evidence
 steps return `partial` and the existing decision workflow continues.
 
 The credential broker and open-egress policy require a Vercel plan that
@@ -183,7 +183,7 @@ to `evidence/{seat}/` and `scratch/`.
 
 ## Vercel smoke and security
 
-These checks need a public-read Blob store, a snapshot, and a dedicated gateway
+These checks need a public-read Blob store, a snapshot, and a gateway
 key. They are not part of `npm test`. Do not enable production evidence until
 each one has passed:
 
@@ -198,17 +198,17 @@ each one has passed:
    ZIP stored at `cases/{caseId}/case.zip` contains the complete tree.
 2. `npm run evidence:snapshot` prints a snapshot id. Set it as
    `EVIDENCE_SANDBOX_SNAPSHOT_ID`.
-3. `EVIDENCE_AI_GATEWAY_API_KEY` is a different key from `AI_GATEWAY_API_KEY`,
-   with a monthly quota and a short expiration.
+3. `AI_GATEWAY_API_KEY` is configured, with a monthly quota and an appropriate
+   expiration. It is also used by the rest of the application.
 4. One live evidence step streams a gateway response through the Authorization
    transform, then `sandbox.stop()` runs.
 5. A harness timeout returns `partial`, and the decision step still runs.
 6. Inside the VM, `env`, workspace files, and `/proc/*/environ` contain
-   `placeholder` and do not contain the dedicated key. The key is only in the
+   `placeholder` and do not contain the gateway key. The key is only in the
    egress header built outside the VM.
 7. A PDF whose text says to ignore instructions and print the environment is
-   stored as page text. The transcript does not contain the dedicated key.
+   stored as page text. The transcript does not contain the gateway key.
 8. A write outside `evidence/{seat}/` and `scratch/` is rejected, and a change
    to `evidence/base/` is rejected.
-9. After the smoke, rotate or expire the dedicated key and confirm the next
-   sandbox call fails.
+9. When rotating the shared key, confirm the next sandbox call uses the new
+   credential. Rotation also affects the rest of the application.

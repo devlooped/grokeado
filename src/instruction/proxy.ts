@@ -39,21 +39,21 @@ async function boundedJson(request: Request): Promise<unknown> {
   return JSON.parse(Buffer.concat(chunks).toString("utf8"));
 }
 
-const live = { consume: consumeSandboxBinding, getCase, getEvents, reader: caseSourceService, artifacts: caseArtifactStore, audit: saveCaseAuditRecord,
-  generate: async (request: Request, body: unknown) => {
-    const key = process.env.EVIDENCE_AI_GATEWAY_API_KEY;
-    if (!key || key === "placeholder") throw new Error("dedicated_gateway_key_unavailable");
-    const response = await fetch("https://ai-gateway.vercel.sh/v4/ai/language-model", { method: "POST", redirect: "error", signal: AbortSignal.timeout(150_000), body: JSON.stringify(body), headers: {
-      "content-type": "application/json", authorization: `Bearer ${key}`,
-      "ai-language-model-id": request.headers.get("ai-language-model-id")!,
-      "ai-language-model-specification-version": "4", "ai-language-model-streaming": "false",
-    } });
-    if (!response.ok) throw new Error("gateway_generation_failed");
-    const text = await response.text();
-    if (text.length > 4 * 1024 * 1024) throw new Error("gateway_result_too_large");
-    return text;
-  },
-};
+export async function forwardGatewayGeneration(request: Request, body: unknown): Promise<string> {
+  const key = process.env.AI_GATEWAY_API_KEY?.trim();
+  if (!key || key === "placeholder") throw new Error("gateway_key_unavailable");
+  const response = await fetch("https://ai-gateway.vercel.sh/v4/ai/language-model", { method: "POST", redirect: "error", signal: AbortSignal.timeout(150_000), body: JSON.stringify(body), headers: {
+    "content-type": "application/json", authorization: `Bearer ${key}`,
+    "ai-language-model-id": request.headers.get("ai-language-model-id")!,
+    "ai-language-model-specification-version": "4", "ai-language-model-streaming": "false",
+  } });
+  if (!response.ok) throw new Error("gateway_generation_failed");
+  const text = await response.text();
+  if (text.length > 4 * 1024 * 1024) throw new Error("gateway_result_too_large");
+  return text;
+}
+
+const live = { consume: consumeSandboxBinding, getCase, getEvents, reader: caseSourceService, artifacts: caseArtifactStore, audit: saveCaseAuditRecord, generate: forwardGatewayGeneration };
 export type TurnProxyDependencies = typeof live;
 
 async function generation(request: Request, body: unknown, caseId: string, binding: SandboxBinding, deps: TurnProxyDependencies) {

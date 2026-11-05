@@ -80,8 +80,9 @@ between external completion and checkpoint publication.
 The normal deployment reuses existing configuration: the trusted HTTPS
 `APP_BASE_URL` (or Vercel's `VERCEL_URL`), team/project identity from the host's
 Vercel OIDC function context (or local `VERCEL_OIDC_TOKEN`),
-`EVIDENCE_SANDBOX_SNAPSHOT_ID`, the dedicated
-`EVIDENCE_AI_GATEWAY_API_KEY`, durable database and Blob storage. Newly created
+`EVIDENCE_SANDBOX_SNAPSHOT_ID`, `AI_GATEWAY_API_KEY`, durable database and Blob
+storage. The gateway key is shared with the rest of the application rather than
+separately budgeted for evidence processing. Newly created
 sandboxes receive the deployed instruction harness over the SDK; no separate
 snapshot rebuild is needed for this code change. These harness files are included
 in Next.js server traces. Resumed sandboxes retain their original harness.

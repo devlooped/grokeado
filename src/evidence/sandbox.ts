@@ -77,13 +77,13 @@ export async function runEvidenceStep(
     merged.set(indexPath, seatIndex);
     return { status: "ok", ...presented(merged, seat, stage) };
   }
-  const apiKey = process.env.EVIDENCE_AI_GATEWAY_API_KEY;
+  const apiKey = process.env.AI_GATEWAY_API_KEY;
   const snapshotId = process.env.EVIDENCE_SANDBOX_SNAPSHOT_ID;
   if (!apiKey || !snapshotId) {
-    console.warn("Evidence harness returned partial: configure EVIDENCE_AI_GATEWAY_API_KEY and EVIDENCE_SANDBOX_SNAPSHOT_ID.");
+    console.warn("Evidence harness returned partial: configure AI_GATEWAY_API_KEY and EVIDENCE_SANDBOX_SNAPSHOT_ID.");
     return { status: "partial", ...current };
   }
-  const launch = evidenceSandboxLaunch(apiKey, process.env.AI_GATEWAY_API_KEY);
+  const launch = evidenceSandboxLaunch(apiKey);
 
   const deadlineAt = new Date(Date.now() + 180_000).toISOString();
   const runId = randomUUID();
