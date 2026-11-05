@@ -473,8 +473,11 @@ export async function finishCase(id: string, status: "resolved" | "failed", erro
 
 export type AdminNotification = { id: string; created_at: string; title: string; message: string; case_id: string | null; read_at: string | null };
 
+const MAX_NOTIFICATION_ID = 9223372036854775807n;
+const validNotificationId = (id: string) => /^[1-9][0-9]{0,18}$/.test(id) && BigInt(id) <= MAX_NOTIFICATION_ID;
+
 export async function listAdminNotifications(before?: string): Promise<AdminNotification[]> {
-  if (before && (!/^[1-9][0-9]{0,18}$/.test(before) || BigInt(before) > 9223372036854775807n)) before = undefined;
+  if (before && !validNotificationId(before)) before = undefined;
   const { rows } = await (await db()).query<AdminNotification>("SELECT id::text, created_at, title, message, case_id, read_at FROM admin_notifications WHERE ($1::bigint IS NULL OR id < $1::bigint) ORDER BY id DESC LIMIT 101", [before ?? null]);
   return rows;
 }
@@ -485,8 +488,14 @@ export async function hasUnreadAdminNotifications(): Promise<boolean> {
 }
 
 export async function markAdminNotificationsRead(throughId: string): Promise<void> {
-  if (!/^[1-9][0-9]{0,18}$/.test(throughId) || BigInt(throughId) > 9223372036854775807n) throw new Error("Notificación inválida");
+  if (!validNotificationId(throughId)) throw new Error("Notificación inválida");
   await (await db()).query("UPDATE admin_notifications SET read_at = $1 WHERE read_at IS NULL AND id <= $2::bigint", [new Date().toISOString(), throughId]);
+}
+
+export async function deleteAdminNotification(id: string): Promise<boolean> {
+  if (!validNotificationId(id)) throw new Error("Notificación inválida");
+  const { rowCount } = await (await db()).query("DELETE FROM admin_notifications WHERE id = $1::bigint", [id]);
+  return rowCount === 1;
 }
 
 export async function recordSnapshotHealth(health: SnapshotHealth): Promise<boolean> {

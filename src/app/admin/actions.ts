@@ -7,7 +7,7 @@ import { auth0 } from "@/lib/auth0.ts";
 import { isAdmin } from "@/lib/case-access.ts";
 import { fetchGatewayModels } from "@/lib/gateway-catalog.ts";
 import { parseModelSettings } from "@/lib/model-settings.ts";
-import { markAdminNotificationsRead, saveModelSettings } from "@/store.ts";
+import { deleteAdminNotification, markAdminNotificationsRead, saveModelSettings } from "@/store.ts";
 
 export type ModelSettingsState = { saved?: number; error?: string; errors?: Record<string, string> };
 
@@ -17,6 +17,13 @@ export async function markNotificationsRead(formData: FormData): Promise<void> {
   const through = formData.get("through");
   if (typeof through !== "string") throw new Error("Notificación inválida");
   await markAdminNotificationsRead(through);
+  revalidatePath("/admin");
+}
+
+export async function deleteNotification(id: string): Promise<void> {
+  const session = await auth0.getSession();
+  if (!isAdmin(session?.user)) throw new Error("No autorizado.");
+  if (!(await deleteAdminNotification(id))) throw new Error("Notificación no encontrada.");
   revalidatePath("/admin");
 }
 

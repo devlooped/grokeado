@@ -10,6 +10,7 @@ import { ClaimsTable, extractClaimRows } from "./claims-table.tsx";
 export { extractClaimRows, formatClaimValue } from "./claims-table.tsx";
 
 const SHIELD_CLASS = "grid size-8 shrink-0 place-items-center rounded-full border transition ";
+export const ADMIN_NOTIFICATIONS_CHANGED_EVENT = "admin-notifications-changed";
 
 function ShieldIcon() {
   return (
@@ -115,7 +116,8 @@ export function UserClaimsBadge() {
     const health = window.setInterval(() => { if (!document.hidden) void refresh("POST"); }, 5 * 60_000);
     const focus = () => { if (!document.hidden) void refresh("GET"); };
     document.addEventListener("visibilitychange", focus);
-    return () => { active = false; window.clearInterval(poll); window.clearInterval(health); document.removeEventListener("visibilitychange", focus); };
+    window.addEventListener(ADMIN_NOTIFICATIONS_CHANGED_EVENT, focus);
+    return () => { active = false; window.clearInterval(poll); window.clearInterval(health); document.removeEventListener("visibilitychange", focus); window.removeEventListener(ADMIN_NOTIFICATIONS_CHANGED_EVENT, focus); };
   }, [admin, pathname, router]);
 
   useEffect(() => {

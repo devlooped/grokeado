@@ -1,6 +1,6 @@
 # Notificaciones de administración
 
-Las notificaciones se guardan en PostgreSQL y solo pueden consultarlas o marcarlas como leídas usuarios con el rol exacto `Admin`. El escudo muestra un punto cuando hay notificaciones sin leer; el panel permite recorrer el historial y marcarlo como leído. El estado de lectura es compartido entre administradores. Marcarlo no borra el historial.
+Las notificaciones se guardan en PostgreSQL y solo pueden consultarlas, marcarlas como leídas o eliminarlas usuarios con el rol exacto `Admin`. El escudo muestra un punto cuando hay notificaciones sin leer; el panel permite recorrer el historial y marcarlo como leído. El estado de lectura es compartido entre administradores. Marcarlo no borra el historial; cada notificación también puede eliminarse individualmente desde el panel, con confirmación.
 
 Se registra un aviso cuando un caso pasa a fallido, incluso si falla antes de abrir la instrucción o si el workflow no pudo iniciarse. Los mensajes son genéricos o de categorías conocidas: no copian mensajes arbitrarios de proveedores, credenciales ni contenido enviado. Para el diagnóstico detallado se consultan los logs de Vercel. No se importan fallos anteriores al despliegue y no se capturan todos los errores de Vercel.
 

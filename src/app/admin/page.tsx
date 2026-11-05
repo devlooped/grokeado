@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { ClaimsTable, extractClaimRows } from "@/components/claims-table.tsx";
+import { DeleteNotificationButton } from "@/components/delete-notification-button.tsx";
 import { ModelSettingsForm, type ModelRow } from "@/components/model-settings-form.tsx";
 import { loadModelSettings } from "@/court/model-config.ts";
 import { MODEL_ROLES, modelEffort, resolveModels } from "@/court/models.ts";
@@ -56,14 +57,17 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
         {notifications.length === 0 ? <p className="mt-3 text-sm text-ink-soft">No hay notificaciones.</p> : (
           <ol className="mt-3 divide-y divide-rule">
             {notifications.map((notification) => (
-              <li key={notification.id} className="py-3 text-sm">
-                <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                  <strong>{notification.title}</strong>
-                  {!notification.read_at && <span className="text-xs font-semibold text-seal">Nueva</span>}
-                  <time className="text-xs text-ink-soft" dateTime={notification.created_at}>{new Date(notification.created_at).toLocaleString("es-AR", { dateStyle: "medium", timeStyle: "short", timeZone: "America/Argentina/Buenos_Aires" })}</time>
+              <li key={notification.id} className="flex items-start justify-between gap-3 py-3 text-sm">
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                    <strong>{notification.title}</strong>
+                    {!notification.read_at && <span className="text-xs font-semibold text-seal">Nueva</span>}
+                    <time className="text-xs text-ink-soft" dateTime={notification.created_at}>{new Date(notification.created_at).toLocaleString("es-AR", { dateStyle: "medium", timeStyle: "short", timeZone: "America/Argentina/Buenos_Aires" })}</time>
+                  </div>
+                  <p className="mt-1 text-ink-soft">{notification.message}</p>
+                  {notification.case_id && <a className="mt-1 inline-block text-celeste-deep underline" href={"/c/" + encodeURIComponent(notification.case_id)}>Caso Nº {notification.case_id}</a>}
                 </div>
-                <p className="mt-1 text-ink-soft">{notification.message}</p>
-                {notification.case_id && <a className="mt-1 inline-block text-celeste-deep underline" href={"/c/" + encodeURIComponent(notification.case_id)}>Caso Nº {notification.case_id}</a>}
+                <DeleteNotificationButton id={notification.id} title={notification.title} />
               </li>
             ))}
           </ol>
