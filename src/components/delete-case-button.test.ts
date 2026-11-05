@@ -15,6 +15,7 @@ test("admin controls are labelled, show icons, and disable active cases", () => 
     assert.deepEqual(buttons.map((button) => button.getAttribute("aria-label")), ["Volver a ejecutar caso Nº AA-123-BB", "Eliminar caso Nº AA-123-BB"]);
     for (const button of buttons) {
       assert.equal(button.hasAttribute("disabled"), active);
+      assert.match(button.getAttribute("class")!, active ? /disabled:cursor-not-allowed/ : /cursor-pointer/);
       assert.ok(button.querySelector('svg[aria-hidden="true"]'));
     }
   }

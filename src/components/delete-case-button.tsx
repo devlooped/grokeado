@@ -41,7 +41,7 @@ export function DeleteCaseButton({ caseId, active }: { caseId: string; active: b
     }
   }
 
-  const buttonClass = "grid size-9 place-items-center rounded-sm border border-rule bg-paper/95 text-ink shadow-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-celeste-deep disabled:cursor-not-allowed disabled:opacity-50";
+  const buttonClass = "grid size-9 cursor-pointer place-items-center rounded-sm border border-rule bg-paper/95 text-ink shadow-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-celeste-deep disabled:cursor-not-allowed disabled:opacity-50";
   return (
     <div className="absolute right-3 top-3 z-10 flex max-w-[80%] flex-col items-end gap-1">
       <div className="flex gap-1">

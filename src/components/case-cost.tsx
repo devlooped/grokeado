@@ -14,9 +14,9 @@ export function CaseCost({ costs }: { costs?: CaseCosts }) {
   const rows = costs?.rows[pivot] ?? [];
   const max = Math.max(...rows.map((row) => row.total), 0);
   return (
-    <details open className="mt-4 border-t border-rule pt-3">
+    <details className="mt-4 border-t border-rule pt-3">
       <summary className="cursor-pointer text-xs text-celeste-deep hover:underline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-celeste-deep">
-        Cost{costs && costs.calls > costs.unpricedCalls ? ` · ${usd(costs.total)} USD${costs.unpricedCalls ? " + ?" : ""}` : ""}
+        Costo{costs && costs.calls > costs.unpricedCalls ? ` · ${usd(costs.total)} USD${costs.unpricedCalls ? " + ?" : ""}` : ""}
       </summary>
       {!costs?.calls ? <p className="mt-3 text-xs text-ink-soft">Este caso no tiene uso de tokens registrado.</p> : (
         <>
