@@ -2,6 +2,7 @@
 
 import { useUser } from "@auth0/nextjs-auth0/client";
 import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
 import { isAdmin } from "@/lib/case-access.ts";
 import { ClaimsTable, extractClaimRows } from "./claims-table.tsx";
@@ -23,10 +24,12 @@ export function UserClaimsPopover({
   claims,
   open,
   onToggle,
+  unread = false,
 }: {
   claims: Record<string, unknown>;
   open: boolean;
   onToggle: () => void;
+  unread?: boolean;
 }) {
   const panelId = useId();
   const rows = extractClaimRows(claims);
@@ -37,11 +40,12 @@ export function UserClaimsPopover({
     return (
       <Link
         href="/admin"
-        aria-label="Administración"
-        title="Administración"
-        className={SHIELD_CLASS + "border-rule text-celeste-deep hover:bg-paper-deep"}
+        aria-label={unread ? "Administración: hay notificaciones nuevas" : "Administración"}
+        title={unread ? "Administración: hay notificaciones nuevas" : "Administración"}
+        className={SHIELD_CLASS + "relative border-rule text-celeste-deep hover:bg-paper-deep"}
       >
         <ShieldIcon />
+        {unread && <span aria-hidden className="absolute -right-0.5 -top-0.5 size-2.5 rounded-full bg-seal ring-2 ring-paper" />}
       </Link>
     );
   }
@@ -87,7 +91,32 @@ export function UserClaimsPopover({
 export function UserClaimsBadge() {
   const { user } = useUser();
   const [open, setOpen] = useState(false);
+  const [unread, setUnread] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const router = useRouter();
+  const pathname = usePathname();
+  const admin = isAdmin(user);
+
+  useEffect(() => {
+    if (!admin) return;
+    let active = true;
+    async function refresh(method: "GET" | "POST") {
+      try {
+        const response = await fetch("/api/admin/notifications", { method, cache: "no-store" });
+        if (!response.ok) return;
+        const data = await response.json() as { unread: boolean; changed: boolean };
+        if (!active) return;
+        setUnread(data.unread);
+        if (data.changed && pathname === "/admin") router.refresh();
+      } catch { /* The next poll retries; a network failure must not hide the badge. */ }
+    }
+    void refresh("POST");
+    const poll = window.setInterval(() => { if (!document.hidden) void refresh("GET"); }, 30_000);
+    const health = window.setInterval(() => { if (!document.hidden) void refresh("POST"); }, 5 * 60_000);
+    const focus = () => { if (!document.hidden) void refresh("GET"); };
+    document.addEventListener("visibilitychange", focus);
+    return () => { active = false; window.clearInterval(poll); window.clearInterval(health); document.removeEventListener("visibilitychange", focus); };
+  }, [admin, pathname, router]);
 
   useEffect(() => {
     if (!open) return;
@@ -111,7 +140,7 @@ export function UserClaimsBadge() {
 
   return (
     <div ref={containerRef}>
-      <UserClaimsPopover claims={user} open={open} onToggle={() => setOpen((prev) => !prev)} />
+      <UserClaimsPopover claims={user} open={open} onToggle={() => setOpen((prev) => !prev)} unread={unread} />
     </div>
   );
 }

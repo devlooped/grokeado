@@ -76,9 +76,9 @@ test("a collection failure after opening marks the case as failed and rethrows",
       row.models = JSON.parse(values![1] as string);
       return { rows: [] };
     }
-    if (sql.startsWith("UPDATE cases SET status = $1, error = $2")) {
+    if (sql.startsWith("WITH updated AS (UPDATE cases SET status = 'failed'")) {
       closingUpdates.push(values!);
-      row.status = values![0] as string;
+      row.status = "failed";
       row.error = values![1] as string;
       return { rows: [] };
     }
@@ -88,8 +88,42 @@ test("a collection failure after opening marks the case as failed and rethrows",
 
   const message = `No se encontró la imagen original del caso ${caseId}.`;
   await assert.rejects(courtSession(caseId), { message });
-  assert.deepEqual(closingUpdates, [["failed", message, caseId]]);
+  assert.equal(closingUpdates.length, 1);
+  assert.equal(closingUpdates[0]![0], caseId);
+  assert.equal(closingUpdates[0]![1], message);
+  assert.match(closingUpdates[0]![3] as string, /registros de Vercel/);
   assert.equal(row.status, "failed");
   assert.equal(row.error, message);
   assert.deepEqual(row.models?.judge, { id: "spacexai/grok-4.7", effort: "high" }, "the case keeps the models configured when it opened");
+});
+
+test("a bridge preflight failure before opening marks the case failed and creates an alert", async (t) => {
+  const keys = ["DATABASE_URL", "COURT_AI_MODE", "COURT_PIPELINE_VERSION", "VERCEL_OIDC_TOKEN", "INSTRUCTION_SANDBOX_TEAM_ID", "INSTRUCTION_SANDBOX_PROJECT_ID", "INSTRUCTION_SANDBOX_SNAPSHOT_ID", "EVIDENCE_SANDBOX_SNAPSHOT_ID"] as const;
+  const original = keys.map((key) => [key, process.env[key]] as const);
+  t.after(() => { for (const [key, value] of original) { if (value === undefined) delete process.env[key]; else process.env[key] = value; } });
+  for (const key of keys) delete process.env[key];
+  process.env.DATABASE_URL = "postgres://example.invalid/test";
+  process.env.COURT_AI_MODE = "live";
+  process.env.COURT_PIPELINE_VERSION = "2";
+  const queries: string[] = [];
+  const client = {
+    query: async (sql: string) => {
+      queries.push(sql);
+      if (sql === "BEGIN" || sql === "ROLLBACK") return { rows: [] };
+      if (sql.startsWith("SELECT id FROM cases WHERE")) return { rows: [{ id: "case-preflight" }] };
+      throw new Error("Unexpected query");
+    },
+    release: () => {},
+  };
+  let alert: unknown[] | undefined;
+  t.mock.method(Pool.prototype, "connect", (async () => client) as unknown as typeof Pool.prototype.connect);
+  t.mock.method(Pool.prototype, "query", (async (sql: string, values?: unknown[]) => {
+    if (sql.startsWith("CREATE TABLE") || sql.startsWith("SELECT case_id, seq, body FROM events")) return { rows: [] };
+    if (sql.startsWith("WITH updated AS (UPDATE cases SET status = 'failed'")) { alert = values; return { rows: [] }; }
+    throw new Error("Unexpected pool query");
+  }) as typeof Pool.prototype.query);
+  await assert.rejects(courtSession("case-preflight"), /Instruction sandbox bridge requires trusted/);
+  assert.ok(queries.includes("ROLLBACK"));
+  assert.equal(alert?.[0], "case-preflight");
+  assert.match(alert?.[3] as string, /snapshot/);
 });

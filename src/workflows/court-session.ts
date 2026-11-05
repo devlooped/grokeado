@@ -163,9 +163,10 @@ function describeError(err: unknown): string {
 
 export async function courtSession(caseId: string): Promise<void> {
   "use workflow";
-  const { submission, today, simulated, pipelineVersion } = await openCase(caseId);
-  const shared = pipelineVersion === 2;
+  let shared = false;
   try {
+    const { submission, today, simulated, pipelineVersion } = await openCase(caseId);
+    shared = pipelineVersion === 2;
     const models = await configuredModels(caseId, shared);
     const counsel = counselModels(models);
     const collected = shared ? await collectShared(caseId, submission, simulated, models) : undefined;
@@ -202,7 +203,10 @@ export async function courtSession(caseId: string): Promise<void> {
     if (shared) await revokeShared(caseId);
     await closeCase(caseId, "resolved");
   } catch (err) {
-    if (shared) await revokeShared(caseId);
+    if (shared) {
+      try { await revokeShared(caseId); }
+      catch (cleanupError) { console.warn("Could not revoke sandbox bindings:", cleanupError); }
+    }
     await closeCase(caseId, "failed", describeError(err));
     throw err;
   }

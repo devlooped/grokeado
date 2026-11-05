@@ -6,6 +6,7 @@ import { newCaseId } from "./lib/case-id.ts";
 import type { Operation, OperationClaim, OperationRepository } from "./instruction/source-store.ts";
 import { randomUUID } from "node:crypto";
 import { authorizeSandboxBinding, committedPhase, type SandboxBinding } from "./instruction/authorization.ts";
+import { caseFailureMessage, type SnapshotHealth } from "./lib/admin-notifications.ts";
 
 export { newCaseId };
 
@@ -89,6 +90,18 @@ async function db(): Promise<Pool> {
          effort TEXT,
          updated_at TEXT NOT NULL,
          updated_by TEXT NOT NULL
+       );
+       CREATE TABLE IF NOT EXISTS admin_notifications (
+         id BIGSERIAL PRIMARY KEY,
+         created_at TEXT NOT NULL,
+         title TEXT NOT NULL,
+         message TEXT NOT NULL,
+         case_id TEXT,
+         read_at TEXT
+       );
+       CREATE TABLE IF NOT EXISTS admin_notification_conditions (
+         condition_key TEXT PRIMARY KEY,
+         state TEXT NOT NULL
        );
        CREATE TABLE IF NOT EXISTS case_source_operations (
          case_id TEXT NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
@@ -445,7 +458,50 @@ export async function requeueCase(id: string): Promise<boolean> {
 }
 
 export async function finishCase(id: string, status: "resolved" | "failed", error?: string): Promise<void> {
+  if (status === "failed") {
+    // The state change and alert commit together. Retried steps cannot duplicate it.
+    await (await db()).query(
+      `WITH updated AS (UPDATE cases SET status = 'failed', error = $2 WHERE id = $1 AND status <> 'failed' RETURNING id)
+       INSERT INTO admin_notifications (created_at, title, message, case_id)
+       SELECT $3, 'Falló un caso', $4, id FROM updated`,
+      [id, error ?? null, new Date().toISOString(), caseFailureMessage(error)]
+    );
+    return;
+  }
   await (await db()).query("UPDATE cases SET status = $1, error = $2, revision = revision + CASE WHEN $1 = 'resolved' AND status <> 'resolved' THEN 1 ELSE 0 END WHERE id = $3", [status, error ?? null, id]);
+}
+
+export type AdminNotification = { id: string; created_at: string; title: string; message: string; case_id: string | null; read_at: string | null };
+
+export async function listAdminNotifications(before?: string): Promise<AdminNotification[]> {
+  if (before && (!/^[1-9][0-9]{0,18}$/.test(before) || BigInt(before) > 9223372036854775807n)) before = undefined;
+  const { rows } = await (await db()).query<AdminNotification>("SELECT id::text, created_at, title, message, case_id, read_at FROM admin_notifications WHERE ($1::bigint IS NULL OR id < $1::bigint) ORDER BY id DESC LIMIT 101", [before ?? null]);
+  return rows;
+}
+
+export async function hasUnreadAdminNotifications(): Promise<boolean> {
+  const { rows } = await (await db()).query<{ unread: boolean }>("SELECT EXISTS (SELECT 1 FROM admin_notifications WHERE read_at IS NULL) AS unread");
+  return rows[0]!.unread;
+}
+
+export async function markAdminNotificationsRead(throughId: string): Promise<void> {
+  if (!/^[1-9][0-9]{0,18}$/.test(throughId) || BigInt(throughId) > 9223372036854775807n) throw new Error("Notificación inválida");
+  await (await db()).query("UPDATE admin_notifications SET read_at = $1 WHERE read_at IS NULL AND id <= $2::bigint", [new Date().toISOString(), throughId]);
+}
+
+export async function recordSnapshotHealth(health: SnapshotHealth): Promise<boolean> {
+  // Only a state transition creates a log entry, including after a problem recurs.
+  const { rows } = await (await db()).query(
+    `WITH changed AS (
+       INSERT INTO admin_notification_conditions (condition_key, state) VALUES ('snapshot', $1)
+       ON CONFLICT (condition_key) DO UPDATE SET state = EXCLUDED.state
+       WHERE admin_notification_conditions.state <> EXCLUDED.state RETURNING state
+     )
+     INSERT INTO admin_notifications (created_at, title, message)
+     SELECT $2, $3, $4 FROM changed WHERE $5::boolean RETURNING id`,
+    [health.state, new Date().toISOString(), health.title ?? "", health.message ?? "", !!health.title]
+  );
+  return rows.length > 0;
 }
 
 // Short row-locked ownership claims; no external I/O runs in this transaction.

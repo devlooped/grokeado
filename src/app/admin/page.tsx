@@ -7,20 +7,25 @@ import { MODEL_ROLES, modelEffort, resolveModels } from "@/court/models.ts";
 import { auth0 } from "@/lib/auth0.ts";
 import { isAdmin } from "@/lib/case-access.ts";
 import { fetchGatewayModels } from "@/lib/gateway-catalog.ts";
+import { listAdminNotifications } from "@/store.ts";
+import { markNotificationsRead } from "./actions.ts";
 
 export const metadata: Metadata = { title: "Administración · Che bot", robots: { index: false, follow: false } };
 
-export default async function AdminPage() {
+export default async function AdminPage({ searchParams }: { searchParams: Promise<{ before?: string }> }) {
   const session = await auth0.getSession();
   // Hidden rather than forbidden: the route does not exist for anyone else.
   if (!isAdmin(session?.user)) notFound();
-  const [settings, catalog] = await Promise.all([
+  const { before } = await searchParams;
+  const [settings, catalog, notificationRows] = await Promise.all([
     loadModelSettings(),
     fetchGatewayModels().catch((err: unknown) => {
       console.warn("Gateway catalog unavailable:", err);
       return undefined;
     }),
+    listAdminNotifications(typeof before === "string" ? before : undefined),
   ]);
+  const notifications = notificationRows.slice(0, 100);
   const models = resolveModels(settings);
   const rows: ModelRow[] = MODEL_ROLES.map((role) => ({
     ...role,
@@ -35,6 +40,38 @@ export default async function AdminPage() {
       <section>
         <h1 className="font-display text-4xl leading-none">Administración</h1>
         <p className="mt-2 text-sm text-ink-soft">Sesión y configuración de los modelos que usa cada función.</p>
+      </section>
+
+      <section aria-labelledby="notifications-heading">
+        <div className="flex items-baseline justify-between gap-3 border-b border-rule pb-2">
+          <h2 id="notifications-heading" className="font-display text-2xl leading-none">Notificaciones</h2>
+          {notifications.length > 0 && (
+            <form action={markNotificationsRead}>
+              <input type="hidden" name="through" value={notifications[0]!.id} />
+              <button type="submit" className="cursor-pointer text-sm text-celeste-deep underline">{before ? "Marcar hasta aquí como leídas" : "Marcar todas leídas"}</button>
+            </form>
+          )}
+        </div>
+        <p className="mt-2 text-sm text-ink-soft">El estado de lectura es compartido entre administradores.</p>
+        {notifications.length === 0 ? <p className="mt-3 text-sm text-ink-soft">No hay notificaciones.</p> : (
+          <ol className="mt-3 divide-y divide-rule">
+            {notifications.map((notification) => (
+              <li key={notification.id} className="py-3 text-sm">
+                <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                  <strong>{notification.title}</strong>
+                  {!notification.read_at && <span className="text-xs font-semibold text-seal">Nueva</span>}
+                  <time className="text-xs text-ink-soft" dateTime={notification.created_at}>{new Date(notification.created_at).toLocaleString("es-AR", { dateStyle: "medium", timeStyle: "short", timeZone: "America/Argentina/Buenos_Aires" })}</time>
+                </div>
+                <p className="mt-1 text-ink-soft">{notification.message}</p>
+                {notification.case_id && <a className="mt-1 inline-block text-celeste-deep underline" href={"/c/" + encodeURIComponent(notification.case_id)}>Caso Nº {notification.case_id}</a>}
+              </li>
+            ))}
+          </ol>
+        )}
+        <div className="mt-3 flex gap-4 text-sm text-celeste-deep">
+          {before && <a className="underline" href="/admin#notifications-heading">Más recientes</a>}
+          {notificationRows.length > 100 && <a className="underline" href={"/admin?before=" + encodeURIComponent(notifications.at(-1)!.id) + "#notifications-heading"}>Más antiguas</a>}
+        </div>
       </section>
 
       <section aria-labelledby="claims-heading">

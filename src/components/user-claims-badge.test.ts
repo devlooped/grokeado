@@ -61,3 +61,11 @@ test("UserClaimsPopover makes the shield a link to /admin only for the exact Adm
     assert.match(html, /<button/);
   }
 });
+
+test("only an admin sees the accessible unread indicator", () => {
+  const render = (roles: string[], unread: boolean) => renderToStaticMarkup(createElement(UserClaimsPopover, { claims: { sub: "user", roles }, open: false, onToggle: () => {}, unread }));
+  assert.match(render(["Admin"], true), /Administración: hay notificaciones nuevas/);
+  assert.match(render(["Admin"], true), /bg-seal/);
+  assert.doesNotMatch(render(["Admin"], false), /bg-seal|notificaciones nuevas/);
+  assert.doesNotMatch(render(["admin"], true), /bg-seal|notificaciones nuevas/);
+});
