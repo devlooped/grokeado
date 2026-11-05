@@ -18,7 +18,7 @@ export function preparationDefinitions(phase: PhaseSession["state"]["phase"]) {
 }
 
 export async function prepareInSandbox(session: PhaseSession, deps = { sandbox: Sandbox, bind: saveSandboxBinding }): Promise<string> {
-  const { origin, snapshotId } = instructionBridgeConfig();
+  const { origin, snapshotId } = await instructionBridgeConfig();
   const turn = session.state.activeTurn!;
   const launch = instructionSandboxLaunch(session.caseId, origin);
   const definitions = preparationDefinitions(session.state.phase);

@@ -105,6 +105,6 @@ export function createTurnProxy(config: { origin: string; teamId: string; projec
 }
 
 export const dispatchSandboxRequest: ProxyHandler = async (request, meta) => {
-  try { return await createTurnProxy(instructionBridgeConfig())(request, meta); }
+  try { return await createTurnProxy(await instructionBridgeConfig())(request, meta); }
   catch { return Response.json({ error: "sandbox_bridge_unavailable" }, { status: 503 }); }
 };

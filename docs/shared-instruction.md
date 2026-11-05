@@ -79,7 +79,8 @@ between external completion and checkpoint publication.
 
 The normal deployment reuses existing configuration: the trusted HTTPS
 `APP_BASE_URL` (or Vercel's `VERCEL_URL`), team/project identity from the host's
-`VERCEL_OIDC_TOKEN`, `EVIDENCE_SANDBOX_SNAPSHOT_ID`, the dedicated
+Vercel OIDC function context (or local `VERCEL_OIDC_TOKEN`),
+`EVIDENCE_SANDBOX_SNAPSHOT_ID`, the dedicated
 `EVIDENCE_AI_GATEWAY_API_KEY`, durable database and Blob storage. Newly created
 sandboxes receive the deployed instruction harness over the SDK; no separate
 snapshot rebuild is needed for this code change. These harness files are included

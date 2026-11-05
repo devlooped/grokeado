@@ -428,14 +428,14 @@ export async function recordEvents(caseId: string, events: readonly RecordedEven
 }
 
 // Select a pipeline only on first opening; shared retries retain their record.
-export async function openSession(id: string, requestedPipeline: 1 | 2 | (() => 1 | 2) = 1): Promise<CaseRecord> {
+export async function openSession(id: string, requestedPipeline: 1 | 2 | (() => 1 | 2 | Promise<1 | 2>) = 1): Promise<CaseRecord> {
   const client = await (await db()).connect();
   try {
     await client.query("BEGIN");
     let selected: 1 | 2 = 1;
     if (typeof requestedPipeline === "function") {
       const { rows } = await client.query("SELECT id FROM cases WHERE id = $1 AND pipeline_version IS NULL AND models IS NULL AND status = 'queued' AND NOT EXISTS (SELECT 1 FROM events WHERE case_id = $1) FOR UPDATE", [id]);
-      if (rows.length) selected = requestedPipeline();
+      if (rows.length) selected = await requestedPipeline();
     } else selected = requestedPipeline;
     if (selected === 2) await client.query("UPDATE cases SET pipeline_version = 2 WHERE id = $1 AND pipeline_version IS NULL AND models IS NULL AND status = 'queued' AND NOT EXISTS (SELECT 1 FROM events WHERE case_id = $1)", [id]);
     const { rows } = await client.query<CaseRow>("UPDATE cases SET status = 'in_session', error = NULL, pipeline_version = COALESCE(pipeline_version, 1) WHERE id = $1 RETURNING *", [id]);

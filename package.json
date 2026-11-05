@@ -27,6 +27,7 @@
     "@next/env": "^16.4.3",
     "@vercel/blob": "^2.8.2",
     "@vercel/functions": "^3.10.5",
+    "@vercel/oidc": "4.0.5",
     "@vercel/sandbox": "^3.9.1",
     "ai": "^7.0.157",
     "defuddle": "^0.19.6",
