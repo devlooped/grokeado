@@ -3,6 +3,8 @@ import type { CourtModel } from "./models.ts";
 import { createMockSeat, type MockTurn } from "./mock.ts";
 import { researchTools } from "./research.ts";
 import { toAiTools, type Toolset } from "./toolset.ts";
+import { recordModelUsage } from "./usage.ts";
+import type { UsageRole } from "../domain/usage.ts";
 
 export interface SeatImage {
   data: Uint8Array;
@@ -10,6 +12,8 @@ export interface SeatImage {
 }
 
 export interface SeatRun {
+  caseId?: string;
+  role?: UsageRole;
   model: CourtModel;
   research: boolean;
   // The research.x role, which runs x_search for any seat.
@@ -36,8 +40,9 @@ export async function runSeat(run: SeatRun, model?: LanguageModel): Promise<void
         ...(run.images ?? []).map((image) => ({ type: "file" as const, data: image.data, mediaType: image.mimeType })),
       ],
     }],
-    tools: { ...(mock?.research ?? researchTools(run.research, run.xResearcher)), ...toAiTools(run.tools) },
-    onStepEnd: ({ stepNumber, content }) => {
+    tools: { ...(mock?.research ?? researchTools(run.research, run.xResearcher, run.caseId)), ...toAiTools(run.tools) },
+    onStepEnd: async ({ stepNumber, content, usage }) => {
+      if (!mock) await recordModelUsage(run.caseId, run.model, run.role ?? "analyst")({ usage });
       const research = content.filter((part) =>
         (part.type === "tool-call" || part.type === "tool-result" || part.type === "tool-error") &&
         ["web_fetch", "web_search", "x_search"].includes(part.toolName));

@@ -70,10 +70,14 @@ test("new archives contain instruction/evidence/discussion and one complete root
   ]));
   const event = await settleEvidence("fixture", "en", [], { source: async () => { throw new Error("No sources"); } }, artifacts);
   const events: RecordedEvent[] = [{ ...event, seq: 1, at: "2026-11-05T00:00:00.000Z" }, { type: "instruction_closed", seq: 2, at: "2026-11-05T00:00:01.000Z" }, { type: "session_closed", seq: 3, at: "2026-11-05T00:00:02.000Z" }];
+  const audit = [
+    { schemaVersion: 2, id: "decision:1", kind: "model_step", at: events[0]!.at, seat: "grok", modelId: "openai/test", effort: "high", data: { usage: { inputTokens: 100, outputTokens: 20 } } },
+    { schemaVersion: 2, id: "cover:1", kind: "model_step", at: events[2]!.at, modelId: "openai/test", effort: "high", data: { role: "coverSearch", usage: { inputTokens: 200, outputTokens: 30 } } },
+  ];
   let zip = Buffer.alloc(0);
   const dependencies = {
     getCase: async () => ({ id: "fixture", createdAt: events[0]!.at, status: "resolved" as const, submission: { kind: "text" as const, text: "Sanitized fixture" }, revision: 1, pipelineVersion: 2 as const }),
-    artifacts, getEvents: async () => events, getCaseAuditRecords: async () => [], getSourceOperations: async () => [],
+    artifacts, getEvents: async () => events, getCaseAuditRecords: async () => audit, getSourceOperations: async () => [],
     readEvidenceTree: async () => { throw new Error("Legacy reader must not run"); },
     writeEvidenceTree: async () => { throw new Error("Legacy writer must not run"); },
     writeCaseTranscript: async () => { throw new Error("Legacy transcript must not run"); },
@@ -81,9 +85,13 @@ test("new archives contain instruction/evidence/discussion and one complete root
   };
   await archiveEvidence("fixture", dependencies);
   const extracted = unzip(zip);
-  for (const path of ["instruction/base/submission.json", "evidence/manifest.json", "discussion/grok/fixture/draft.md", "case.jsonl"]) assert.ok(extracted.has(path));
+  for (const path of ["instruction/base/submission.json", "evidence/manifest.json", "discussion/grok/fixture/draft.md", "case.jsonl", "case.json"]) assert.ok(extracted.has(path));
+  assert.deepEqual(JSON.parse(extracted.get("case.json")!.toString()), { schemaVersion: 1, caseId: "fixture", usage: [
+    { provider: "openai", model: "openai/test", effort: "high", role: "analyst", inputTokens: 100, outputTokens: 20, cacheReadTokens: 0, cacheWriteTokens: 0, calls: 1, unknownUsageCalls: 0 },
+    { provider: "openai", model: "openai/test", effort: "high", role: "coverSearch", inputTokens: 200, outputTokens: 30, cacheReadTokens: 0, cacheWriteTokens: 0, calls: 1, unknownUsageCalls: 0 },
+  ] });
   assert.ok([...extracted.keys()].every((path) => !/(?:acta|transcript)\.jsonl$|phase_session|checkpoint/.test(path)));
-  assert.deepEqual(parseCaseLog(extracted.get("case.jsonl")!.toString()).map((record) => record.data), events);
+  assert.deepEqual(parseCaseLog(extracted.get("case.jsonl")!.toString()).filter((record) => record.kind === "court_event").map((record) => record.data), events);
   const first = zip;
   await archiveEvidence("fixture", dependencies);
   assert.deepEqual(zip, first);
@@ -122,7 +130,8 @@ test("reads the final tree and uploads it, propagating read or write errors", as
   });
   assert.deepEqual(result, expected);
   assert.ok(saved);
-  assert.equal(unzip(saved).size, files.size + 2);
+  assert.equal(unzip(saved).size, files.size + 3);
+  assert.deepEqual(JSON.parse(unzip(saved).get("case.json")!.toString()), { schemaVersion: 1, caseId: "case-1", usage: [] });
   assert.equal(unzip(saved).get("transcript.jsonl")!.toString(), transcript);
   assert.equal(unzip(saved).get("acta.jsonl")!.toString(), "");
   await assert.rejects(archiveEvidence("case-1", {

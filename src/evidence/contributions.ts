@@ -26,8 +26,8 @@ async function extract(download: Extract<DownloadResult, { ok: true }>, extensio
   if (["txt", "csv", "md"].includes(extension)) return new TextDecoder().decode(download.bytes);
 }
 
-export function liveContributionDeps(translator?: CourtModel): Dependencies {
-  return { download: downloadUrl, translate: (text, language) => translateSourceText(text, language, translatorFor(translator)), write: writeEvidenceTree };
+export function liveContributionDeps(translator?: CourtModel, caseId?: string): Dependencies {
+  return { download: downloadUrl, translate: (text, language) => translateSourceText(text, language, translatorFor(translator, caseId)), write: writeEvidenceTree };
 }
 
 // Capture the URLs filed by each analyst. Original bytes and extracted text are

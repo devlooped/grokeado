@@ -28,6 +28,8 @@ export async function playTurn(
   const research: Array<{ seat: SeatId; stepNumber: number; content: unknown[] }> = [];
   const outcome = await conductTurn(docket, spec, record, attempt, async ({ seat, prompt, tools, done }) => {
     await runSeat({
+      caseId,
+      role: seat === "judge" ? "moderator" : "analyst",
       model: seatModel(models, seat),
       research: spec.kind === "instruction",
       xResearcher: models["research.x"],

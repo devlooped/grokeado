@@ -4,6 +4,7 @@ import { Cited, citationRefs, type Citations } from "./citations.tsx";
 import { ClaimsIcon, GavelIcon, JudgeSeal, MegaphoneIcon, VERDICT_TEXT, VerdictDot, VoteChip } from "./marks.tsx";
 import { CasePanel } from "./case-panel.tsx";
 import { VoteRationaleNavigation } from "./vote-rationale-navigation.tsx";
+import type { CaseCosts } from "../domain/cost.ts";
 
 export const voteId = (claimId: string, counsel: string) => "voto-" + claimId + "-" + counsel;
 export const reasonsId = (claimId: string) => "fundamentos-" + claimId;
@@ -170,7 +171,7 @@ function ClaimCard({ claim, models, citations, children }: { claim: ClaimView; m
   );
 }
 
-export function CaseResult({ c, view, events = [], models = seatModels(c, events) }: { c: CaseRecord; view: CaseView; events?: readonly RecordedEvent[]; models?: SeatModels }) {
+export function CaseResult({ c, view, events = [], models = seatModels(c, events), costs }: { c: CaseRecord; view: CaseView; events?: readonly RecordedEvent[]; models?: SeatModels; costs?: CaseCosts }) {
   const citations: Citations = { caseId: c.id, refs: citationRefs(events, view) };
   const outcome = caseOutcome(view);
   const content = contentOutcome(view);
@@ -185,7 +186,7 @@ export function CaseResult({ c, view, events = [], models = seatModels(c, events
               <Original c={c} view={view} models={models} citations={citations} combined />
             </ClaimCard>
           ) : <Original c={c} view={view} models={models} citations={citations} />}
-          <CasePanel c={c} models={models} />
+          <CasePanel c={c} models={models} costs={costs} />
         </div>
         {view.dismissal ? (
           <p className="flex items-start gap-3 rounded-sm border border-seal/40 bg-seal/5 p-5">

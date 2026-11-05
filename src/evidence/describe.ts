@@ -1,6 +1,7 @@
 import { gateway, generateText, Output } from "ai";
 import { z } from "zod";
 import type { CourtModel } from "../court/models.ts";
+import { recordModelUsage } from "../court/usage.ts";
 import { IMAGE_DESCRIPTION_TOOL } from "../domain/court.ts";
 import type { Recognize, Transcript } from "./extract.ts";
 
@@ -29,11 +30,12 @@ export function formatImageDescription(output: z.infer<typeof schema>): string {
 }
 
 // One vision call per submitted image: the panel reads this text instead of each seat looking at the image again.
-export function imageDescriber(model: CourtModel, note?: string): Recognize {
+export function imageDescriber(model: CourtModel, note?: string, caseId?: string): Recognize {
   return async (bytes, mimeType): Promise<Transcript> => {
     const { output } = await generateText({
       model: gateway(model.id),
       providerOptions: model.providerOptions,
+      onStepEnd: recordModelUsage(caseId, model, "captioner"),
       output: Output.object({ schema }),
       system: SYSTEM,
       messages: [{ role: "user", content: [

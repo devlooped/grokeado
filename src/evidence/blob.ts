@@ -254,7 +254,7 @@ export const caseArtifactStore: ArtifactStore = {
         if (hash) {
           if (hashes.has(hash[2]!) && hashes.get(hash[2]!) !== hash[1]) throw new EvidenceConsistencyError("Conflicting immutable artifact hashes");
           hashes.set(hash[2]!, hash[1]!);
-        } else if (/^(?:instruction|evidence|discussion)\//.test(path) || path === "case.jsonl") {
+        } else if (/^(?:instruction|evidence|discussion)\//.test(path) || path === "case.jsonl" || path === "case.json") {
           files.set(path, await readPublicBlob(blob));
         }
       }

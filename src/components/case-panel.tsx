@@ -1,6 +1,8 @@
 import { MODEL_ROLES } from "@/court/models.ts";
 import { COUNSEL, modelDetail, type CaseRecord, type ModelUse, type SeatModels } from "@/domain/court.ts";
 import { GavelIcon, ModelName } from "./marks.tsx";
+import { CaseCost } from "./case-cost.tsx";
+import type { CaseCosts } from "../domain/cost.ts";
 
 function PanelModel({ model }: { model: ModelUse }) {
   return (
@@ -21,7 +23,7 @@ function PanelMember({ role, model }: { role: string; model: ModelUse }) {
 }
 
 // The snapshot is a configuration, not a claim that every optional support role ran.
-export function CasePanel({ c, models }: { c: CaseRecord; models: SeatModels }) {
+export function CasePanel({ c, models, costs }: { c: CaseRecord; models: SeatModels; costs?: CaseCosts }) {
   const analysts = COUNSEL.flatMap((seat) => models[seat] ? [{ seat, model: models[seat]! }] : []);
   const support = MODEL_ROLES.filter((role) => role.group === "Soporte" && (role.key !== "image.description" || c.submission.kind === "image"))
     .flatMap((role) => c.models?.[role.key] ? [{ role, model: c.models[role.key]! }] : []);
@@ -53,6 +55,7 @@ export function CasePanel({ c, models }: { c: CaseRecord; models: SeatModels }) 
           </dl>
         </details>
       )}
+      <CaseCost costs={costs} />
     </section>
   );
 }

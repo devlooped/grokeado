@@ -19,7 +19,10 @@ import { project } from "@/domain/court.ts";
 import { displayHistoricalCitations } from "@/domain/historical-citations.ts";
 import { blobConfigured, findEvidenceArchive, hasEvidenceBase } from "@/evidence/blob.ts";
 import { auth0 } from "@/lib/auth0.ts";
-import { coverVersions, findCaseAlias, getCase, getEvents } from "@/store.ts";
+import { coverVersions, findCaseAlias, getCase, getCaseAuditRecords, getEvents } from "@/store.ts";
+import { usageCalls } from "@/domain/usage.ts";
+import { caseCosts } from "@/domain/cost.ts";
+import { loadTokenPrices } from "@/lib/model-costs.ts";
 
 export async function generateMetadata(props: PageProps<"/c/[id]">): Promise<Metadata> {
   const { id } = await props.params;
@@ -91,7 +94,10 @@ const getResolvedEvents = unstable_cache(async (id: string, revision: number) =>
 }, ["resolved-case-events-v1"], { revalidate: 3600 });
 
 async function ResolvedCase({ c, id, revision }: { c: CaseRecord; id: string; revision: number }) {
-  const { events, aliases } = displayHistoricalCitations(await getResolvedEvents(id, revision));
+  const [recordedEvents, audit] = await Promise.all([getResolvedEvents(id, revision), getCaseAuditRecords(id)]);
+  const { events, aliases } = displayHistoricalCitations(recordedEvents);
+  const calls = usageCalls(audit);
+  const costs = caseCosts(calls, calls.length ? await loadTokenPrices() : {});
   const hasEvidence = blobConfigured() && Boolean(await findEvidenceArchive(id) || await hasEvidenceBase(id));
   const simulated = events.some((e) => e.type === "session_opened" && e.simulated);
   const view = project(events);
@@ -115,7 +121,7 @@ async function ResolvedCase({ c, id, revision }: { c: CaseRecord; id: string; re
 
       {simulated && <p role="status" className="mt-4 rounded-sm border border-seal/40 bg-seal/5 p-4 text-sm text-seal">Simulación local: las fuentes, respuestas y el resultado son ficticios y solo sirven para probar el flujo.</p>}
 
-      <CaseResult c={c} view={view} events={events} models={models} />
+      <CaseResult c={c} view={view} events={events} models={models} costs={costs} />
 
       <section className="mt-16">
         <div className="rule-double pt-4">

@@ -131,8 +131,8 @@ export type SourceDependencies = {
   extractionVersion?: string;
 };
 
-export function liveSourceDependencies(translator: CourtModel): SourceDependencies {
-  return { operations: sourceOperationRepository, artifacts: caseArtifactStore, download: downloadUrl, extract: extractSource, translate: translatorFor(translator), verifyLanguage: languageVerifierFor(translator), translatorModelId: translator.id, translatorEffort: modelEffort(translator), translatorFingerprint: sha256(JSON.stringify([translator.id, translator.providerOptions, TRANSLATION_VERSION])) };
+export function liveSourceDependencies(translator: CourtModel, caseId?: string): SourceDependencies {
+  return { operations: sourceOperationRepository, artifacts: caseArtifactStore, download: downloadUrl, extract: extractSource, translate: translatorFor(translator, caseId), verifyLanguage: languageVerifierFor(translator, caseId), translatorModelId: translator.id, translatorEffort: modelEffort(translator), translatorFingerprint: sha256(JSON.stringify([translator.id, translator.providerOptions, TRANSLATION_VERSION])) };
 }
 
 export class SourceService {

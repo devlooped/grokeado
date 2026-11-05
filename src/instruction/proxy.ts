@@ -17,8 +17,8 @@ export function caseSourceService(record: CaseRecord): SourceService {
   const translator = record.models?.translator;
   const researcher = record.models?.["research.x"];
   if (!translator || !researcher || !record.submission.resolvedLanguage) throw new Error("Processing snapshot unavailable");
-  const dependencies = liveSourceDependencies(courtModel(translator.id, translator.effort));
-  dependencies.download = sourceDownloader(courtModel(researcher.id, researcher.effort));
+  const dependencies = liveSourceDependencies(courtModel(translator.id, translator.effort), record.id);
+  dependencies.download = sourceDownloader(courtModel(researcher.id, researcher.effort), record.id);
   return new SourceService(record.id, record.submission.resolvedLanguage, dependencies);
 }
 

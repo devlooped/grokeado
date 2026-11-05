@@ -10,6 +10,7 @@ import { validateEvidenceTree, validatePromotedFiles } from "./validate.ts";
 import { annotateEvidenceTranscript } from "./transcript.ts";
 import { translatePromotedEvidence, translatorFor } from "./translate.ts";
 import { assembleWorkspace, citationAuthors, citationsFor, readOnlyHashesFor, workspaceIndex } from "./workspace.ts";
+import { saveCaseAuditRecord } from "../store.ts";
 
 const WORKSPACE = "/workspace";
 const EVIDENCE_GUIDE = `# Formato de evidencia
@@ -97,6 +98,7 @@ export async function runEvidenceStep(
     env: launch.env,
     tags: { case: caseId.slice(0, 32), seat, stage },
   });
+  let transcript: Buffer | null | undefined;
 
   try {
     const files: Array<{ path: string; content: string | Uint8Array }> = [...workspace].map(([path, content]) => ({ path: `${WORKSPACE}/${path}`, content }));
@@ -171,7 +173,7 @@ export async function runEvidenceStep(
       if (!content) throw new Error(`El entorno de evidencia no devolvió ${path}.`);
       promoted.set(path, new Uint8Array(content));
     }
-    const transcript = await sandbox.readFileToBuffer({ path: `${WORKSPACE}/transcript.jsonl` });
+    transcript = await sandbox.readFileToBuffer({ path: `${WORKSPACE}/transcript.jsonl` });
     // The current harness passes no provider-specific effort options; older snapshots are unknown.
     const effort = null;
     promoted.set(`evidence/${seat}/runs/${runId}/transcript.jsonl`, new TextEncoder().encode(annotateEvidenceTranscript(transcript ? new Uint8Array(transcript) : new Uint8Array(), modelId, effort)));
@@ -184,7 +186,7 @@ export async function runEvidenceStep(
     }
 
     annotateEvidenceDocuments(promoted, modelId, effort);
-    await translatePromotedEvidence(promoted, runId, seat, language, translatorFor(models?.translator));
+    await translatePromotedEvidence(promoted, runId, seat, language, translatorFor(models?.translator, caseId));
     const translatedErrors = validatePromotedFiles(seat, original, promoted);
     if (translatedErrors.length) throw new Error("La evidencia traducida no es válida: " + translatedErrors.join("; "));
 
@@ -196,6 +198,17 @@ export async function runEvidenceStep(
     merged.set(indexPath, seatIndex);
     return { status: result.status, runId, ...presented(merged, seat, stage) };
   } finally {
-    await sandbox.stop({ signal: AbortSignal.timeout(10_000) });
+    try {
+      // Capture paid preparation even when the sandbox times out or its
+      // proposed evidence is rejected. Never infer usage from promoted files.
+      if (transcript === undefined) transcript = await sandbox.readFileToBuffer({ path: `${WORKSPACE}/transcript.jsonl` });
+      for (const [sequence, line] of (transcript?.toString("utf8") ?? "").split(/\r?\n/).filter(Boolean).entries()) {
+        const step = JSON.parse(line) as { at: string; usage: unknown };
+        const id = `usage:sandbox:${runId}:${sequence}`;
+        await saveCaseAuditRecord(caseId, id, { schemaVersion: 2, id, kind: "model_step", at: step.at, seat, modelId, effort: null, data: { role: "analyst", usage: step.usage } });
+      }
+    } finally {
+      await sandbox.stop({ signal: AbortSignal.timeout(10_000) });
+    }
   }
 }

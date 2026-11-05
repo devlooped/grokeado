@@ -40,8 +40,8 @@ async function configuredModels(caseId: string, shared = false): Promise<ModelCo
 
 async function collectShared(caseId: string, submission: Submission, simulated: boolean, models: ModelConfig) {
   "use step";
-  const sources = simulated ? mockInstructionSources : liveSourceDependencies(models.translator);
-  if (!simulated) sources.download = sourceDownloader(models["research.x"]);
+  const sources = simulated ? mockInstructionSources : liveSourceDependencies(models.translator, caseId);
+  if (!simulated) sources.download = sourceDownloader(models["research.x"], caseId);
   return collectInstruction(caseId, submission, models, simulated, {
     sources, artifacts: simulated ? mockInstructionArtifacts : caseArtifactStore, getImage, saveLanguage: saveCaseLanguage, detect: resolveCaseLanguage,
     ...(simulated ? { describe: async () => ({ text: "SIMULACIÓN LOCAL: Imagen ficticia para el procedimiento.", tool: "fixture", confidence: 1 }) } : {}),
@@ -76,7 +76,7 @@ async function revokeShared(caseId: string) {
 
 async function collect(caseId: string, submission: Submission, simulated: boolean, describer: CourtModel) {
   "use step";
-  const describe = !simulated && submission.kind === "image" ? imageDescriber(describer, submission.note) : undefined;
+  const describe = !simulated && submission.kind === "image" ? imageDescriber(describer, submission.note, caseId) : undefined;
   return collectEvidenceBase(caseId, submission, simulated, describe);
 }
 
@@ -91,12 +91,12 @@ async function determineLanguage(caseId: string, submission: Submission, context
 // repeat the analyst's model call.
 async function collectSources(caseId: string, events: CourtEvent[], language: string, translator: CourtModel): Promise<void> {
   "use step";
-  if (blobConfigured()) await saveContributedSources(caseId, events, language, liveContributionDeps(translator));
+  if (blobConfigured()) await saveContributedSources(caseId, events, language, liveContributionDeps(translator, caseId));
 }
 
-async function translateContributions(outcome: TurnOutcome, language: string, translator: CourtModel): Promise<TurnOutcome> {
+async function translateContributions(caseId: string, outcome: TurnOutcome, language: string, translator: CourtModel): Promise<TurnOutcome> {
   "use step";
-  return { ...outcome, events: await translateFiledEvidence(outcome.events, language, translatorFor(translator)) };
+  return { ...outcome, events: await translateFiledEvidence(outcome.events, language, translatorFor(translator, caseId)) };
 }
 
 async function archive(caseId: string): Promise<void> {
@@ -109,7 +109,7 @@ async function illustrate(caseId: string, simulated: boolean, models: CoverModel
   "use step";
   if (simulated) return;
   try {
-    await illustrateCase(caseId, liveCoverDeps(models));
+    await illustrateCase(caseId, liveCoverDeps(models, caseId));
   } catch (err) {
     console.warn("Cover for case " + caseId + " failed:", err);
   }
@@ -189,7 +189,7 @@ export async function courtSession(caseId: string): Promise<void> {
         const evidence = await prepareEvidence(caseId, spec, simulated, language, models);
         let outcome = await play(caseId, docket, spec, record, attempt, evidence);
         if (!simulated && spec.kind === "instruction") {
-          outcome = await translateContributions(outcome, language, models.translator);
+          outcome = await translateContributions(caseId, outcome, language, models.translator);
           await collectSources(caseId, outcome.events, language, models.translator);
         }
         return outcome;

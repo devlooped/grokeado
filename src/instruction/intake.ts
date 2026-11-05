@@ -18,7 +18,7 @@ type IntakeDependencies = {
 };
 
 export async function collectInstruction(caseId: string, original: Submission, models: ModelConfig, simulated: boolean, dependencies: Omit<IntakeDependencies, "describe"> & { describe?: Recognize }): Promise<{ submission: Submission; context?: SubmissionContext; language: string }> {
-  const deps = { ...dependencies, describe: dependencies.describe ?? imageDescriber(models["image.description"], original.kind === "text" ? undefined : original.note) };
+  const deps = { ...dependencies, describe: dependencies.describe ?? imageDescriber(models["image.description"], original.kind === "text" ? undefined : original.note, caseId) };
   const host = new SourceService(caseId, "und", deps.sources);
   const { resolvedLanguage: _resolved, ...submitted } = original;
   await deps.artifacts.write(caseId, new Map([["instruction/base/submission.json", JSON.stringify(submitted)]]));

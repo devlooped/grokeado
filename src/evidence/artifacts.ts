@@ -6,7 +6,7 @@ export interface ArtifactStore {
 }
 
 export function normalizeArtifactBytes(path: string, content: Uint8Array | string): Uint8Array {
-  if (!/^(?:instruction|evidence|discussion)\//.test(path) && path !== "case.jsonl") throw new Error("Invalid case artifact namespace");
+  if (!/^(?:instruction|evidence|discussion)\//.test(path) && path !== "case.jsonl" && path !== "case.json") throw new Error("Invalid case artifact namespace");
   if (path.includes("\\") || /[:\x00-\x1f]/.test(path) || path.split("/").some((part) => !part || part === "." || part === ".." || part === ".sha256")) throw new Error("Invalid case artifact path");
   const bytes = typeof content === "string" ? new TextEncoder().encode(content) : content;
   if (bytes.byteLength > 8 * 1024 * 1024) throw new Error("Case artifact exceeds 8 MiB");

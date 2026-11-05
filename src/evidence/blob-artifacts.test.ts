@@ -39,7 +39,7 @@ test("the Blob artifact boundary uses no-overwrite writes, accepts identical ret
   process.env.BLOB_READ_WRITE_TOKEN = "vercel_blob_rw_local_test";
   process.env.VERCEL_BLOB_API_URL = base;
   try {
-    const files = new Map([["instruction/sources/src_a/original.bin", "source"], ["evidence/E1.md", "canonical"], ["discussion/grok/run/draft.md", "analysis"]]);
+    const files = new Map([["instruction/sources/src_a/original.bin", "source"], ["evidence/E1.md", "canonical"], ["discussion/grok/run/draft.md", "analysis"], ["case.json", '{"usage":[]}']]);
     await caseArtifactStore.write("fixture", files);
     await caseArtifactStore.write("fixture", files);
     assert.ok(overwriteHeaders.length >= 6);

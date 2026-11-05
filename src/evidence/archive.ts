@@ -7,6 +7,7 @@ import { normalizeEvidenceBytes, type EvidenceFiles } from "./validate.ts";
 import { normalizeArtifactBytes, type ArtifactStore } from "./artifacts.ts";
 import { buildCaseLog } from "./case-log.ts";
 import { loadSettledCorpus } from "./settled.ts";
+import { caseUsageArtifact } from "../domain/usage.ts";
 
 const compress = promisify(deflateRaw);
 const MAX_ZIP_VALUE = 0xffffffff;
@@ -37,7 +38,7 @@ export async function createEvidenceArchive(files: EvidenceFiles): Promise<Buffe
   const directory: Buffer[] = [];
   let offset = 0;
   for (const [path, content] of [...files].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)) {
-    const bytes = settled ? normalizeArtifactBytes(path, content) : path === "transcript.jsonl" || path === "acta.jsonl" ? (typeof content === "string" ? Buffer.from(content) : content) : normalizeEvidenceBytes(path, content);
+    const bytes = settled || path === "case.json" ? normalizeArtifactBytes(path, content) : path === "transcript.jsonl" || path === "acta.jsonl" ? (typeof content === "string" ? Buffer.from(content) : content) : normalizeEvidenceBytes(path, content);
     if (/[:\x00-\x1f]/.test(path)) throw new Error(`Invalid archive path: ${path}`);
     const name = Buffer.from(path, "utf8");
     if (name.length > 0xffff) throw new Error(`Archive path is too long: ${path}`);
@@ -105,8 +106,9 @@ export async function archiveEvidence(caseId: string, store: ArchiveStore = { re
     if (!store.artifacts || !store.getCaseAuditRecords || !store.getSourceOperations) throw new Error("Durable new-format archive storage unavailable");
     const events = await store.getEvents(caseId);
     if (!events.some((event) => event.type === "dismissed")) await loadSettledCorpus(caseId, events, store.artifacts);
-    const log = buildCaseLog(events, await store.getCaseAuditRecords(caseId), await store.getSourceOperations(caseId));
-    await store.artifacts.write(caseId, new Map([["case.jsonl", log]]));
+    const audit = await store.getCaseAuditRecords(caseId);
+    const log = buildCaseLog(events, audit, await store.getSourceOperations(caseId));
+    await store.artifacts.write(caseId, new Map([["case.jsonl", log], ["case.json", JSON.stringify(caseUsageArtifact(caseId, audit), null, 2)]]));
     const files = await store.artifacts.read(caseId);
     for (const path of files.keys()) if (/(?:^|\/)(?:acta|transcript)\.jsonl$/.test(path)) files.delete(path);
     return store.writeEvidenceArchive(caseId, await createEvidenceArchive(files));
@@ -117,6 +119,9 @@ export async function archiveEvidence(caseId: string, store: ArchiveStore = { re
   for (const [path, content] of updatedRuns) files.set(path, new TextEncoder().encode(content));
   files.set("transcript.jsonl", new TextEncoder().encode(transcript));
   files.set("acta.jsonl", new TextEncoder().encode(events.map((event) => JSON.stringify(event)).join("\n") + (events.length ? "\n" : "")));
+  const usage = JSON.stringify(caseUsageArtifact(caseId, await store.getCaseAuditRecords?.(caseId) ?? []), null, 2);
+  files.set("case.json", new TextEncoder().encode(usage));
+  await store.artifacts?.write(caseId, new Map([["case.json", usage]]));
   const zip = await createEvidenceArchive(files);
   if (updatedRuns.size) await store.writeEvidenceTree(caseId, updatedRuns);
   await store.writeCaseTranscript(caseId, transcript);
