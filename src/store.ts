@@ -266,6 +266,49 @@ export async function deleteCase(id: string, deleteBlobs: (ids: string[]) => Pro
   }
 }
 
+// Reuse the public case id, but clear all data produced by the previous run.
+// The original submission (including an uploaded image) remains the workflow input.
+export async function restartCase(id: string, deleteBlobs: (ids: string[]) => Promise<void>): Promise<"queued" | "missing" | "active" | "missing-image"> {
+  const client = await (await db()).connect();
+  try {
+    await client.query("BEGIN");
+    const { rows } = await client.query<{ status: CaseStatus }>("SELECT status FROM cases WHERE id = $1 FOR UPDATE", [id]);
+    if (!rows.length) {
+      await client.query("ROLLBACK");
+      return "missing";
+    }
+    if (rows[0]!.status !== "resolved" && rows[0]!.status !== "failed") {
+      await client.query("ROLLBACK");
+      return "active";
+    }
+    const input = await client.query<{ missing_image: boolean }>(
+      "SELECT submission->>'kind' = 'image' AND NOT EXISTS (SELECT 1 FROM images WHERE case_id = $1) AS missing_image FROM cases WHERE id = $1", [id]
+    );
+    if (input.rows[0]!.missing_image) {
+      await client.query("ROLLBACK");
+      return "missing-image";
+    }
+    const aliases = await client.query<{ old_id: string }>("SELECT old_id FROM case_aliases WHERE case_id = $1", [id]);
+    await deleteBlobs([id, ...aliases.rows.map((row) => row.old_id)]);
+    await client.query("DELETE FROM events WHERE case_id = $1", [id]);
+    await client.query("DELETE FROM covers WHERE case_id = $1", [id]);
+    for (const table of ["case_source_operations", "case_source_aliases", "case_phase_sessions", "case_audit_records", "case_sandbox_bindings"]) {
+      await client.query(`DELETE FROM ${table} WHERE case_id = $1`, [id]);
+    }
+    await client.query(
+      "UPDATE cases SET created_at = $2, status = 'queued', submission = submission - 'resolvedLanguage', error = NULL, revision = revision + 1, models = NULL, pipeline_version = NULL WHERE id = $1",
+      [id, new Date().toISOString()]
+    );
+    await client.query("COMMIT");
+    return "queued";
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 // Old ids keep resolving after a case is renamed, so shared links still work.
 export async function findCaseAlias(oldId: string): Promise<string | undefined> {
   const { rows } = await (await db()).query<{ case_id: string }>("SELECT case_id FROM case_aliases WHERE old_id = $1", [oldId]);

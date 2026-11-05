@@ -1,24 +1,19 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { CaseRecord, Submission } from "../domain/court.ts";
 import { rerunCaseResponse } from "./rerun-case-response.ts";
 
 const admin = { sub: "admin-user", roles: ["Admin"] };
 const request = (origin = "https://example.test") => new Request("https://example.test/api/cases/AA-123-BB/rerun", { method: "POST", headers: { origin } });
-const original = (submission: Submission, status: CaseRecord["status"] = "resolved"): CaseRecord => ({ id: "AA-123-BB", createdAt: "2026-01-01", status, submission, pipelineVersion: 1 });
-function dependencies(record: CaseRecord | undefined = original({ kind: "text", text: "A claim", language: "auto", resolvedLanguage: "es" })) {
+function dependencies(result: "queued" | "missing" | "active" | "missing-image" = "queued") {
   const calls: unknown[][] = [];
-  const deps = {
-    getCase: async (id: string): Promise<CaseRecord | undefined> => { calls.push(["getCase", id]); return record; },
-    getImage: async (id: string): Promise<{ bytes: Buffer } | undefined> => { calls.push(["getImage", id]); return { bytes: Buffer.from("image") }; },
-    createCase: async (submission: Submission, image: Buffer | undefined, ownerId: string) => { calls.push(["createCase", submission, image, ownerId]); return "CC-456-DD"; },
+  return { calls, deps: {
+    restartCase: async (id: string) => { calls.push(["restartCase", id]); return result; },
     start: async (id: string) => { calls.push(["start", id]); },
     finish: async (id: string, status: "failed", error: string) => { calls.push(["finish", id, status, error]); },
-  };
-  return { calls, deps };
+  } };
 }
 
-test("reruns reject unauthorized, cross-origin and invalid requests before accessing storage", async () => {
+test("reruns reject unauthorized, cross-origin and invalid requests before resetting a case", async () => {
   const { calls, deps } = dependencies();
   for (const [req, id, user, status] of [
     [request(), "AA-123-BB", undefined, 401],
@@ -30,39 +25,30 @@ test("reruns reject unauthorized, cross-origin and invalid requests before acces
   assert.deepEqual(calls, []);
 });
 
-test("a rerun creates and starts a fresh case from the submission, without reusing detected language", async () => {
+test("a rerun resets and starts the same case id", async () => {
   const { calls, deps } = dependencies();
   const response = await rerunCaseResponse(request(), "AA-123-BB", admin, deps);
-  assert.equal(response.status, 201);
-  assert.deepEqual(await response.json(), { id: "CC-456-DD" });
-  assert.deepEqual(calls, [["getCase", "AA-123-BB"], ["createCase", { kind: "text", text: "A claim", language: "auto" }, undefined, "admin-user"], ["start", "CC-456-DD"]]);
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { id: "AA-123-BB" });
+  assert.deepEqual(calls, [["restartCase", "AA-123-BB"], ["start", "AA-123-BB"]]);
 });
 
-test("image reruns copy original bytes, while missing images, active and missing cases are rejected", async () => {
-  const submission: Submission = { kind: "image", mimeType: "image/png", note: "note", language: "en" };
-  const image = dependencies(original(submission, "failed"));
-  assert.equal((await rerunCaseResponse(request(), "AA-123-BB", admin, image.deps)).status, 201);
-  assert.deepEqual(image.calls, [["getCase", "AA-123-BB"], ["getImage", "AA-123-BB"], ["createCase", submission, Buffer.from("image"), "admin-user"], ["start", "CC-456-DD"]]);
-  const missingImage = dependencies(original(submission));
-  missingImage.deps.getImage = async () => undefined;
-  assert.equal((await rerunCaseResponse(request(), "AA-123-BB", admin, missingImage.deps)).status, 409);
-  assert.equal(missingImage.calls.length, 1);
-  for (const status of ["queued", "in_session"] as const) {
-    const active = dependencies(original(submission, status));
-    assert.equal((await rerunCaseResponse(request(), "AA-123-BB", admin, active.deps)).status, 409);
-    assert.equal(active.calls.length, 1);
+test("missing and active cases and cases with missing images are not started", async () => {
+  for (const [result, status] of [["missing", 404], ["active", 409], ["missing-image", 409]] as const) {
+    const { calls, deps } = dependencies(result);
+    const response = await rerunCaseResponse(request(), "AA-123-BB", admin, deps);
+    assert.equal(response.status, status);
+    if (result === "missing-image") assert.deepEqual(await response.json(), { error: "No se encontró la imagen original." });
+    assert.deepEqual(calls, [["restartCase", "AA-123-BB"]]);
   }
-  const missing = dependencies();
-  missing.deps.getCase = async () => undefined;
-  assert.equal((await rerunCaseResponse(request(), "AA-123-BB", admin, missing.deps)).status, 404);
 });
 
-test("a workflow start failure leaves the new case visibly failed", async (t) => {
+test("a workflow start failure leaves the existing case visibly failed", async (t) => {
   const { calls, deps } = dependencies();
   deps.start = async (id) => { calls.push(["start", id]); throw new Error("offline"); };
   t.mock.method(console, "error", () => {});
   const response = await rerunCaseResponse(request(), "AA-123-BB", admin, deps);
-  assert.equal(response.status, 201);
-  assert.deepEqual(await response.json(), { id: "CC-456-DD" });
-  assert.deepEqual(calls.at(-1), ["finish", "CC-456-DD", "failed", "No se pudo iniciar la sesión."]);
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { id: "AA-123-BB" });
+  assert.deepEqual(calls.at(-1), ["finish", "AA-123-BB", "failed", "No se pudo iniciar la sesión."]);
 });
