@@ -28,6 +28,14 @@ export const PREPARATION_SNAPSHOTS = { snapshotExpiration: 24 * 60 * 60_000, kee
 // the length of a model call plus its tools, whatever the hosting plan allows.
 export const PREPARATION_WAIT_MS = 60_000;
 
+// The last call of a turn writes the analysis from what was gathered, without
+// tools. Every call that requests tools ends, its tools included, this long
+// before the turn does, so the synthesis always has time to run.
+export const PREPARATION_SYNTHESIS_MS = 120_000;
+// A call that requests tools needs at least this long of its own; with less,
+// the turn goes straight to synthesis.
+const PREPARATION_TOOL_STEP_MS = 60_000;
+
 type PreparationDependencies = { sandbox: typeof Sandbox; bind: typeof saveSandboxBinding };
 type OpenedSandbox = { sandbox?: Sandbox };
 
@@ -64,7 +72,8 @@ async function stopSandbox(session: PhaseSession, deps: PreparationDependencies,
 }
 
 function exhausted(session: PhaseSession, turn: NonNullable<PhaseSession["state"]["activeTurn"]>): FatalError {
-  return new FatalError(`Preparation budget exhausted without a final response (${session.state.phase}/${session.state.seat}, ${turn.steps}/8 steps); explicit recovery required`);
+  const spent = turn.steps >= 8 ? "step limit reached" : "turn time spent";
+  return new FatalError(`Preparation budget exhausted without a final response (${session.state.phase}/${session.state.seat}, ${turn.steps}/8 steps, ${spent}); explicit recovery required`);
 }
 
 // One bounded unit of preparation: start the next model call in the VM and wait
@@ -102,14 +111,13 @@ export async function advancePreparation(session: PhaseSession, deps: Preparatio
       const callId = `${turn.id}:${turn.steps}`;
       const resultPath = `/workspace/result-${callId.replaceAll(":", "-")}.json`;
       const remainingMs = Math.max(1, Date.parse(turn.expiresAt) - Date.now());
-      // Reserve the last step for a real final response, and stop requesting
-      // tools when less than a minute remains in this turn.
-      const toolChoice = turn.preparationToolChoice ?? (turn.steps === 7 || remainingMs <= 60_000 ? "none" : "auto");
+      // Reserve the last step, and the synthesis time, for a real final response.
+      const toolChoice = turn.preparationToolChoice ?? (turn.steps === 7 || remainingMs <= PREPARATION_SYNTHESIS_MS + PREPARATION_TOOL_STEP_MS ? "none" : "auto");
       // The broker deduplicates by call ID and request hash. A replay must not
       // change that request just because less time remains after interruption.
       turn.preparationToolChoice = toolChoice;
       await session.save();
-      const commandTimeoutMs = Math.min(165_000, remainingMs);
+      const commandTimeoutMs = Math.max(1, Math.min(165_000, toolChoice === "auto" ? remainingMs - PREPARATION_SYNTHESIS_MS : remainingMs));
       const timeoutMs = Math.max(1, Math.min(150_000, commandTimeoutMs - 5000));
       await sandbox.writeFiles([{ path: "/workspace/task.json", content: JSON.stringify({ caseId: session.caseId, callId, model: session.state.model, system: session.state.system, messages: session.state.messages, tools: preparationDefinitions(session.state.phase), toolChoice, timeoutMs, resultPath }) }]);
       command = await sandbox.runCommand({ cmd: "node", args: ["--import", "/opt/evidence-harness/node_modules/tsx/dist/loader.mjs", "/opt/evidence-harness/instruction-agent.ts", "/workspace/task.json"], cwd: "/workspace", timeoutMs: commandTimeoutMs, detached: true });
@@ -128,12 +136,15 @@ export async function advancePreparation(session: PhaseSession, deps: Preparatio
     if (!bytes || bytes.byteLength > 2_000_000) throw new Error("Preparation checkpoint unavailable");
     const result = JSON.parse(bytes.toString("utf8")) as { messages: ModelMessage[]; text: string; finishReason: string };
     if (!Array.isArray(result.messages) || result.messages.some((message) => message.role !== "assistant" && message.role !== "tool")) throw new Error("Invalid preparation messages");
+    // A call that requested tools and ran out of time spends its step without
+    // output; the synthesis still follows. A synthesis that runs out cannot.
+    const continues = result.finishReason === "tool-calls" || (result.finishReason === "timeout" && turn.preparationToolChoice === "auto");
     turn.draft = result.text;
     turn.done = result.finishReason === "stop" && Boolean(result.text.trim());
     delete turn.preparationToolChoice;
     delete turn.preparationCommand;
     await session.append(result.messages);
-    if (result.finishReason !== "tool-calls" && !turn.done) throw new FatalError("Preparation ended without a complete final response; explicit recovery required");
+    if (!continues && !turn.done) throw new FatalError("Preparation ended without a complete final response; explicit recovery required");
     if (turn.done) return await complete();
     if (turn.steps >= 8 || Date.now() >= Date.parse(turn.expiresAt)) throw exhausted(session, turn);
     return undefined;

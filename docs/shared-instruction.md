@@ -40,8 +40,13 @@ pipeline 1 cases keep their original tools, artifact formats, and download URLs;
   steps for recovery, not for ZIP export. Sandbox preparation and host decisions
   are separate continuing conversations. Context overflow never resets history.
   Preparation reserves its eighth and last step for a response with tool calls
-  disabled, also disabling tools when at most a minute remains in its
-  300-second turn. Preparation sandboxes also have a 300-second timeout.
+  disabled, and the last 120 seconds of its 300-second turn for that synthesis:
+  a call that requests tools must end, its tools included, before the reserve,
+  and tools are disabled once less than a further minute remains. In the VM, a
+  tool that outlasts its call's time returns an error to the model, and a call
+  that requests tools and times out spends its step without output, so the
+  synthesis still follows; a synthesis that times out fails closed.
+  Preparation sandboxes also have a 300-second timeout.
   Model/command timeouts respect the remaining turn time. The turn spans many
   workflow steps, never one: each preparation call starts detached in the VM,
   and steps of at most a minute wait for it until it ends; each decision

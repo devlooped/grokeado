@@ -3,7 +3,7 @@ import test from "node:test";
 import { Sandbox } from "@vercel/sandbox";
 import { FatalError } from "workflow";
 import { MemoryPhaseRepository, PhaseSession } from "../court/phase-session.ts";
-import { advancePreparation, deleteCaseSandboxes, prepareInSandbox, sweepCaseSandboxes, withSandboxCleanup } from "./preparation.ts";
+import { advancePreparation, deleteCaseSandboxes, PREPARATION_SYNTHESIS_MS, prepareInSandbox, sweepCaseSandboxes, withSandboxCleanup } from "./preparation.ts";
 
 test("preparation requires a final response, preserves checkpoints on exhaustion, and resumes the same sandbox", async () => {
   const keys = ["INSTRUCTION_TOOL_ORIGIN", "INSTRUCTION_SANDBOX_SNAPSHOT_ID", "INSTRUCTION_SANDBOX_TEAM_ID", "INSTRUCTION_SANDBOX_PROJECT_ID"] as const;
@@ -183,6 +183,62 @@ test("a call that outlasts one wait continues in a later unit, keeping its grant
 });
 
 type Listed = { name: string; status: string; tags?: Record<string, string> };
+
+test("tool calls end before the synthesis reserve, and one that runs out of time still reaches synthesis", async () => {
+  const keys = ["INSTRUCTION_TOOL_ORIGIN", "INSTRUCTION_SANDBOX_SNAPSHOT_ID", "INSTRUCTION_SANDBOX_TEAM_ID", "INSTRUCTION_SANDBOX_PROJECT_ID"] as const;
+  const previous = keys.map((key) => process.env[key]);
+  Object.assign(process.env, { INSTRUCTION_TOOL_ORIGIN: "https://staging.example.test", INSTRUCTION_SANDBOX_SNAPSHOT_ID: "fixture-snapshot", INSTRUCTION_SANDBOX_TEAM_ID: "fixture-team", INSTRUCTION_SANDBOX_PROJECT_ID: "fixture-project" });
+  try {
+    const tasks: Array<{ toolChoice: string; timeoutMs: number }> = [];
+    let results: object[] = [];
+    // A call that times out has used up its time: move the turn's deadline as the clock would.
+    let elapse = (_ms: number) => {};
+    const sandbox = {
+      name: "persistent-reserve", status: "running",
+      writeFiles: async (files: { path: string; content: string }[]) => {
+        const task = files.find((file) => file.path === "/workspace/task.json");
+        if (task) tasks.push(JSON.parse(task.content));
+      },
+      runCommand: async (command: { cmd: string }) => command.cmd === "node" ? { cmdId: `call-${tasks.length}`, wait: async () => ({ exitCode: 0 }) } : { exitCode: 0 },
+      getCommand: async () => { throw new Error("Command not found"); },
+      readFileToBuffer: async () => {
+        const result = results.shift() as { finishReason: string };
+        if (result.finishReason === "timeout") elapse(tasks.at(-1)!.timeoutMs);
+        return Buffer.from(JSON.stringify(result));
+      },
+      stop: async () => {},
+    };
+    const deps = { sandbox: { create: async () => sandbox, get: async () => sandbox } as unknown as typeof Sandbox, bind: async () => {} };
+    const repository = new MemoryPhaseRepository();
+    const initial = { phase: "instruction" as const, seat: "grok" as const, channel: "preparation" as const, model: { id: "fixture/model" }, system: "fixture", tools: "[]", initial: "Canonical material" };
+    const timedOut = { messages: [], text: "", finishReason: "timeout" };
+    const final = { messages: [{ role: "assistant", content: "Final analysis" }], text: "Final analysis", finishReason: "stop" };
+
+    const session = await PhaseSession.open("fixture-reserve", initial, repository);
+    const turn = await session.begin("turn", [], "Prepare");
+    turn.expiresAt = new Date(Date.now() + 200_000).toISOString();
+    await session.save();
+    elapse = (ms) => { turn.expiresAt = new Date(Date.parse(turn.expiresAt) - ms).toISOString(); };
+    results = [timedOut, final];
+    assert.equal(await prepareInSandbox(session, deps), "Final analysis");
+    assert.deepEqual(tasks.map((task) => task.toolChoice), ["auto", "none"]);
+    assert.ok(tasks[0].timeoutMs <= 200_000 - PREPARATION_SYNTHESIS_MS - 5000, "a call with tools ends before the synthesis reserve");
+    assert.ok(tasks[1].timeoutMs >= PREPARATION_SYNTHESIS_MS - 10_000, "the synthesis gets the reserved time");
+    assert.equal(turn.steps, 2, "a timed-out tool call spends its step");
+    assert.equal(turn.complete, true);
+
+    const late = await PhaseSession.open("fixture-reserve-late", initial, repository);
+    const lateTurn = await late.begin("turn", [], "Prepare");
+    lateTurn.expiresAt = new Date(Date.now() + 100_000).toISOString();
+    await late.save();
+    results = [timedOut];
+    await assert.rejects(prepareInSandbox(late, deps), (error) => FatalError.is(error) && /without a complete final response/.test(error.message));
+    assert.equal(tasks.at(-1)?.toolChoice, "none", "a synthesis that runs out of time fails closed");
+    assert.equal(lateTurn.complete, false);
+  } finally {
+    keys.forEach((key, index) => { if (previous[index] === undefined) delete process.env[key]; else process.env[key] = previous[index]; });
+  }
+});
 
 function sandboxes(listed: Listed[], deleted: string[]) {
   const missing = Object.assign(new Error("Named sandbox not found"), { response: { status: 404 } });
