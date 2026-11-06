@@ -1,12 +1,13 @@
 import { gateway, generateText, stepCountIs, type LanguageModel, type ModelMessage, type ToolSet } from "ai";
 import { z } from "zod";
-import { sharedPipeline, type CaseRecord, type CourtEvent, type RecordedEvent } from "../domain/court.ts";
+import { project, sharedPipeline, type CaseRecord, type CourtEvent, type RecordedEvent } from "../domain/court.ts";
 import type { ArtifactStore } from "../evidence/artifacts.ts";
 import { caseArtifactStore } from "../evidence/blob.ts";
 import { loadSettledCorpus } from "../evidence/settled.ts";
 import { sha256 } from "../evidence/validate.ts";
 import { CourtActionSchemas, createCourtActions, phaseActions, turnPhase } from "../instruction/court-tools.ts";
 import { caseSourceService } from "../instruction/proxy.ts";
+import { criticismIndex } from "../instruction/criticism-index.ts";
 import { advancePreparation, nativePreparationDefinitions, preparationDefinitions } from "../instruction/preparation.ts";
 import type { SourceService } from "../instruction/sources.ts";
 import { executeSourceTool, SourceToolSchemas, sourceToolsFor } from "../instruction/tools.ts";
@@ -62,7 +63,8 @@ export async function advanceSharedTurn(caseId: string, docket: Docket, spec: Tu
   // The prompts are in English and are not translated: the language rule of the
   // system prompt makes the seats write in the case language.
   const instruction = plan.instruction.replaceAll("web_fetch", "read_source");
-  const note = native ? (phase === "instruction" ? "file_instruction takes, for each source of the preparation report, its exact URL and a verbatim quote in the source's language; the host fetches the URLs and keeps a proposal only if its quote is found there." : "")
+  const note = native ? (phase === "instruction" ? "file_instruction takes, for each source of the preparation report, its exact URL and a verbatim quote in the source's language; the host fetches the URLs and keeps a proposal only if its quote is found there."
+      : "Index of the shared source file:\n" + await criticismIndex([...project(record).sources.values()], reader))
     : phase === "instruction" ? "file_evidence takes the sourceId and blockIds you read with read_source; the host fills in the title and the passage. unify_evidence takes no groups: the host groups by canonical identity." : "";
   const task = `${JSON.stringify(spec)}\n${instruction}\n${note}`;
   // The system prompt and the task of each turn go to case.jsonl, which

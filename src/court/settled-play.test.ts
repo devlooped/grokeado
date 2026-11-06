@@ -8,6 +8,7 @@ import { settleEvidence, loadSettledCorpus } from "../evidence/settled.ts";
 import { MemoryOperationRepository } from "../instruction/source-store.ts";
 import { SourceService, extractSource } from "../instruction/sources.ts";
 import { mockResearchWorker } from "../instruction/mock.ts";
+import { collectEvidence, fetchProposedUrls, proposedUrls, rejectionRecord } from "../instruction/collection.ts";
 import { DEFAULT_MODELS, modelSnapshot } from "./models.ts";
 import { createMockSeat } from "./mock.ts";
 import { MemoryPhaseRepository } from "./phase-session.ts";
@@ -117,4 +118,54 @@ test("a retry after generation and court-action checkpoints reuses messages, act
   assert.deepEqual(await playSharedTurn("fixture", docket, spec, events, 0, deps), outcome);
   assert.equal(JSON.stringify(repository.states.get("fixture:intake:judge:decision")!.body.messages), prefix);
   assert.equal(generations, 1);
+});
+
+test("pipeline 3: analysts file URL and quote proposals, the host collects them without a unification turn, and criticism reads the index", async () => {
+  const artifacts = new MemoryArtifactStore(), operations = new MemoryOperationRepository(), repository = new MemoryPhaseRepository();
+  const submission = { kind: "text" as const, text: "SIMULACIÓN LOCAL: afirmación para verificar.", resolvedLanguage: "es" };
+  const stored: CaseRecord = { id: "fixture", createdAt: "2026-11-05T00:00:00.000Z", status: "in_session", pipelineVersion: 3, submission, models: modelSnapshot(DEFAULT_MODELS) };
+  let downloads = 0;
+  const reader = () => new SourceService("fixture", "es", { operations, artifacts, translatorModelId: "fixture/translator", translatorFingerprint: "fixture-v1",
+    verifyLanguage: async () => ({ matches: true }), extract: extractSource, translate: async (input) => ({ ...input, changed: false }),
+    download: async (url) => { downloads++; return { ok: true, finalUrl: url, redirects: 0, contentType: "text/plain", bytes: new TextEncoder().encode("SIMULACIÓN LOCAL: Documento ficticio con datos 42, sin valor probatorio. " + url) }; },
+  });
+  const events: RecordedEvent[] = [], audit: unknown[] = [], played: string[] = [];
+  const requests: Array<{ kind: string; prompt: string; tools: string[] }> = [];
+  await holdSession({ submission, models: { judge: "fixture", counsel: Object.fromEntries(COUNSEL.map((seat) => [seat, "fixture"])) as Record<typeof COUNSEL[number], string> },
+    commit: async (batch) => { events.push(...batch); },
+    settle: (record) => settleEvidence("fixture", "es", record, reader(), artifacts),
+    collect: async (record) => {
+      const fetched = await fetchProposedUrls(reader(), proposedUrls(record));
+      const collected = await collectEvidence(record, fetched, reader());
+      audit.push(...collected.rejected.map(rejectionRecord));
+      return collected.events;
+    },
+    play: async (spec, record, attempt) => {
+      played.push(spec.kind);
+      const mock = createMockSeat({ spec, record, submission, shared: true, native: true }, false).model;
+      const model = new MockLanguageModelV4({ doGenerate: async (options) => {
+        requests.push({ kind: spec.kind, prompt: JSON.stringify(options.prompt), tools: (options.tools ?? []).map((tool) => tool.name) });
+        return mock.doGenerate(options);
+      } });
+      return playSharedTurn("fixture", { submission, today: "fixture", language: "es", models: DEFAULT_MODELS, simulated: true }, spec, record, attempt, {
+        record: stored, reader: reader(), artifacts, repository, model, worker: mockResearchWorker,
+        prepare: async () => "SIMULACIÓN LOCAL: informe de investigación ficticio.",
+        audit: async (_id, _key, body) => { audit.push(body); }, activity: async (_id, body) => { audit.push(body); },
+        prompt: async (_id, _key, body) => { audit.push(body); },
+      });
+    },
+  });
+  assert.equal(events.at(-1)?.type, "session_closed");
+  assert.ok(!played.includes("unification"), "the host collects in place of the moderator");
+  assert.equal(events.filter((event) => event.type === "evidence_proposed").length, 12);
+  assert.equal(events.filter((event) => event.type === "evidence_filed").length, 12);
+  assert.equal(downloads, 3, "each proposed URL is fetched once");
+  assert.equal(project(events).sources.size, 3);
+  assert.equal((await loadSettledCorpus("fixture", events, artifacts)).documents.size, 2, "three vetoes exclude the unreliable fixture");
+  for (const request of requests.filter((request) => request.kind === "instruction")) assert.deepEqual(request.tools, ["file_instruction"]);
+  const reviews = requests.filter((request) => request.kind === "source_review");
+  assert.ok(reviews.length && reviews.every((request) => request.tools.join() === "review_sources" && /E1 · [^]*E2 · [^]*E3 · /.test(request.prompt)));
+  const preparation = repository.states.get("fixture:instruction:grok:preparation")?.body;
+  assert.match(String(preparation?.tools), /"type":"provider"/, "pipeline 3 preparation holds the provider's tools");
+  assert.ok(parseCaseLog(buildCaseLog(events, audit, [])).length > events.length);
 });

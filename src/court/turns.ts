@@ -126,6 +126,9 @@ export function composePrompt(input: { seat: SeatId; docket: Docket; record: rea
 const NATIVE_INSTRUCTION =
   "Instruction stage: evidence only, without statements or conclusions. For EACH claim, actively search the web (and X, if you have a tool for it) for sources both IN FAVOR and AGAINST, without limiting yourself to your intuition or to a single position. Prefer primary sources (official bodies, original documents) and established media. For every useful source, give its exact URL as you found it and a passage copied verbatim from that page, in the page's own language, that supports, contradicts or gives context to the claim. Never paraphrase, translate or invent a quotation, and never invent or guess a URL. Do not invent evidence to achieve balance: if a search finds no support, say so. Then file everything once with file_instruction: one proposal per quoted passage and, for each claim, what you searched for and found in BOTH directions. The host fetches every URL and keeps a proposal only if its quote is found there.";
 
+const NATIVE_SOURCE_REVIEW =
+  "Source review turn. Review the reliability of EACH source in the index below, including the ones you contributed. The index gives, for every E source, its URL, the claims it was filed for, the passages the host read in it and, for a post on X, its whole text. Use your search tools to check authorship, methodology, traceability and authenticity, and cite the E identifiers you checked; what you find is context for your vote, never new evidence. Use review_sources to vote once per source: veto=true if it is not reliable, veto=false if it should not be vetoed, always with a concrete reason. A source that contradicts your assessment is not unreliable for that reason. Three of the four analysts must veto a source to strike it out; absences and ties are not a majority. Do not argue about the verdict.";
+
 export function seatOf(spec: TurnSpec): SeatId {
   switch (spec.kind) {
     case "intake":
@@ -335,7 +338,7 @@ export function planTurn(
       const sources = [...project(all()).sources.values()];
       const reviewed = () => sources.every((s) => all().some((e) => e.type === "source_review_vote" && e.by === by && e.sourceId === s.id));
       return plan(
-        "Source review turn. Review the reliability of EACH source in the shared source file, including the ones you contributed. You can read their URLs to check authorship, methodology, traceability and authenticity. Use review_sources to vote once per source: veto=true if it is not reliable, veto=false if it should not be vetoed, always with a concrete reason. A source that contradicts your assessment is not unreliable for that reason. Three of the four analysts must veto a source to strike it out; absences and ties are not a majority. Do not present new evidence or argue about the verdict.",
+        (native ? NATIVE_SOURCE_REVIEW : "Source review turn. Review the reliability of EACH source in the shared source file, including the ones you contributed. You can read their URLs to check authorship, methodology, traceability and authenticity. Use review_sources to vote once per source: veto=true if it is not reliable, veto=false if it should not be vetoed, always with a concrete reason. A source that contradicts your assessment is not unreliable for that reason. Three of the four analysts must veto a source to strike it out; absences and ties are not a majority. Do not present new evidence or argue about the verdict."),
         { review_sources: tool(
           "Votes on the reliability of all unified sources, with the reason for each vote.",
           z.object({ votes: z.array(z.object({ sourceId: z.string(), veto: z.boolean(), reason: z.string().min(10) })) }),
