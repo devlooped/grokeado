@@ -5,6 +5,7 @@ import { defineSandboxProxy } from "@vercel/sandbox/proxy";
 import type { CaseRecord } from "../domain/court.ts";
 import { MemoryArtifactStore } from "../evidence/artifacts.ts";
 import { instructionSandboxLaunch } from "../evidence/broker.ts";
+import { buildCaseLog, parseCaseLog } from "../evidence/case-log.ts";
 import { assertToolCapability, authorizeSandboxBinding, committedPhase, type SandboxBinding } from "./authorization.ts";
 import { validateGatewayGeneration } from "./gateway-validation.ts";
 import { createTurnProxy } from "./proxy.ts";
@@ -244,4 +245,9 @@ test("the broker gives native research its longer call and audits what the provi
   assert.deepEqual(timeouts, [NATIVE_GENERATION_MS]);
   assert.deepEqual(audit[0]!.data.sources, [{ url: "https://example.test/report", title: "Report" }]);
   assert.equal(audit[0]!.data.searches, 1);
+  // The citations survive the public case log.
+  const [step] = parseCaseLog(buildCaseLog([], audit, []));
+  assert.equal(step!.kind, "model_step");
+  assert.deepEqual(step!.data.sources, [{ url: "https://example.test/report", title: "Report" }]);
+  assert.equal(step!.data.searches, 1);
 });
