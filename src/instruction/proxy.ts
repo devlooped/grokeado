@@ -44,10 +44,15 @@ export async function forwardGatewayGeneration(request: Request, body: unknown):
   if (!key || key === "placeholder") throw new Error("gateway_key_unavailable");
   const response = await fetch("https://ai-gateway.vercel.sh/v4/ai/language-model", { method: "POST", redirect: "error", signal: AbortSignal.timeout(150_000), body: JSON.stringify(body), headers: {
     "content-type": "application/json", authorization: `Bearer ${key}`,
+    // Match the installed Gateway SDK wire protocol, using host-owned auth.
+    "ai-gateway-protocol-version": "0.0.1", "ai-gateway-auth-method": "api-key",
     "ai-language-model-id": request.headers.get("ai-language-model-id")!,
     "ai-language-model-specification-version": "4", "ai-language-model-streaming": "false",
   } });
-  if (!response.ok) throw new Error("gateway_generation_failed");
+  if (!response.ok) {
+    console.warn("Gateway generation rejected:", response.status);
+    throw new Error("gateway_generation_failed");
+  }
   const text = await response.text();
   if (text.length > 4 * 1024 * 1024) throw new Error("gateway_result_too_large");
   return text;
