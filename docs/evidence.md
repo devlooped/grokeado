@@ -4,7 +4,7 @@ This page describes the legacy pipeline 1 bundle. New cases default to pipeline 
 which uses [shared instruction and settled evidence](shared-instruction.md); existing
 cases and archives retain the format below.
 
-Cases store an OKF-style tree in public-read Vercel Blob storage at
+Cases store an OKF-style tree in a public-read Cloudflare R2 bucket at
 `cases/{caseId}/evidence/`. `evidence/base/` is collector-owned and read-only.
 Each assistant writes only under `evidence/{seat}/`, where the seat is `grok`,
 `gemini`, `claude`, or `chatgpt`. Reprocessing adds a new fragment; it never
@@ -44,8 +44,8 @@ the evidence tree. The validator rejects malformed YAML, unknown fields or
 types, unresolved sources and links, author/namespace mismatches, writes
 outside the author's namespace, and changes to `evidence/base/`.
 
-Public Blob storage is the canonical source. Objects are written with
-`access: "public"` and stable pathnames, so anyone with the URL can read them.
+Public R2 storage is the canonical source. Objects are written with stable
+keys to a bucket with public access, so anyone with the URL can read them.
 When a case completes, the complete `evidence/` tree (including originals,
 catalogs, extractions, analyst files, and run artifacts) is compressed and
 stored separately at `cases/{caseId}/case.zip` before the case is marked
@@ -118,7 +118,7 @@ and event record; their original ZIP is not overwritten. If the base is no
 longer available, the original ZIP is offered as-is. Research tool results that
 were never stored cannot be recovered, and historical statements cannot be
 matched to runs without a recorded run ID.
-The transcript, like the rest of the Blob store, is publicly readable.
+The transcript, like the rest of the bucket, is publicly readable.
 The case page offers a single ZIP download; individual files remain available for
 citations. Resolved cases created before ZIP export was introduced create and
 store the archive on their first download, if their base evidence exists.
@@ -148,14 +148,20 @@ never replaces `base/`. Extracted link/image text is also passed into the
 court docket so intake and debate seats start with concrete material even when
 Blob persistence is disabled.
 
-To enable cloud processing, connect a **public** Vercel Blob store. Deployed
-environments use `BLOB_READ_WRITE_TOKEN`. Local checks use a Vercel OIDC token
-(`VERCEL_OIDC_TOKEN`) together with `BLOB_STORE_ID`. That token is
-development-scoped, so the store's project connection must include
-Development. Reads fetch the public
-blob URL; one of those credentials is required to list and write. An overwrite
-can stay on the CDN for up to 60 seconds, so server reads add the current etag
-as a query parameter. Optionally set `BROWSERBASE_API_KEY` (and
+To enable cloud processing, configure an R2 bucket with public access (its
+r2.dev URL or a custom domain) and an R2 API token with Object Read & Write on
+it: set `R2_ACCOUNT_ID`, `R2_BUCKET`, `R2_ACCESS_KEY_ID`,
+`R2_SECRET_ACCESS_KEY` and `R2_PUBLIC_URL`. The server lists, reads and writes
+through the authenticated S3 API, which is strongly consistent; browsers and
+ZIP downloads use the public URL. Overwritable objects carry
+`Cache-Control: public, max-age=60`, and download redirects add the current
+etag as a query parameter. Immutable artifacts are written with
+`If-None-Match: *`. `npm run evidence:migrate-r2` copies a former Vercel
+Blob store (`BLOB_READ_WRITE_TOKEN`) to the bucket; it is a dry run unless
+given `--apply`. A resolved case whose `cases/{caseId}/` folder is missing (for
+example, because it was not migrated) is marked failed, with an admin
+notification, the first time its page is opened; an admin reruns it from there.
+Optionally set `BROWSERBASE_API_KEY` (and
 `BROWSERBASE_PROJECT_ID` / `BROWSERBASE_PROXIES`) for stealth browser fallback
 during link collection. Configure `AI_GATEWAY_API_KEY` with a monthly quota
 and an appropriate expiration. This key is shared with the application; evidence
@@ -183,16 +189,13 @@ to `evidence/{seat}/` and `scratch/`.
 
 ## Vercel smoke and security
 
-These checks need a public-read Blob store, a snapshot, and a gateway
+These checks need a public-read R2 bucket, a snapshot, and a gateway
 key. They are not part of `npm test`. Do not enable production evidence until
 each one has passed:
 
-1. Public Blob reads and writes succeed. Locally, `npm run evidence:smoke`
-   mints a Vercel OIDC token and uses `BLOB_STORE_ID`. The store connection
-   must include Development, because the CLI issues a development token. A
-   deployed environment may use `BLOB_READ_WRITE_TOKEN` instead. `put` uses
-   `access: "public"`.
-   Reads fetch the public blob URL with no token. An unauthenticated `GET` of
+1. Public R2 reads and writes succeed. Locally, `npm run evidence:smoke`
+   uses the `R2_*` variables to write, then fetches every object from
+   `R2_PUBLIC_URL` with no credentials. An unauthenticated `GET` of
    `/c/{id}/evidence/...` returns the file when the case exists.
    After a case resolves, download `/c/{id}/file` and verify that the
    ZIP stored at `cases/{caseId}/case.zip` contains the complete tree.

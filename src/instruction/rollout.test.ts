@@ -3,7 +3,7 @@ import test from "node:test";
 import { requestedPipeline } from "./rollout.ts";
 
 test("new cases default to shared instruction in production and retain explicit legacy rollback", async () => {
-  const values = { COURT_PIPELINE_VERSION: "2", VERCEL_ENV: "production", INSTRUCTION_STAGING_CASE_ID: "fixture", INSTRUCTION_TOOL_ORIGIN: "https://court.example.test", APP_BASE_URL: "https://court.example.test", BLOB_READ_WRITE_TOKEN: "fixture-only", INSTRUCTION_SANDBOX_TEAM_ID: "team", INSTRUCTION_SANDBOX_PROJECT_ID: "project", INSTRUCTION_SANDBOX_SNAPSHOT_ID: "snapshot", AI_GATEWAY_API_KEY: "fixture-only", VERCEL_OIDC_TOKEN: `fixture.${Buffer.from(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 })).toString("base64url")}.fixture`, VERCEL_OIDC_TOKEN_FILE: "", EVIDENCE_SANDBOX_SNAPSHOT_ID: "" };
+  const values = { COURT_PIPELINE_VERSION: "2", VERCEL_ENV: "production", INSTRUCTION_STAGING_CASE_ID: "fixture", INSTRUCTION_TOOL_ORIGIN: "https://court.example.test", APP_BASE_URL: "https://court.example.test", R2_ACCOUNT_ID: "account", R2_BUCKET: "bucket", R2_ACCESS_KEY_ID: "fixture-only", R2_SECRET_ACCESS_KEY: "fixture-only", R2_PUBLIC_URL: "https://public.example.test", INSTRUCTION_SANDBOX_TEAM_ID: "team", INSTRUCTION_SANDBOX_PROJECT_ID: "project", INSTRUCTION_SANDBOX_SNAPSHOT_ID: "snapshot", AI_GATEWAY_API_KEY: "fixture-only", VERCEL_OIDC_TOKEN: `fixture.${Buffer.from(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 })).toString("base64url")}.fixture`, VERCEL_OIDC_TOKEN_FILE: "", EVIDENCE_SANDBOX_SNAPSHOT_ID: "" };
   const previous = Object.fromEntries(Object.keys(values).map((key) => [key, process.env[key]]));
   try {
     Object.assign(process.env, values);

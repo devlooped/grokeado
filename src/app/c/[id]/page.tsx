@@ -17,9 +17,10 @@ import { caseCardImageUrl } from "@/domain/case-card.ts";
 import { COUNSEL_NAMES, seatModels, type CaseRecord, type CourtEvent } from "@/domain/court.ts";
 import { project } from "@/domain/court.ts";
 import { displayHistoricalCitations } from "@/domain/historical-citations.ts";
-import { blobConfigured, findEvidenceArchive, hasEvidenceBase } from "@/evidence/blob.ts";
+import { blobConfigured, caseStorageExists, findEvidenceArchive, hasEvidenceBase } from "@/evidence/blob.ts";
 import { auth0 } from "@/lib/auth0.ts";
-import { coverVersions, findCaseAlias, getCase, getCaseAuditRecords, getEvents } from "@/store.ts";
+import { detectMissingCaseStorage } from "@/lib/case-storage.ts";
+import { coverVersions, failResolvedCase, findCaseAlias, getCase, getCaseAuditRecords, getEvents } from "@/store.ts";
 import { usageCalls } from "@/domain/usage.ts";
 import { caseCosts } from "@/domain/cost.ts";
 import { loadTokenPrices } from "@/lib/model-costs.ts";
@@ -72,12 +73,13 @@ function InSession({ c, events }: { c: CaseRecord; events: readonly CourtEvent[]
 export default async function CasePage(props: PageProps<"/c/[id]">) {
   await connection();
   const { id } = await props.params;
-  const c = await getCase(id);
-  if (!c) {
+  const found = await getCase(id);
+  if (!found) {
     const renamed = await findCaseAlias(id);
     if (renamed) permanentRedirect("/c/" + renamed);
     notFound();
   }
+  const c = await detectMissingCaseStorage(found, { configured: blobConfigured, exists: caseStorageExists, fail: failResolvedCase });
   if (c.status === "queued" || c.status === "in_session") return <div className="case-enter"><InSession c={c} events={c.status === "queued" ? [] : await getEvents(id)} /></div>;
   if (c.status === "failed") {
     const session = await auth0.getSession();

@@ -19,7 +19,7 @@ test("links only statements to the promoted evidence run for their own attempt",
 });
 
 test("a collection failure after opening marks the case as failed and rethrows", async (t) => {
-  const env = ["DATABASE_URL", "COURT_AI_MODE", "COURT_PIPELINE_VERSION", "BLOB_READ_WRITE_TOKEN", "VERCEL_OIDC_TOKEN", "BLOB_STORE_ID"] as const;
+  const env = ["DATABASE_URL", "COURT_AI_MODE", "COURT_PIPELINE_VERSION", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY"] as const;
   const originalEnv = env.map((key) => [key, process.env[key]] as const);
   t.after(() => {
     for (const [key, value] of originalEnv) {
@@ -31,9 +31,8 @@ test("a collection failure after opening marks the case as failed and rethrows",
   process.env.COURT_AI_MODE = "live";
   // A recorded legacy case must resume without the new-case bridge preflight.
   delete process.env.COURT_PIPELINE_VERSION;
-  delete process.env.BLOB_READ_WRITE_TOKEN;
-  delete process.env.VERCEL_OIDC_TOKEN;
-  delete process.env.BLOB_STORE_ID;
+  delete process.env.R2_ACCESS_KEY_ID;
+  delete process.env.R2_SECRET_ACCESS_KEY;
 
   const caseId = "missing-image";
   const row = {

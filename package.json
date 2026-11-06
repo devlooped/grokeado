@@ -15,6 +15,7 @@
     "test:evals": "node --import tsx --test \"evals/tiers/*.test.ts\"",
     "evidence:snapshot": "node --import tsx scripts/evidence-snapshot.ts",
     "evidence:smoke": "node --import tsx scripts/evidence-blob-smoke.ts",
+    "evidence:migrate-r2": "node --import tsx scripts/migrate-blob-to-r2.ts",
     "eval:tiers": "node --import tsx scripts/eval-tiers.ts",
     "models": "node scripts/models.mjs",
     "cases:regenerate-ids": "node --import tsx scripts/regenerate-case-ids.ts",

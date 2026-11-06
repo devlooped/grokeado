@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test, type TestContext } from "node:test";
 import { Pool } from "pg";
-import { requeueCase, restartCase } from "./store.ts";
+import { failResolvedCase, requeueCase, restartCase } from "./store.ts";
 
 type Call = { sql: string; args?: unknown[] };
 function fakeDatabase(t: TestContext, status: string | undefined, missingImage = false) {
@@ -99,4 +99,20 @@ test("blob cleanup failure rolls the database transaction back before clearing c
   await assert.rejects(restartCase("AA-123-BB", async () => { throw new Error("blob failure"); }), /blob failure/);
   assert.ok(calls.some(({ sql }) => sql === "ROLLBACK"));
   assert.ok(!calls.some(({ sql }) => sql.startsWith("DELETE") || sql.startsWith("UPDATE")));
+});
+
+test("marks only the same resolved revision as a failed run, with an admin notification", async (t) => {
+  const previous = process.env.DATABASE_URL;
+  process.env.DATABASE_URL = "postgres://example.invalid/test";
+  t.after(() => { if (previous === undefined) delete process.env.DATABASE_URL; else process.env.DATABASE_URL = previous; });
+  const calls: Call[] = [];
+  let rowCount = 1;
+  t.mock.method(Pool.prototype, "query", (async (sql: string, args?: unknown[]) => { calls.push({ sql, args }); return { rows: [], rowCount }; }) as unknown as typeof Pool.prototype.query);
+  assert.equal(await failResolvedCase("AA-123-BB", 4, "missing files"), true);
+  const update = calls.find(({ sql }) => sql.includes("UPDATE cases SET status = 'failed'"))!;
+  assert.match(update.sql, /status = 'resolved' AND revision = \$2/);
+  assert.match(update.sql, /INSERT INTO admin_notifications/);
+  assert.deepEqual(update.args!.slice(0, 3), ["AA-123-BB", 4, "missing files"]);
+  rowCount = 0;
+  assert.equal(await failResolvedCase("AA-123-BB", 4, "missing files"), false);
 });

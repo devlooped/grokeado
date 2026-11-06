@@ -471,6 +471,18 @@ export async function finishCase(id: string, status: "resolved" | "failed", erro
   await (await db()).query("UPDATE cases SET status = $1, error = $2, revision = revision + CASE WHEN $1 = 'resolved' AND status <> 'resolved' THEN 1 ELSE 0 END WHERE id = $3", [status, error ?? null, id]);
 }
 
+// A resolved case whose stored files are gone becomes a failed run that an admin can
+// rerun. The revision guard keeps a concurrent rerun from being marked failed.
+export async function failResolvedCase(id: string, revision: number, error: string): Promise<boolean> {
+  const { rowCount } = await (await db()).query(
+    `WITH updated AS (UPDATE cases SET status = 'failed', error = $3 WHERE id = $1 AND status = 'resolved' AND revision = $2 RETURNING id)
+     INSERT INTO admin_notifications (created_at, title, message, case_id)
+     SELECT $4, 'Falló un caso', $5, id FROM updated`,
+    [id, revision, error, new Date().toISOString(), caseFailureMessage(error)]
+  );
+  return rowCount === 1;
+}
+
 export type AdminNotification = { id: string; created_at: string; title: string; message: string; case_id: string | null; read_at: string | null };
 
 const MAX_NOTIFICATION_ID = 9223372036854775807n;
