@@ -54,7 +54,7 @@ export function nativeResearchTools(modelId: string, phase: "instruction" | "cri
 
 ### The broker accepts these tools, and only these
 
-`validateGatewayGeneration` (`src/instruction/gateway-validation.ts`) rejects every non-function tool today. In pipeline 3 the binding records the exact provider tools of the seat (`gatewayTools`, as today for function tools), and validation accepts a `type: "provider"` entry only when its `id` is allowed for the model's provider and its `args` equal the snapshot. Pipeline 3 bindings also record `maxOutputTokens` (8192 instead of the fixed 4096), because one research report carries every quote. Everything else stays: model, provider options, prompt inspection, and the request budget.
+`validateGatewayGeneration` (`src/instruction/gateway-validation.ts`) rejects every non-function tool today. In pipeline 3 the binding records the exact provider tools of the seat (`gatewayTools`, as today for function tools), and validation accepts a `type: "provider"` entry only when its `id` is allowed for the model's provider and its `args` equal the snapshot. Pipeline 3 bindings also record `maxOutputTokens: null` (no cap, instead of the fixed 4096; the request must then carry none), because one research report carries every quote. (Was 8192 until the first eval, where Claude and Gemini hit it.) Everything else stays: model, provider options, prompt inspection, and the request budget.
 
 ### Network access of the sandbox
 
@@ -64,7 +64,7 @@ Opening the VM to the internet (`"*": []` next to the two forwarded hosts in `in
 
 ### Instruction: one research call, then a structured filing
 
-- **Sandbox call** (`advancePreparation`, `sandbox/harness/instruction-agent.ts`): one `generateText` with the native tools only (no `compute`, no host function tools, so no step ends waiting for us), `stopWhen: stepCountIs(1)`, the call timeout set to the turn's remaining time minus 15 s, and an 8192-token output. The prompt asks for a report that, for each claim, gives sources in favour and against, with the **exact URL** and a **verbatim quote in the source's language**. If the call times out, the turn completes with an empty draft marked as timed out: the analyst then files nothing, and the case goes on instead of failing.
+- **Sandbox call** (`advancePreparation`, `sandbox/harness/instruction-agent.ts`): one `generateText` with the native tools only (no `compute`, no host function tools, so no step ends waiting for us), `stopWhen: stepCountIs(1)`, the call timeout set to the turn's remaining time minus 15 s, and no output cap. The prompt asks for a report that gathers only (no assessment of the sources or of the claims: that belongs to the source review and the debate), and that, for each claim, gives sources in favour and against, with the **exact URL** and a **verbatim quote in the source's language**. If the call times out, the turn completes with an empty draft marked as timed out: the analyst then files nothing, and the case goes on instead of failing.
 - **Host decision** (`src/court/settled-play.ts`): one generation with a single tool, which replaces `file_evidence` + `finish_instruction` for pipeline 3:
 
 ```ts
@@ -121,6 +121,7 @@ The broker already saves each generation's request and response under `instructi
 - [x] 10. Audit: add `data.sources` and the search count to pipeline 3 `model_step` records; `case-log` tests.
 - [x] 11. The local eval (see below), then one paid run, with its report committed under `evals/research/results-<date>.md`.
   - Harness done (`scripts/eval-research.ts`, `evals/research/`, `npm run eval:research`). Paid run 2026-11-06 (USD 5.33): [results](../../evals/research/results-2026-11-06.md). It misses the thresholds: no case reached source review complete (decision timeout, fatal translation failure, a decision without a tool call, an intake dismissal), quotes matched 50–60 %, gather p95 271 s. Native tools were accepted for all four providers. Deviation: intake prepares in one call without tools (no host tools in process), and the run stops after source review.
+  - After review: research calls have no output cap, and the gathering prompts (`NATIVE_INSTRUCTION`, the native instruction preparation system prompt) ask for sources only, with no assessment of the sources or of the claims.
 - [ ] 12. (Blocked: the eval missed its thresholds; the default stays 2.) Make pipeline 3 the default for new cases once the eval meets its thresholds. Update `docs/shared-instruction.md` (native tools, host collection, batch criticism, network stance) and the mock seat (`createMockSeat`) so that simulated cases run pipeline 3.
 
 ## The local eval

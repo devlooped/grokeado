@@ -15,7 +15,7 @@ import { COUNSEL, project, type CaseRecord, type Counsel, type RecordedEvent } f
 import { MemoryArtifactStore } from "../src/evidence/artifacts.ts";
 import { collectEvidence, fetchProposedUrls, proposedUrls, type RejectedProposal } from "../src/instruction/collection.ts";
 import { criticismIndex } from "../src/instruction/criticism-index.ts";
-import { NATIVE_CALL_MARGIN_MS, NATIVE_OUTPUT_TOKENS } from "../src/instruction/preparation.ts";
+import { NATIVE_CALL_MARGIN_MS } from "../src/instruction/preparation.ts";
 import { sourceDownloader } from "../src/instruction/research.ts";
 import { MemoryOperationRepository } from "../src/instruction/source-store.ts";
 import { liveSourceDependencies, SourceService } from "../src/instruction/sources.ts";
@@ -114,7 +114,7 @@ async function runCase(entry: ResearchCase): Promise<CaseResult & { trace: unkno
     try {
       const result = await runCall({ caseId, callId: `${turn.id}:0`, model: state.model, system: state.system, messages: state.messages, tools: definitions,
         toolChoice: native ? "auto" : "none", timeoutMs: native ? Math.max(1, remainingMs - NATIVE_CALL_MARGIN_MS) : 150_000,
-        ...(native ? { maxOutputTokens: NATIVE_OUTPUT_TOKENS } : {}), resultPath: "" }, { local: true });
+        ...(native ? { maxOutputTokens: null } : {}), resultPath: "" }, { local: true });
       trace.push({ seat: state.seat, phase: state.phase, modelId: state.model.id, tools: definitions.map((d) => d.type === "provider" ? d.id : d.name), ...result, messages: undefined });
       if (counsel) gather = { seat: state.seat as Counsel, phase: state.phase as GatherRecord["phase"], modelId: state.model.id, tools: definitions.map((d) => d.type === "provider" ? d.id : d.name),
         elapsedMs: performance.now() - time, finishReason: result.finishReason, searches: result.searches ?? 0, sources: result.sources?.length ?? 0, costUsd: costOf(state.model.id, result.usage) };

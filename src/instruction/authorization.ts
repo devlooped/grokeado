@@ -12,8 +12,9 @@ export type SandboxBinding = {
   revoked: boolean;
   model: CourtModel;
   gatewayTools: unknown[];
-  // Pipeline 3 research reports carry every quote: their calls may write more.
-  maxOutputTokens?: number;
+  // Output cap of the calls; absent: 4096. null: none, for pipeline 3 research,
+  // whose report carries every quote.
+  maxOutputTokens?: number | null;
   activeTurn?: { id: string; expiresAt: string; remainingRequests: number };
 };
 

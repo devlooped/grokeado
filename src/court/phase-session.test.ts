@@ -98,3 +98,10 @@ test("provider cache hints are stable, phase/channel scoped, and never rewrite t
   assert.equal(JSON.stringify(anthropic.state.messages.slice(0, -1)), prefix);
   assert.equal(anthropic.state.messages.at(-1)?.providerOptions, undefined);
 });
+
+test("pipeline 3 gathering gathers sources without assessing them; criticism still assesses them", () => {
+  const gathering = phaseSystem("instruction", "grok", "es", "preparation", true);
+  assert.match(gathering, /Do not assess the sources or the merits of the claims/);
+  assert.match(gathering, /exact URL, verbatim passage and stance/);
+  assert.doesNotMatch(phaseSystem("criticism", "grok", "es", "preparation", true), /Do not assess the sources/);
+});

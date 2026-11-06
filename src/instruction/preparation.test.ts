@@ -3,7 +3,7 @@ import test from "node:test";
 import { Sandbox } from "@vercel/sandbox";
 import { FatalError } from "workflow";
 import { MemoryPhaseRepository, PhaseSession } from "../court/phase-session.ts";
-import { advancePreparation, deleteCaseSandboxes, NATIVE_CALL_MARGIN_MS, NATIVE_OUTPUT_TOKENS, nativePreparationDefinitions, PREPARATION_SYNTHESIS_MS, prepareInSandbox, sweepCaseSandboxes, withSandboxCleanup } from "./preparation.ts";
+import { advancePreparation, deleteCaseSandboxes, NATIVE_CALL_MARGIN_MS, nativePreparationDefinitions, PREPARATION_SYNTHESIS_MS, prepareInSandbox, sweepCaseSandboxes, withSandboxCleanup } from "./preparation.ts";
 
 test("preparation requires a final response, preserves checkpoints on exhaustion, and resumes the same sandbox", async () => {
   const keys = ["INSTRUCTION_TOOL_ORIGIN", "INSTRUCTION_SANDBOX_SNAPSHOT_ID", "INSTRUCTION_SANDBOX_TEAM_ID", "INSTRUCTION_SANDBOX_PROJECT_ID"] as const;
@@ -318,8 +318,8 @@ test("pipeline 3 prepares with one native research call and files nothing when i
   try {
     let runs = 0;
     let response: unknown = { messages: [{ role: "assistant", content: "Report" }], text: "Report with quotes", finishReason: "stop", sources: [{ url: "https://example.test/a" }], searches: 3 };
-    const tasks: Array<{ tools: unknown[]; maxOutputTokens?: number; timeoutMs: number; toolChoice: string }> = [];
-    const bindings: Array<{ gatewayTools: unknown[]; maxOutputTokens?: number }> = [];
+    const tasks: Array<{ tools: unknown[]; maxOutputTokens?: number | null; timeoutMs: number; toolChoice: string }> = [];
+    const bindings: Array<{ gatewayTools: unknown[]; maxOutputTokens?: number | null }> = [];
     const sandbox = {
       name: "native-fixture",
       writeFiles: async (files: { path: string; content: string }[]) => { const task = files.find((file) => file.path === "/workspace/task.json"); if (task) tasks.push(JSON.parse(task.content)); },
@@ -330,7 +330,7 @@ test("pipeline 3 prepares with one native research call and files nothing when i
     };
     const deps = {
       sandbox: { create: async () => sandbox, get: async () => sandbox } as unknown as typeof Sandbox,
-      bind: async (_caseId: string, _name: string, binding: { gatewayTools: unknown[]; maxOutputTokens?: number }) => { bindings.push(binding); },
+      bind: async (_caseId: string, _name: string, binding: { gatewayTools: unknown[]; maxOutputTokens?: number | null }) => { bindings.push(binding); },
     };
     const repository = new MemoryPhaseRepository();
     const model = { id: "openai/fixture" };
@@ -341,10 +341,10 @@ test("pipeline 3 prepares with one native research call and files nothing when i
     assert.equal(await prepareInSandbox(session, deps), "Report with quotes");
     assert.equal(runs, 1, "native research is one call, without a step loop");
     assert.deepEqual(tasks[0]!.tools, native);
-    assert.equal(tasks[0]!.maxOutputTokens, NATIVE_OUTPUT_TOKENS);
+    assert.equal(tasks[0]!.maxOutputTokens, null, "native research has no output cap");
     assert.equal(tasks[0]!.toolChoice, "auto");
     assert.ok(tasks[0]!.timeoutMs > 250_000 && tasks[0]!.timeoutMs <= 300_000 - NATIVE_CALL_MARGIN_MS, "the call may use the turn, less its margin");
-    assert.deepEqual(bindings[0], { ...bindings[0], gatewayTools: native, maxOutputTokens: NATIVE_OUTPUT_TOKENS });
+    assert.deepEqual(bindings[0], { ...bindings[0], gatewayTools: native, maxOutputTokens: null });
     assert.equal(session.state.turns.turn!.complete, true);
     assert.equal(session.state.turns.turn!.timedOut, undefined);
 

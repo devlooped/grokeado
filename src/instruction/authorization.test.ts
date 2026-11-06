@@ -183,7 +183,7 @@ test("pipeline 3 bindings accept exactly the seat's native research tools and th
   ];
   for (const phase of ["instruction", "criticism"] as const) for (const model of models) {
     const native = nativeResearchTools(model.id, phase);
-    const snapshot: SandboxBinding = { ...binding, phase, model, gatewayTools: native, maxOutputTokens: 8192 };
+    const snapshot: SandboxBinding = { ...binding, phase, model, gatewayTools: native, maxOutputTokens: null };
     let calls = 0;
     const gateway = createGateway({ baseURL: "https://ai-gateway.vercel.sh/v4/ai", apiKey: "placeholder", fetch: async (url, init) => {
       calls++;
@@ -198,6 +198,7 @@ test("pipeline 3 bindings accept exactly the seat's native research tools and th
         assert.throws(() => validateGatewayGeneration(request, { ...body, tools }, { ...snapshot, gatewayTools: tools }), /native_tools_forbidden/, "a snapshot holds only the model's own tools");
       }
       assert.throws(() => validateGatewayGeneration(request, body, { ...snapshot, phase: "debate" }), /native_tools_forbidden/, "debate has no native research");
+      assert.equal(body.maxOutputTokens, undefined, "native research sends no output cap");
       assert.throws(() => validateGatewayGeneration(request, { ...body, maxOutputTokens: 16_384 }, snapshot), /generation_snapshot_mismatch/);
       const { maxOutputTokens: _, ...pipeline2 } = snapshot;
       assert.throws(() => validateGatewayGeneration(request, body, pipeline2), /generation_snapshot_mismatch/, "a pipeline 2 binding keeps 4096 output tokens");
@@ -205,7 +206,7 @@ test("pipeline 3 bindings accept exactly the seat's native research tools and th
     } });
     const task = { caseId: "fixture", callId: "turn:0", model, system: "Research", messages: [], tools: native, resultPath: "/workspace/result.json" };
     const result = await generateText({ model: gateway(model.id), providerOptions: model.providerOptions, system: "Research", prompt: "Claims",
-      tools: toolSet(task, undefined, new AbortController().signal), maxOutputTokens: 8192, stopWhen: stepCountIs(1), maxRetries: 0 });
+      tools: toolSet(task, undefined, new AbortController().signal), stopWhen: stepCountIs(1), maxRetries: 0 });
     assert.equal(result.text, "Report");
     assert.equal(calls, 1);
   }
@@ -221,8 +222,8 @@ test("the broker gives native research its longer call and audits what the provi
   const record: CaseRecord = { id: "fixture", createdAt: "2026-11-06T00:00:00.000Z", status: "in_session", pipelineVersion: 3, submission: { kind: "text", text: "Fixture", resolvedLanguage: "es" } };
   const model = { id: "openai/fixture" };
   const native = nativeResearchTools(model.id, "instruction");
-  const nativeBinding: SandboxBinding = { ...binding, phase: "instruction", seat: "chatgpt", model, gatewayTools: native, maxOutputTokens: 8192 };
-  const body = { prompt: [{ role: "user", content: [{ type: "text", text: "Claims" }] }], tools: native, maxOutputTokens: 8192 };
+  const nativeBinding: SandboxBinding = { ...binding, phase: "instruction", seat: "chatgpt", model, gatewayTools: native, maxOutputTokens: null };
+  const body = { prompt: [{ role: "user", content: [{ type: "text", text: "Claims" }] }], tools: native };
   const timeouts: Array<number | undefined> = [];
   const audit: Array<{ data: Record<string, unknown> }> = [];
   const dispatch = createTurnProxy({ origin: "https://staging.example.test", teamId: "team", projectId: "project" }, {

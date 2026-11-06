@@ -7,7 +7,7 @@ type FunctionDefinition = { type: "function"; name: string; description: string;
 // Native research tools run on the provider's side within the call (pipeline 3).
 type ProviderDefinition = { type: "provider"; id: `${string}.${string}`; name: string; args: Record<string, unknown> };
 export type Definition = FunctionDefinition | ProviderDefinition;
-export type Task = { caseId: string; callId: string; model: { id: string; providerOptions?: Parameters<typeof generateText>[0]["providerOptions"] }; system: string; messages: ModelMessage[]; tools: Definition[]; toolChoice?: "auto" | "none"; timeoutMs?: number; maxOutputTokens?: number; resultPath: string };
+export type Task = { caseId: string; callId: string; model: { id: string; providerOptions?: Parameters<typeof generateText>[0]["providerOptions"] }; system: string; messages: ModelMessage[]; tools: Definition[]; toolChoice?: "auto" | "none"; timeoutMs?: number; maxOutputTokens?: number | null; resultPath: string };
 export type CallResult = {
   messages: ModelMessage[]; text: string; usage?: unknown; finishReason: string;
   // What the provider cited, and how many searches it ran on its side.
@@ -61,7 +61,7 @@ export async function runCall(task: Task, options: CallOptions = {}): Promise<Ca
   } });
   try {
     const result = await generateText({ model: gateway(task.model.id), providerOptions: task.model.providerOptions,
-      system: task.system, messages: task.messages, tools: toolSet(task, options.origin, toolDeadline), toolChoice: task.toolChoice ?? "auto", maxOutputTokens: task.maxOutputTokens ?? 4096,
+      system: task.system, messages: task.messages, tools: toolSet(task, options.origin, toolDeadline), toolChoice: task.toolChoice ?? "auto", maxOutputTokens: task.maxOutputTokens === null ? undefined : task.maxOutputTokens ?? 4096,
       stopWhen: stepCountIs(1), maxRetries: 0, abortSignal: deadline,
     });
     const sources = result.sources.flatMap((source) => source.sourceType === "url" ? [{ url: source.url, ...(source.title ? { title: source.title } : {}) }] : []);

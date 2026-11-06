@@ -90,7 +90,7 @@ test("SDK native research requests reach the Gateway with their provider tools u
     upstream = JSON.parse(String(init?.body));
     return Response.json({ content: [{ type: "text", text: "Report" }], finishReason: { unified: "stop", raw: "stop" }, usage: { inputTokens: { total: 1 }, outputTokens: { total: 1 } } });
   }) as typeof fetch);
-  const binding = { phase: "instruction" as const, seat: "grok" as const, sessionKey: "instruction:grok:preparation", phaseSessionId: "fixture-phase", expiresAt: "2026-11-06T00:00:00.000Z", revoked: false, model: { id: "spacexai/fixture" }, gatewayTools: native, maxOutputTokens: 8192 };
+  const binding = { phase: "instruction" as const, seat: "grok" as const, sessionKey: "instruction:grok:preparation", phaseSessionId: "fixture-phase", expiresAt: "2026-11-06T00:00:00.000Z", revoked: false, model: { id: "spacexai/fixture" }, gatewayTools: native, maxOutputTokens: null };
   const gateway = createGateway({ baseURL: "https://ai-gateway.vercel.sh/v4/ai", apiKey: "placeholder", fetch: async (url, init) => {
     const request = new Request(url, init);
     const body = JSON.parse(String(init?.body));
@@ -99,7 +99,8 @@ test("SDK native research requests reach the Gateway with their provider tools u
   } });
   const task = { caseId: "fixture", callId: "turn:0", model: binding.model, system: "Research", messages: [], tools: native, resultPath: "/workspace/result.json" };
   const result = await generateText({ model: gateway("spacexai/fixture"), system: "Research", prompt: "Claims",
-    tools: toolSet(task, undefined, new AbortController().signal), maxOutputTokens: 8192, stopWhen: stepCountIs(1), maxRetries: 0 });
+    tools: toolSet(task, undefined, new AbortController().signal), stopWhen: stepCountIs(1), maxRetries: 0 });
   assert.equal(result.text, "Report");
+  assert.equal(upstream?.maxOutputTokens, undefined, "the Gateway receives no output cap");
   assert.deepEqual(upstream?.tools, native.map(({ type, name, id, args }) => ({ type, name, id, args })));
 });

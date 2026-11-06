@@ -35,7 +35,7 @@ export function validateGatewayGeneration(request: Request, body: unknown, bindi
         !/^ai\/\d+\.\d+\.\d+(?:[-+][a-zA-Z0-9.-]+)?$/.test(headers["user-agent"])) throw new Error("generation_headers_forbidden");
   }
   const keys = new Set(["prompt", "tools", "toolChoice", "providerOptions", "maxOutputTokens", "headers"]);
-  if (Object.keys(record).some((key) => !keys.has(key)) || !Array.isArray(record.prompt) || record.maxOutputTokens !== (binding.maxOutputTokens ?? 4096) ||
+  if (Object.keys(record).some((key) => !keys.has(key)) || !Array.isArray(record.prompt) || (record.maxOutputTokens ?? null) !== (binding.maxOutputTokens === undefined ? 4096 : binding.maxOutputTokens) ||
       request.headers.get("ai-language-model-id") !== binding.model.id || request.headers.get("ai-language-model-specification-version") !== "4" ||
       request.headers.get("ai-language-model-streaming") !== "false" ||
       stableJson(record.providerOptions ?? {}) !== stableJson(binding.model.providerOptions ?? {}) ||

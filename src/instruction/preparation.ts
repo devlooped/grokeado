@@ -25,8 +25,6 @@ export function nativePreparationDefinitions(phase: PhaseSession["state"]["phase
   return phase === "instruction" || phase === "criticism" ? nativeResearchTools(modelId, phase) : preparationDefinitions(phase);
 }
 
-// A native research call writes one report with every quote.
-export const NATIVE_OUTPUT_TOKENS = 8192;
 // A native research call ends this long before its turn, so its result is read
 // and the decision still starts within the turn.
 export const NATIVE_CALL_MARGIN_MS = 15_000;
@@ -124,7 +122,8 @@ export async function advancePreparation(session: PhaseSession, deps: Preparatio
         await deps.bind(session.caseId, sandbox.name, {
           phase: session.state.phase, seat: session.state.seat, sessionKey: session.key, phaseSessionId: session.state.id,
           expiresAt: new Date(Date.now() + 24 * 60 * 60_000).toISOString(), revoked: false, model: session.state.model, gatewayTools: native ?? preparationDefinitions(session.state.phase),
-          ...(native ? { maxOutputTokens: NATIVE_OUTPUT_TOKENS } : {}),
+          // A native research report carries every quote: its call has no output cap.
+          ...(native ? { maxOutputTokens: null } : {}),
           activeTurn: { id: turn.id, expiresAt: turn.expiresAt, remainingRequests: 60 },
         });
         turn.preparationBound = true;
@@ -144,7 +143,7 @@ export async function advancePreparation(session: PhaseSession, deps: Preparatio
       const commandTimeoutMs = native ? Math.max(1, remainingMs - NATIVE_CALL_MARGIN_MS + 5000)
         : Math.max(1, Math.min(165_000, toolChoice === "auto" ? remainingMs - PREPARATION_SYNTHESIS_MS : remainingMs));
       const timeoutMs = native ? Math.max(1, remainingMs - NATIVE_CALL_MARGIN_MS) : Math.max(1, Math.min(150_000, commandTimeoutMs - 5000));
-      await sandbox.writeFiles([{ path: "/workspace/task.json", content: JSON.stringify({ caseId: session.caseId, callId, model: session.state.model, system: session.state.system, messages: session.state.messages, tools: native ?? preparationDefinitions(session.state.phase), toolChoice, timeoutMs, ...(native ? { maxOutputTokens: NATIVE_OUTPUT_TOKENS } : {}), resultPath }) }]);
+      await sandbox.writeFiles([{ path: "/workspace/task.json", content: JSON.stringify({ caseId: session.caseId, callId, model: session.state.model, system: session.state.system, messages: session.state.messages, tools: native ?? preparationDefinitions(session.state.phase), toolChoice, timeoutMs, ...(native ? { maxOutputTokens: null } : {}), resultPath }) }]);
       command = await sandbox.runCommand({ cmd: "node", args: ["--import", "/opt/evidence-harness/node_modules/tsx/dist/loader.mjs", "/opt/evidence-harness/instruction-agent.ts", "/workspace/task.json"], cwd: "/workspace", timeoutMs: commandTimeoutMs, detached: true });
       turn.preparationCommand = { id: command.cmdId, resultPath };
       await session.save();
