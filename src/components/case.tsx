@@ -159,6 +159,7 @@ function Entry({ e, ctx }: { e: RecordedEvent; ctx: Context }) {
         </div>
       );
     case "instruction_opened":
+    case "evidence_proposed":
       return null;
     case "instruction_completed":
       return (

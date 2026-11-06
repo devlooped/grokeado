@@ -7,7 +7,7 @@ import { loadSettledCorpus } from "../evidence/settled.ts";
 import { sha256 } from "../evidence/validate.ts";
 import { CourtActionSchemas, createCourtActions, phaseActions, turnPhase } from "../instruction/court-tools.ts";
 import { caseSourceService } from "../instruction/proxy.ts";
-import { advancePreparation, preparationDefinitions } from "../instruction/preparation.ts";
+import { advancePreparation, nativePreparationDefinitions, preparationDefinitions } from "../instruction/preparation.ts";
 import type { SourceService } from "../instruction/sources.ts";
 import { executeSourceTool, SourceToolSchemas, sourceToolsFor } from "../instruction/tools.ts";
 import { getCase, recordCaseToolActivity, saveCaseAuditRecord } from "../store.ts";
@@ -50,16 +50,20 @@ export async function advanceSharedTurn(caseId: string, docket: Docket, spec: Tu
   const audit = injected?.audit ?? saveCaseAuditRecord;
   const activity = injected?.activity ?? recordCaseToolActivity;
   const seat = seatOf(spec), phase = turnPhase(spec), model = seatModel(docket.models, seat);
+  // Pipeline 3 researches with the provider's tools in one preparation call;
+  // the decision only files what the report found.
+  const native = stored.pipelineVersion === 3 && (phase === "instruction" || phase === "criticism");
   const corpus = phase === "debate" ? await loadSettledCorpus(caseId, record as RecordedEvent[], artifacts) : undefined;
   const initial = corpus
     ? `question.json:\n${corpus.question}\n\nindex.md:\n${corpus.index}`
     : JSON.stringify({ today: docket.today, submission: docket.submission, context: docket.submissionContext });
   const id = sha256(JSON.stringify([spec, attempt, ...record.map((event) => (event as RecordedEvent).seq || 0)]));
-  const plan = createCourtActions(docket, spec, record, reader, corpus).plan;
+  const plan = createCourtActions(docket, spec, record, reader, corpus, native).plan;
   // The prompts are in English and are not translated: the language rule of the
   // system prompt makes the seats write in the case language.
   const instruction = plan.instruction.replaceAll("web_fetch", "read_source");
-  const note = phase === "instruction" ? "file_evidence takes the sourceId and blockIds you read with read_source; the host fills in the title and the passage. unify_evidence takes no groups: the host groups by canonical identity." : "";
+  const note = native ? (phase === "instruction" ? "file_instruction takes, for each source of the preparation report, its exact URL and a verbatim quote in the source's language; the host fetches the URLs and keeps a proposal only if its quote is found there." : "")
+    : phase === "instruction" ? "file_evidence takes the sourceId and blockIds you read with read_source; the host fills in the title and the passage. unify_evidence takes no groups: the host groups by canonical identity." : "";
   const task = `${JSON.stringify(spec)}\n${instruction}\n${note}`;
   // The system prompt and the task of each turn go to case.jsonl, which
   // translates them into the case language. Their times are checkpointed, so a
@@ -76,7 +80,7 @@ export async function advanceSharedTurn(caseId: string, docket: Docket, spec: Tu
   };
 
   const preparation = await PhaseSession.open(caseId, { phase, seat, channel: "preparation", model,
-    system: phaseSystem(phase, seat, docket.language, "preparation"), tools: JSON.stringify(preparationDefinitions(phase)), initial }, injected?.repository);
+    system: phaseSystem(phase, seat, docket.language, "preparation", native), tools: JSON.stringify(native ? nativePreparationDefinitions(phase, model.id) : preparationDefinitions(phase)), initial }, injected?.repository);
   const prepTurn = await preparation.begin(id, record, task);
   await recordPrompts(preparation, prepTurn);
   let draft = prepTurn.draft ?? "";
@@ -86,21 +90,24 @@ export async function advanceSharedTurn(caseId: string, docket: Docket, spec: Tu
     draft = prepared;
     if (!prepTurn.complete) { prepTurn.draft = draft; await preparation.finish(); }
   }
-  const names = phaseActions(phase, seat);
-  const schemas = Object.fromEntries([...sourceToolsFor(phase).map((name) => [name, z.toJSONSchema(SourceToolSchemas[name], { target: "draft-7" })]), ...names.map((name) => [name, z.toJSONSchema(CourtActionSchemas[name], { target: "draft-7" })])]);
+  const names = phaseActions(phase, seat, native);
+  const sourceTools = native ? [] : sourceToolsFor(phase);
+  const schemas = Object.fromEntries([...sourceTools.map((name) => [name, z.toJSONSchema(SourceToolSchemas[name], { target: "draft-7" })]), ...names.map((name) => [name, z.toJSONSchema(CourtActionSchemas[name], { target: "draft-7" })])]);
   const session = await PhaseSession.open(caseId, { phase, seat, channel: "decision", model,
-    system: phaseSystem(phase, seat, docket.language, "decision"), tools: JSON.stringify(schemas), initial }, injected?.repository);
-  const normalizedDraft = draft ? (await reader.normalize("", draft)).body : "";
+    system: phaseSystem(phase, seat, docket.language, "decision", native), tools: JSON.stringify(schemas), initial }, injected?.repository);
+  // A pipeline 3 instruction report quotes its sources verbatim, in their own
+  // language: translated, its quotes would no longer match the sources.
+  const normalizedDraft = !draft ? "" : native && phase === "instruction" ? draft : (await reader.normalize("", draft)).body;
   const draftPath = `${phase === "debate" ? "discussion" : "instruction/runs"}/${seat}/${id}/draft.md`;
   if (normalizedDraft) await artifacts.write(caseId, new Map([[draftPath, normalizedDraft]]));
   const turn = await session.begin(id, record, JSON.stringify({ task, preparation: normalizedDraft }));
   await recordPrompts(session, turn);
   if (turn.complete) return { events: turn.events, done: turn.done };
-  const actions = createCourtActions(docket, spec, [...record, ...turn.events], reader, corpus);
+  const actions = createCourtActions(docket, spec, [...record, ...turn.events], reader, corpus, native);
   let pending = Promise.resolve();
   const serialize = <T>(run: () => Promise<T>): Promise<T> => { const result = pending.then(run); pending = result.then(() => {}, () => {}); return result; };
   const tools: ToolSet = {};
-  for (const name of sourceToolsFor(phase)) tools[name] = {
+  for (const name of sourceTools) tools[name] = {
     description: name, inputSchema: SourceToolSchemas[name],
     execute: (input, options) => executeSourceTool({ tool: name, input, callId: options.toolCallId }, { record: stored, events: record as RecordedEvent[], phase, seat, turnId: id, reader, artifacts, worker: injected?.worker, activity }),
   };

@@ -1,0 +1,64 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import type { RecordedEvent } from "../domain/court.ts";
+import { MemoryArtifactStore } from "../evidence/artifacts.ts";
+import { buildCaseLog, parseCaseLog } from "../evidence/case-log.ts";
+import { collectEvidence, fetchProposedUrls, proposedUrls, rejectionRecord } from "./collection.ts";
+import { MemoryOperationRepository } from "./source-store.ts";
+import { extractSource, SourceService } from "./sources.ts";
+
+const pages: Record<string, string> = {
+  "https://example.org/informe": "El informe oficial indica que la inflación de octubre fue del 2,7 por ciento.\n\nOtro párrafo sin relación con la afirmación.",
+  "https://example.org/nota": "La nota periodística sostiene que el dato oficial fue revisado al alza.",
+};
+
+function reader() {
+  let downloads = 0;
+  const service = new SourceService("fixture", "es", { operations: new MemoryOperationRepository(), artifacts: new MemoryArtifactStore(), extract: extractSource,
+    translatorModelId: "fixture/translator", translatorFingerprint: "fixture-v1", translate: async (input) => ({ ...input, changed: false }), verifyLanguage: async () => ({ matches: true }),
+    download: async (url) => { downloads++; return pages[url] ? { ok: true, finalUrl: url, redirects: 0, contentType: "text/plain", bytes: new TextEncoder().encode(pages[url]!) } : { ok: false, error: "http_404" }; },
+  });
+  return { service, downloads: () => downloads };
+}
+
+let seq = 0;
+const propose = (by: "grok" | "claude", claimId: string, url: string, quote: string, stance: "supports" | "opposes" | "context" = "supports"): RecordedEvent =>
+  ({ type: "evidence_proposed", by, proposal: { claimId, url, quote, stance }, seq: ++seq, at: "2026-11-06T00:00:00.000Z" });
+
+test("the host fetches each proposed URL once, files matched quotes and groups them by source", async () => {
+  const events: RecordedEvent[] = [
+    { type: "claims_entered", claims: [{ id: "A1", quote: "", text: "La inflación de octubre fue del 2,7%." }], seq: ++seq, at: "2026-11-06T00:00:00.000Z" },
+    propose("grok", "A1", "https://example.org/informe#tabla", "la inflacion de octubre fue del 2,7 por ciento"),
+    propose("claude", "A1", "https://example.org/informe", "La inflación de octubre fue del 2,7 por ciento.", "context"),
+    propose("claude", "A1", "https://example.org/informe", "La inflación de octubre fue del 2,7 por ciento.", "context"),
+    propose("grok", "A1", "https://example.org/nota", "el dato oficial fue revisado a la baja según la nota", "opposes"),
+    propose("claude", "A1", "https://example.org/caida", "Una página que ya no existe en el sitio."),
+  ];
+  const urls = proposedUrls(events);
+  assert.deepEqual(urls, ["https://example.org/informe", "https://example.org/nota", "https://example.org/caida"]);
+  const { service, downloads } = reader();
+  const fetched = await fetchProposedUrls(service, urls);
+  assert.equal(downloads(), 3);
+  assert.ok(fetched[2]!.error && !fetched[2]!.sourceId, "an unreachable URL is a rejection, not a failure");
+  const { events: collected, rejected } = await collectEvidence(events, fetched, service);
+  const filed = collected.flatMap((event) => event.type === "evidence_filed" ? [event.evidence] : []);
+  assert.deepEqual(filed.map((evidence) => [evidence.id, evidence.by, evidence.stance]), [["P1", "grok", "supports"], ["P2", "claude", "context"]], "a repeated proposal files once");
+  assert.deepEqual(filed[0]!.blockIds, ["p1:b1"]);
+  assert.match(filed[0]!.excerpt, /^\[p1:b1\] El informe oficial/);
+  assert.equal(filed[0]!.url, "https://example.org/informe");
+  const unified = collected.at(-1);
+  assert.ok(unified?.type === "evidence_unified");
+  assert.deepEqual(unified.sources.map((source) => [source.id, source.contributions.map((evidence) => evidence.id)]), [["E1", ["P1", "P2"]]]);
+  assert.equal(unified.sources[0]!.sourceId, filed[0]!.sourceId);
+  assert.deepEqual(rejected.map((proposal) => proposal.reason), ["quote_not_found", "source_failed"]);
+  // Retried, the step reads the same operations back and files the same events.
+  assert.deepEqual((await collectEvidence(events, await fetchProposedUrls(service, urls), service)).events, collected);
+  assert.equal(downloads(), 3);
+  const log = parseCaseLog(buildCaseLog([], rejected.map(rejectionRecord), []));
+  assert.deepEqual(log.map((record) => [record.kind, record.seat, record.data.reason]), [["proposal_rejected", "grok", "quote_not_found"], ["proposal_rejected", "claude", "source_failed"]]);
+});
+
+test("without proposals, collection files an empty source file", async () => {
+  const { service } = reader();
+  assert.deepEqual(await collectEvidence([], [], service), { events: [{ type: "evidence_unified", sources: [] }], rejected: [] });
+});

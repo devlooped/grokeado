@@ -16,6 +16,10 @@ export const CourtActionSchemas = {
   dismiss_case: z.object({ reason: z.string().min(10) }).strict(),
   file_evidence: z.object({ sourceId: z.string().regex(/^src_[a-f0-9]{24}$/), blockIds: z.array(z.string().regex(/^p[1-9]\d*:b[1-9]\d*$/)).min(1).max(100), claimId: claim, stance, commentary: z.string().max(8000).optional() }).strict(),
   finish_instruction: z.object({ searches: z.array(z.object({ claimId: claim, supporting: z.string().min(10), opposing: z.string().min(10) }).strict()) }).strict(),
+  file_instruction: z.object({
+    proposals: z.array(z.object({ claimId: claim, url: z.url(), quote: z.string().min(20).max(4000), stance, commentary: z.string().max(8000).optional() }).strict()).max(60),
+    searches: z.array(z.object({ claimId: claim, supporting: z.string().min(10), opposing: z.string().min(10) }).strict()),
+  }).strict(),
   unify_evidence: z.object({}).strict(),
   review_sources: z.object({ votes: z.array(z.object({ sourceId: z.string().regex(/^E[1-9]\d*$/), veto: z.boolean(), reason: z.string().min(10) }).strict()) }).strict(),
   make_statement: z.object({ text: z.string().min(20), evidenceIds: z.array(z.string()).max(100) }).strict(),
@@ -37,9 +41,10 @@ export function turnPhase(spec: TurnSpec): InstructionPhase {
   return "debate";
 }
 
-export function phaseActions(phase: InstructionPhase, seat: string): CourtAction[] {
+// native: pipeline 3, where an analyst files URL + quote proposals at once.
+export function phaseActions(phase: InstructionPhase, seat: string, native = false): CourtAction[] {
   if (phase === "intake") return ["enter_claims", "dismiss_case"];
-  if (phase === "instruction") return seat === "judge" ? ["unify_evidence"] : ["file_evidence", "finish_instruction"];
+  if (phase === "instruction") return seat === "judge" ? ["unify_evidence"] : native ? ["file_instruction"] : ["file_evidence", "finish_instruction"];
   if (phase === "criticism") return ["review_sources"];
   return seat === "judge" ? ["rule", "decide", "decide_content", "summarize_case"] : ["make_statement", "object", "pass", "reply_objection", "cast_votes", "vote_content"];
 }
@@ -76,19 +81,27 @@ export function validateCourtText(corpus: SettledCorpus, value: unknown): void {
   else if (value && typeof value === "object") Object.values(value).forEach((child) => validateCourtText(corpus, child));
 }
 
+// The quote and URL of a proposal are matched against the source as written:
+// only the analyst's own prose is normalized into the case language.
+async function normalizeFiling(input: z.infer<typeof CourtActionSchemas.file_instruction>, reader: SourceService) {
+  const proposals = [];
+  for (const proposal of input.proposals) proposals.push(proposal.commentary ? { ...proposal, commentary: (await reader.normalize("", proposal.commentary)).body } : proposal);
+  return { proposals, searches: await normalizeCourtInput(input.searches, reader) };
+}
+
 export function modelFacingEvents(events: readonly CourtEvent[]): CourtEvent[] {
   // Audit-only originals never enter any participating model's context.
   return JSON.parse(JSON.stringify(events, (key, value) => key === "translation" || key === "original" ? undefined : value)) as CourtEvent[];
 }
 
-export function createCourtActions(docket: Docket, spec: TurnSpec, record: readonly CourtEvent[], reader: SourceService, corpus?: SettledCorpus) {
-  const plan = planTurn(spec, record, docket.submission, [], Boolean(docket.submissionContext?.excerpt));
+export function createCourtActions(docket: Docket, spec: TurnSpec, record: readonly CourtEvent[], reader: SourceService, corpus?: SettledCorpus, native = false) {
+  const plan = planTurn(spec, record, docket.submission, [], Boolean(docket.submissionContext?.excerpt), native);
   const phase = turnPhase(spec);
   const run = async (name: CourtAction, raw: unknown): Promise<string | { error: string }> => {
-    if (!phaseActions(phase, seatOf(spec)).includes(name) || !plan.tools[name]) return { error: "action_not_allowed_this_turn" };
+    if (!phaseActions(phase, seatOf(spec), native).includes(name) || !plan.tools[name]) return { error: "action_not_allowed_this_turn" };
     try {
       const input = CourtActionSchemas[name].parse(raw);
-      let prepared = await normalizeCourtInput(input, reader);
+      let prepared = name === "file_instruction" ? await normalizeFiling(CourtActionSchemas.file_instruction.parse(input), reader) : await normalizeCourtInput(input, reader);
       let reference: Pick<Evidence, "sourceId" | "blockIds" | "commentary"> | undefined;
       let citations: string[] | undefined;
       if (name === "file_evidence") {

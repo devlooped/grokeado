@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { RecordedEvent } from "../domain/court.ts";
 import type { Operation } from "../instruction/source-store.ts";
 
-export const CaseLogRecordSchema = z.object({ schemaVersion: z.literal(2), id: z.string().min(1), kind: z.enum(["court_event", "model_step", "prompt", "source_operation", "tool_call"]), at: z.iso.datetime(), seat: z.string().optional(), phase: z.string().optional(), modelId: z.string().optional(), effort: z.string().nullable().optional(), data: z.record(z.string(), z.unknown()) }).strict();
+export const CaseLogRecordSchema = z.object({ schemaVersion: z.literal(2), id: z.string().min(1), kind: z.enum(["court_event", "model_step", "prompt", "source_operation", "tool_call", "proposal_rejected"]), at: z.iso.datetime(), seat: z.string().optional(), phase: z.string().optional(), modelId: z.string().optional(), effort: z.string().nullable().optional(), data: z.record(z.string(), z.unknown()) }).strict();
 export type CaseLogRecord = z.infer<typeof CaseLogRecordSchema>;
 
 // Select provenance/usage/references, never source bodies or private checkpoints.
@@ -25,7 +25,7 @@ export function buildCaseLog(events: readonly RecordedEvent[], audit: readonly u
   const groups = new Map<string, CaseLogRecord[]>();
   for (const record of records.values()) {
     // A prompt sits in its session, before the model steps that answer it.
-    const origin = record.kind === "court_event" ? "court" : record.kind === "model_step" || record.kind === "prompt" ? `model:${record.seat}:${record.phase}:${String(record.data.channel)}:${String(record.data.sessionId)}` : record.kind === "tool_call" ? `tool:${record.seat}` : `source:${String(record.data.operation)}`;
+    const origin = record.kind === "court_event" ? "court" : record.kind === "model_step" || record.kind === "prompt" ? `model:${record.seat}:${record.phase}:${String(record.data.channel)}:${String(record.data.sessionId)}` : record.kind === "tool_call" ? `tool:${record.seat}` : record.kind === "proposal_rejected" ? "collection" : `source:${String(record.data.operation)}`;
     if (!groups.has(origin)) groups.set(origin, []);
     groups.get(origin)!.push(record);
   }

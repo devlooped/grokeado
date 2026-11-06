@@ -71,6 +71,8 @@ export function describe(e: CourtEvent): string {
       return "Empieza la instrucción: aporte de pruebas a favor y en contra de cada afirmación, sin argumentaciones.";
     case "evidence_filed":
       return "[" + e.evidence.id + "] " + MODEL_NAME[e.evidence.by] + " presenta evidencia sobre " + e.evidence.claimId + (e.evidence.stance ? " (" + EVIDENCE_STANCE_LABEL[e.evidence.stance] + ")" : "") + ": " + e.evidence.title + " (" + e.evidence.url + "). " + e.evidence.excerpt;
+    case "evidence_proposed":
+      return MODEL_NAME[e.by] + " propone una fuente sobre " + e.proposal.claimId + " (" + EVIDENCE_STANCE_LABEL[e.proposal.stance] + "): " + e.proposal.url + " «" + e.proposal.quote + "»";
     case "instruction_completed":
       return MODEL_NAME[e.by] + " cierra sus aportes de instrucción:\n" + e.searches.map((s) => s.claimId + " — búsqueda a favor: " + s.supporting + "; búsqueda en contra: " + s.opposing).join("\n");
     case "evidence_unified":

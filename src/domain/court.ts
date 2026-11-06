@@ -111,6 +111,16 @@ export interface Evidence {
   commentary?: string;
 }
 
+// Pipeline 3: an analyst proposes a source by URL and verbatim quote; the host
+// fetches the URL and files it as evidence only if the quote is found there.
+export interface EvidenceProposal {
+  claimId: string;
+  url: string;
+  quote: string;
+  stance: "supports" | "opposes" | "context";
+  commentary?: string;
+}
+
 export interface InstructionSearch {
   claimId: string;
   supporting: string;
@@ -136,6 +146,7 @@ export type CourtEvent =
   | { type: "dismissed"; reason: string }
   | { type: "instruction_opened" }
   | { type: "evidence_filed"; evidence: Evidence }
+  | { type: "evidence_proposed"; by: Counsel; proposal: EvidenceProposal }
   | { type: "instruction_completed"; by: Counsel; searches: InstructionSearch[] }
   | { type: "evidence_unified"; sources: UnifiedSource[] }
   | { type: "source_review_vote"; by: Counsel; sourceId: string; veto: boolean; reason: string }

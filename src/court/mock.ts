@@ -17,6 +17,8 @@ export interface MockTurn {
   record: readonly CourtEvent[];
   submission: Submission;
   shared?: boolean;
+  // Pipeline 3: instruction files URL + quote proposals for the host to collect.
+  native?: boolean;
 }
 
 type Call = { name: string; input: unknown };
@@ -26,7 +28,7 @@ const sourceUrl = (claimId: string, side: string) => "https://sources.example.te
 
 // Fixtures drive the real AI SDK tool loop. They never decide anything about the
 // submitted material: every response, source and verdict is explicitly fictitious.
-function responses({ spec, record, submission }: MockTurn): Call[][] {
+function responses({ spec, record, submission, native }: MockTurn): Call[][] {
   const view = project(record);
   const admitted = [...view.sources.values()].filter((s) => s.excluded === false).map((s) => s.id);
   const statement = () => call("make_statement", {
@@ -41,6 +43,18 @@ function responses({ spec, record, submission }: MockTurn): Call[][] {
     }
     case "instruction": {
       const sides = ["support", "opposition", "unreliable"] as const;
+      // The quote is in every fictitious page the mock downloader returns.
+      if (native) return [[call("file_instruction", {
+        proposals: view.claims.flatMap((c) => sides.map((side) => ({
+          claimId: c.id, url: sourceUrl(c.id, side), quote: "Documento ficticio con datos 42, sin valor probatorio.",
+          stance: side === "support" ? "supports" : side === "opposition" ? "opposes" : "context",
+        }))),
+        searches: view.claims.map((c) => ({
+          claimId: c.id,
+          supporting: prefix + "Busqué respaldo a favor y encontré el documento ficticio correspondiente.",
+          opposing: prefix + "Busqué evidencia contraria y encontré el documento ficticio correspondiente.",
+        })),
+      })]];
       return [
         view.claims.flatMap((c) => [call("web_search", { query: c.id + " pruebas a favor" }), call("web_search", { query: c.id + " pruebas en contra" })]),
         view.claims.flatMap((c) => sides.map((side) => call("web_fetch", { url: sourceUrl(c.id, side) }))),

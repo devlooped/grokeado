@@ -123,6 +123,9 @@ export function composePrompt(input: { seat: SeatId; docket: Docket; record: rea
   ].join("\n\n");
 }
 
+const NATIVE_INSTRUCTION =
+  "Instruction stage: evidence only, without statements or conclusions. For EACH claim, actively search the web (and X, if you have a tool for it) for sources both IN FAVOR and AGAINST, without limiting yourself to your intuition or to a single position. Prefer primary sources (official bodies, original documents) and established media. For every useful source, give its exact URL as you found it and a passage copied verbatim from that page, in the page's own language, that supports, contradicts or gives context to the claim. Never paraphrase, translate or invent a quotation, and never invent or guess a URL. Do not invent evidence to achieve balance: if a search finds no support, say so. Then file everything once with file_instruction: one proposal per quoted passage and, for each claim, what you searched for and found in BOTH directions. The host fetches every URL and keeps a proposal only if its quote is found there.";
+
 export function seatOf(spec: TurnSpec): SeatId {
   switch (spec.kind) {
     case "intake":
@@ -144,7 +147,10 @@ export function planTurn(
   record: readonly CourtEvent[],
   submission: Submission,
   evidencePaths: readonly string[] = [],
-  hasSubmissionContext = false
+  hasSubmissionContext = false,
+  // Pipeline 3: instruction researches with the provider's tools and files
+  // URL + quote proposals that the host collects.
+  native = false
 ): TurnPlan {
   const produced: StampedEvent[] = [];
   const all = (): CourtEvent[] => [...record, ...produced];
@@ -248,18 +254,44 @@ export function planTurn(
     case "instruction": {
       const by = spec.counsel;
       const completed = () => all().some((e) => e.type === "instruction_completed" && e.by === by);
+      const searchesTool = z.array(z.object({ claimId: claimId(), supporting: z.string().min(10), opposing: z.string().min(10) }));
+      const checkSearches = (searches: { claimId: string }[]) => {
+        const ids = searches.map((s) => s.claimId);
+        if (ids.length !== claims().length || new Set(ids).size !== ids.length || claims().some((c) => !ids.includes(c.id)))
+          throw new Rejection("Document the search in favor and against exactly once for each claim.");
+      };
+      if (native) return plan(NATIVE_INSTRUCTION, {
+        file_instruction: tool(
+          "Files your whole instruction at once: every source you propose, by its exact URL and a verbatim quote, and what you searched for each claim in both directions.",
+          z.object({
+            proposals: z.array(z.object({
+              claimId: claimId().describe("The claim the source refers to"),
+              url: z.url().describe("The exact URL of the page, as your search found it"),
+              quote: z.string().min(20).max(4000).describe("A passage copied verbatim from that page, in the page's own language; mark omitted text with …"),
+              stance: z.enum(["supports", "opposes", "context"]).describe("supports: in favor; opposes: against; context: context that neither confirms nor refutes"),
+              commentary: z.string().max(8000).optional().describe("Why the passage matters, if it is not obvious"),
+            })).max(60),
+            searches: searchesTool,
+          }),
+          ({ proposals, searches }) => {
+            if (completed()) throw new Rejection("You already closed your instruction.");
+            checkSearches(searches);
+            for (const proposal of proposals) emit({ type: "evidence_proposed", by, proposal });
+            emit({ type: "instruction_completed", by, searches });
+            return "Instruction filed with " + proposals.length + " proposals. The host fetches each URL and keeps a proposal only if its quote is found there.";
+          }
+        ),
+      }, completed);
       const instruction =
         "Instruction stage: evidence filing only, without statements or conclusions. For EACH claim, actively search for evidence both IN FAVOR and AGAINST, without limiting yourself to your intuition or to a single position. Read the sources and record each contribution with file_evidence, stating its stance. Do not invent evidence to achieve balance: if a search finds no support, record that. When all searches and contributions are done, call finish_instruction with the details of what you searched for and found in BOTH directions for each claim. Do not finish after your first piece of evidence.";
       return plan(instruction, {
         file_evidence: evidenceTool(by),
         finish_instruction: tool(
           "Closes your contributions after searching in both directions for each claim. Document the searches without results too.",
-          z.object({ searches: z.array(z.object({ claimId: claimId(), supporting: z.string().min(10), opposing: z.string().min(10) })) }),
+          z.object({ searches: searchesTool }),
           ({ searches }) => {
             if (completed()) throw new Rejection("You already closed your instruction.");
-            const ids = searches.map((s) => s.claimId);
-            if (ids.length !== claims().length || new Set(ids).size !== ids.length || claims().some((c) => !ids.includes(c.id)))
-              throw new Rejection("Document the search in favor and against exactly once for each claim.");
+            checkSearches(searches);
             emit({ type: "instruction_completed", by, searches });
             return "Contributions closed.";
           }
