@@ -281,7 +281,7 @@ export async function deleteCase(id: string, deleteBlobs: (ids: string[]) => Pro
 
 // Reuse the public case id, but clear all data produced by the previous run.
 // The original submission (including an uploaded image) remains the workflow input.
-export async function restartCase(id: string, deleteBlobs: (ids: string[]) => Promise<void>): Promise<"queued" | "missing" | "active" | "missing-image"> {
+export async function restartCase(id: string, deleteBlobs: (ids: string[]) => Promise<void>, expectedStatus?: "failed"): Promise<"queued" | "missing" | "active" | "missing-image"> {
   const client = await (await db()).connect();
   try {
     await client.query("BEGIN");
@@ -290,7 +290,7 @@ export async function restartCase(id: string, deleteBlobs: (ids: string[]) => Pr
       await client.query("ROLLBACK");
       return "missing";
     }
-    if (rows[0]!.status !== "resolved" && rows[0]!.status !== "failed") {
+    if ((expectedStatus && rows[0]!.status !== expectedStatus) || (rows[0]!.status !== "resolved" && rows[0]!.status !== "failed")) {
       await client.query("ROLLBACK");
       return "active";
     }
@@ -451,10 +451,10 @@ export async function openSession(id: string, requestedPipeline: 1 | 2 | (() => 
   }
 }
 
-// Only one caller wins the failed -> queued transition, so a retry starts exactly one session.
-export async function requeueCase(id: string): Promise<boolean> {
-  const { rowCount } = await (await db()).query("UPDATE cases SET status = 'queued', error = NULL WHERE id = $1 AND status = 'failed'", [id]);
-  return rowCount === 1;
+// User retries are fresh reruns too. The same reset/row lock drops old generated
+// state, and only one caller wins the failed -> queued transition.
+export async function requeueCase(id: string, deleteBlobs: (ids: string[]) => Promise<void>): Promise<boolean> {
+  return await restartCase(id, deleteBlobs, "failed") === "queued";
 }
 
 export async function finishCase(id: string, status: "resolved" | "failed", error?: string): Promise<void> {

@@ -42,6 +42,19 @@ The acta links admitted `E1` and `E1#p1:b2` references to safe Markdown previews
 Downloads remain public-read audit artifacts, **not a privacy boundary** and not
 the input mounted into debate sandboxes. Legacy archives are not rewritten.
 
+## Starting a case over
+
+Only admins can retry failed cases or see raw failure details. Other visitors
+receive a generic failure message with no retry control. The failed-case page's
+**Reintentar** action and the admin rerun both perform a full reset before
+starting a new workflow. They preserve the public case ID,
+original submission/upload and access metadata, not generated processing state.
+Events, covers, source operations/aliases, audit records, phase checkpoints,
+sandbox bindings and Blob artifacts are removed; detected language and recorded
+model/pipeline selections are cleared. The fresh preparation VM uses the current
+configured snapshot rather than resuming any previous VM. Automatic retries of
+a step within the same execution still reuse that execution's checkpoints.
+
 ## Local verification and recovery
 
 Keep the effective `DATABASE_URL` restricted to explicit loopback and database
@@ -53,6 +66,7 @@ connecting:
 ```powershell
 node --import tsx scripts/check-local-database.ts
 node --import tsx scripts/test-local-instruction.ts
+node --import tsx scripts/test-local-rerun.ts
 $env:COURT_AI_MODE = "mock"
 npm test
 npm run typecheck

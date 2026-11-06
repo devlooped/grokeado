@@ -37,6 +37,9 @@ test("retrying a case rejects unauthorized sessions before accessing storage", a
     { user: { sub: "someone", email: "daniel@cazzulino.com", email_verified: false } },
     { user: { sub: "someone", email: "daniel@cazzulino.com" } },
     { user: { email: "daniel@cazzulino.com", email_verified: true } },
+    { user: { sub: "daniel", email: "daniel@cazzulino.com", email_verified: true } },
+    { user: { sub: "user", roles: ["admin"] } },
+    { user: { roles: ["Admin"] } },
   ];
   for (const session of sessions) {
     const getSession = t.mock.method(auth0, "getSession", async () => session as Awaited<ReturnType<typeof auth0.getSession>>);
@@ -46,13 +49,17 @@ test("retrying a case rejects unauthorized sessions before accessing storage", a
   assert.equal(query.mock.callCount(), 0);
 });
 
-test("an authorized retry attempts the atomic failed-to-queued transition", async (t) => {
-  t.mock.method(auth0, "getSession", async () => ({ user: { sub: "daniel", email: "Daniel@Cazzulino.com", email_verified: true } }) as Awaited<ReturnType<typeof auth0.getSession>>);
+test("an authorized retry uses the transactional reset and does not restart a resolved case", async (t) => {
+  t.mock.method(auth0, "getSession", async () => ({ user: { sub: "admin-user", roles: ["Admin"] } }) as unknown as Awaited<ReturnType<typeof auth0.getSession>>);
   const queries: { sql: string; values?: unknown[] }[] = [];
-  t.mock.method(Pool.prototype, "query", (async (sql: string, values?: unknown[]) => {
-    queries.push({ sql, values });
-    return { rows: [], rowCount: 0 };
-  }) as typeof Pool.prototype.query);
+  t.mock.method(Pool.prototype, "query", (async () => ({ rows: [], rowCount: 0 })) as unknown as typeof Pool.prototype.query);
+  t.mock.method(Pool.prototype, "connect", (async () => ({
+    query: async (sql: string, values?: unknown[]) => {
+      queries.push({ sql, values });
+      return { rows: sql.startsWith("SELECT status") ? [{ status: "resolved" }] : [], rowCount: 0 };
+    },
+    release: () => {},
+  })) as unknown as typeof Pool.prototype.connect);
   const originalUrl = process.env.DATABASE_URL;
   process.env.DATABASE_URL = "postgres://example.invalid/test";
   try {
@@ -61,10 +68,10 @@ test("an authorized retry attempts the atomic failed-to-queued transition", asyn
     if (originalUrl === undefined) delete process.env.DATABASE_URL;
     else process.env.DATABASE_URL = originalUrl;
   }
-  const updates = queries.filter(({ sql }) => sql.startsWith("UPDATE cases SET status = 'queued'"));
-  assert.equal(updates.length, 1);
-  assert.match(updates[0].sql, /status = 'failed'/);
-  assert.deepEqual(updates[0].values, ["failed-case"]);
+  assert.ok(queries.some(({ sql }) => sql === "SELECT status FROM cases WHERE id = $1 FOR UPDATE"));
+  assert.deepEqual(queries.find(({ sql }) => sql.startsWith("SELECT status"))?.values, ["failed-case"]);
+  assert.ok(queries.some(({ sql }) => sql === "ROLLBACK"));
+  assert.ok(!queries.some(({ sql }) => /^(UPDATE|DELETE)/.test(sql)));
 });
 
 test("malformed and private links return form errors instead of throwing", async (t) => {

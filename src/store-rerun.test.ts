@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test, type TestContext } from "node:test";
 import { Pool } from "pg";
-import { restartCase } from "./store.ts";
+import { requeueCase, restartCase } from "./store.ts";
 
 type Call = { sql: string; args?: unknown[] };
 function fakeDatabase(t: TestContext, status: string | undefined, missingImage = false) {
@@ -59,6 +59,30 @@ test("missing or active cases cannot be reset", async (t) => {
       assert.ok(!calls.some(({ sql }) => sql.startsWith("DELETE")));
     });
   }
+});
+
+test("failed-case retry performs the same full reset as an admin rerun", async (t) => {
+  const calls = fakeDatabase(t, "failed");
+  const blobs: string[][] = [];
+  assert.equal(await requeueCase("AA-123-BB", async (ids) => { blobs.push(ids); }), true);
+  assert.deepEqual(blobs, [["AA-123-BB", "old-id"]]);
+  for (const table of ["events", "covers", "case_source_operations", "case_source_aliases", "case_phase_sessions", "case_audit_records", "case_sandbox_bindings"]) {
+    assert.ok(calls.some(({ sql }) => sql === `DELETE FROM ${table} WHERE case_id = $1`), `retry drops ${table}`);
+  }
+  assert.ok(calls.some(({ sql }) => sql.includes("models = NULL, pipeline_version = NULL")));
+  assert.ok(calls.some(({ sql }) => sql.includes("submission = submission - 'resolvedLanguage'")));
+  assert.ok(calls.some(({ sql }) => sql === "COMMIT"));
+});
+
+test("failed-case retry does not reset resolved, active or missing cases", async (t) => {
+  for (const status of ["resolved", "queued", "in_session", undefined]) await t.test(String(status), async (sub) => {
+    const calls = fakeDatabase(sub, status);
+    let cleaned = false;
+    assert.equal(await requeueCase("AA-123-BB", async () => { cleaned = true; }), false);
+    assert.equal(cleaned, false);
+    assert.ok(!calls.some(({ sql }) => /^(DELETE|UPDATE)/.test(sql)));
+    assert.ok(calls.some(({ sql }) => sql === "ROLLBACK"));
+  });
 });
 
 test("a missing original image rejects the rerun before deleting case data or blobs", async (t) => {

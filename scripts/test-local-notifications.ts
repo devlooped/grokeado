@@ -32,7 +32,7 @@ try {
   const notifications = await store.listAdminNotifications();
   assert.equal(notifications.length, 3);
   assert.equal((await store.listAdminNotifications(notifications[0]!.id)).length, 2);
-  assert.equal(await store.requeueCase("fixture"), true);
+  assert.equal((await client.query("UPDATE cases SET status = 'queued' WHERE id = 'fixture'")).rowCount, 1);
   await store.finishCase("fixture", "failed", "again");
   assert.equal((await store.listAdminNotifications()).length, 4, "a new attempt can fail again");
   console.log("Local PostgreSQL: notification persistence, deduplication, read state, pagination and transitions verified.");
