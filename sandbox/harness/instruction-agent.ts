@@ -3,7 +3,7 @@ import { createGateway, generateText, jsonSchema, stepCountIs, type ModelMessage
 import { compute } from "./compute.ts";
 
 type Definition = { type: "function"; name: string; description: string; inputSchema: Parameters<typeof jsonSchema>[0] };
-type Task = { caseId: string; callId: string; model: { id: string; providerOptions?: Parameters<typeof generateText>[0]["providerOptions"] }; system: string; messages: ModelMessage[]; tools: Definition[]; resultPath: string };
+type Task = { caseId: string; callId: string; model: { id: string; providerOptions?: Parameters<typeof generateText>[0]["providerOptions"] }; system: string; messages: ModelMessage[]; tools: Definition[]; toolChoice?: "auto" | "none"; timeoutMs?: number; resultPath: string };
 const task = JSON.parse(await readFile(process.argv[2]!, "utf8")) as Task;
 const origin = process.env.COURT_TOOL_ORIGIN!;
 if (!origin || !task.resultPath.startsWith("/workspace/")) throw new Error("invalid_task");
@@ -28,7 +28,7 @@ const gateway = createGateway({ baseURL: "https://ai-gateway.vercel.sh/v4/ai", a
   return fetch(url, { ...init, headers });
 } });
 const result = await generateText({ model: gateway(task.model.id), providerOptions: task.model.providerOptions,
-  system: task.system, messages: task.messages, tools, maxOutputTokens: 4096,
-  stopWhen: stepCountIs(1), maxRetries: 0, abortSignal: AbortSignal.timeout(150_000),
+  system: task.system, messages: task.messages, tools, toolChoice: task.toolChoice ?? "auto", maxOutputTokens: 4096,
+  stopWhen: stepCountIs(1), maxRetries: 0, abortSignal: AbortSignal.timeout(task.timeoutMs ?? 150_000),
 });
 await writeFile(task.resultPath, JSON.stringify({ messages: result.responseMessages, text: result.text, usage: result.usage, finishReason: result.finishReason }), "utf8");

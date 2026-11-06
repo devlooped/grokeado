@@ -40,6 +40,23 @@ test("debate fails closed without closure and refuses silent context resets", as
   await assert.rejects(session.save(), /context limit/);
 });
 
+test("new turns allow 300 seconds without renewing the deadline on replay", async (t) => {
+  let now = Date.now();
+  t.mock.method(Date, "now", () => now);
+  for (const channel of ["preparation", "decision"] as const) {
+    const repository = new MemoryPhaseRepository();
+    const initial = { ...config, channel };
+    let session = await PhaseSession.open("case", initial, repository);
+    const record = [stamp({ type: "instruction_closed" }, 1)];
+    const turn = await session.begin("turn", record, "task");
+    const deadline = now + 300_000;
+    assert.equal(Date.parse(turn.expiresAt), deadline);
+    now += 60_000;
+    session = await PhaseSession.open("case", initial, repository);
+    assert.equal(Date.parse((await session.begin("turn", record, "task")).expiresAt), deadline);
+  }
+});
+
 test("shared phase instructions require canonical case-language quotations, not preserved foreign quotes", () => {
   for (const language of ["es", "en"]) {
     const system = phaseSystem("debate", "judge", language, "decision");

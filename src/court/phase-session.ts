@@ -9,7 +9,7 @@ import { sha256 } from "../evidence/validate.ts";
 import type { CourtModel } from "./models.ts";
 import type { SeatId, TurnOutcome } from "./turns.ts";
 
-export type PhaseTurn = { id: string; expiresAt: string; start: number; steps: number; inFlightStep?: string; events: TurnOutcome["events"]; done: boolean; complete: boolean; draft?: string; results: Record<string, { input: string; output: unknown }> };
+export type PhaseTurn = { id: string; expiresAt: string; start: number; steps: number; inFlightStep?: string; preparationToolChoice?: "auto" | "none"; events: TurnOutcome["events"]; done: boolean; complete: boolean; draft?: string; results: Record<string, { input: string; output: unknown }> };
 export type PhaseState = {
   id: string; phase: InstructionPhase; seat: SeatId; channel: "preparation" | "decision";
   model: CourtModel; system: string; tools: string; messages: ModelMessage[]; cursor: number;
@@ -91,7 +91,7 @@ export class PhaseSession {
     // normalized before commit; do not introduce a Spanish-only narration here.
     this.state.messages.push({ role: "user", content: JSON.stringify({ events: unseen, task }) });
     this.state.cursor = Math.max(this.state.cursor, ...record.map((event) => (event as RecordedEvent).seq || 0));
-    const turn: PhaseTurn = { id, expiresAt: new Date(Date.now() + 270_000).toISOString(), start: this.state.messages.length, steps: 0, events: [], done: false, complete: false, results: {} };
+    const turn: PhaseTurn = { id, expiresAt: new Date(Date.now() + 300_000).toISOString(), start: this.state.messages.length, steps: 0, events: [], done: false, complete: false, results: {} };
     this.state.turns[id] = turn;
     this.state.activeTurn = turn;
     await this.save();

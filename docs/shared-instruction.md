@@ -23,8 +23,13 @@ pipeline 1 cases keep their original tools, artifact formats, and download URLs;
   and messages. Private phase checkpoints retain tool-call outcomes and model
   steps for recovery, not for ZIP export. Sandbox preparation and host decisions
   are separate continuing conversations. Context overflow never resets history.
-  Preparation also fails closed if its tool-step/time budget expires without a
-  nonempty final response; a partial draft cannot advance the decision channel.
+  Preparation reserves its eighth and last step for a response with tool calls
+  disabled, also disabling tools when at most a minute remains in its
+  300-second turn. Preparation sandboxes also have a 300-second timeout.
+  Model/command timeouts respect the remaining turn time. It still fails closed
+  if the budget expires without a nonempty final response; a partial draft cannot advance the decision
+  channel. Exhaustion and incomplete final responses are non-retryable workflow
+  failures: replaying an already spent checkpoint cannot replenish its budget.
 - Debate tools read only manifest-listed IDs/sections, never URLs, originals or
   instruction drafts. All source-bearing court actions validate corpus citations.
   Local sandbox computation accepts bounded numeric operations, not shell code.

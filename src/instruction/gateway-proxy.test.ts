@@ -55,12 +55,14 @@ test("SDK preparation requests retain the Gateway wire protocol through host for
     validateGatewayGeneration(request, body, { phase: "intake", seat: "judge", sessionKey: "intake:judge:preparation", phaseSessionId: "fixture-phase", expiresAt: "2026-11-06T00:00:00.000Z", revoked: false, model: { id: "fixture/model" }, gatewayTools: definitions });
     return new Response(await forwardGatewayGeneration(request, body), { headers: { "content-type": "application/json" } });
   } });
-  const result = await generateText({ model: gateway("fixture/model"), system: "Fixture system", prompt: "Prepare",
-    tools: Object.fromEntries(definitions.map((definition) => [definition.name, { description: definition.description, inputSchema: jsonSchema(definition.inputSchema), execute: async () => ({}) }])),
-    maxOutputTokens: 4096, stopWhen: stepCountIs(1), maxRetries: 0,
-  });
-  assert.equal(result.text, "Fixture analysis");
-  assert.equal(upstreamCalls, 1);
+  for (const toolChoice of ["auto", "none"] as const) {
+    const result = await generateText({ model: gateway("fixture/model"), system: "Fixture system", prompt: "Prepare",
+      tools: Object.fromEntries(definitions.map((definition) => [definition.name, { description: definition.description, inputSchema: jsonSchema(definition.inputSchema), execute: async () => ({}) }])),
+      toolChoice, maxOutputTokens: 4096, stopWhen: stepCountIs(1), maxRetries: 0,
+    });
+    assert.equal(result.text, "Fixture analysis");
+  }
+  assert.equal(upstreamCalls, 2);
 });
 
 test("upstream rejection logs only the HTTP status, not its body or credentials", async (t) => {

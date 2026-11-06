@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
 import type { ModelMessage } from "ai";
+import { FatalError } from "workflow";
 import type { PhaseSession } from "../court/phase-session.ts";
 import { instructionSandboxLaunch } from "../evidence/broker.ts";
 import { saveSandboxBinding } from "../store.ts";
@@ -25,7 +26,7 @@ export async function prepareInSandbox(session: PhaseSession, deps = { sandbox: 
   const resuming = Boolean(session.state.sandboxId);
   const sandbox = session.state.sandboxId
     ? await deps.sandbox.get({ name: session.state.sandboxId, resume: true })
-    : await deps.sandbox.create({ source: { type: "snapshot", snapshotId }, timeout: 240_000, persistent: true, networkPolicy: launch.networkPolicy, env: launch.env, tags: { case: session.caseId.slice(0, 32), phase: session.state.phase, seat: session.state.seat } });
+    : await deps.sandbox.create({ source: { type: "snapshot", snapshotId }, timeout: 300_000, persistent: true, networkPolicy: launch.networkPolicy, env: launch.env, tags: { case: session.caseId.slice(0, 32), phase: session.state.phase, seat: session.state.seat } });
   if (!session.state.sandboxId) { session.state.sandboxId = sandbox.name; await session.save(); }
   await deps.bind(session.caseId, sandbox.name, {
     phase: session.state.phase, seat: session.state.seat, sessionKey: session.key, phaseSessionId: session.state.id,
@@ -45,8 +46,18 @@ export async function prepareInSandbox(session: PhaseSession, deps = { sandbox: 
     while (!turn.done && turn.steps < 8 && Date.now() < Date.parse(turn.expiresAt)) {
       const callId = `${turn.id}:${turn.steps}`;
       const resultPath = `/workspace/result-${callId.replaceAll(":", "-")}.json`;
-      await sandbox.writeFiles([{ path: "/workspace/task.json", content: JSON.stringify({ caseId: session.caseId, callId, model: session.state.model, system: session.state.system, messages: session.state.messages, tools: definitions, resultPath }) }]);
-      const command = await sandbox.runCommand({ cmd: "node", args: ["--import", "/opt/evidence-harness/node_modules/tsx/dist/loader.mjs", "/opt/evidence-harness/instruction-agent.ts", "/workspace/task.json"], cwd: "/workspace", timeoutMs: 165_000, signal: AbortSignal.timeout(170_000) });
+      const remainingMs = Math.max(1, Date.parse(turn.expiresAt) - Date.now());
+      // Reserve the last step for a real final response, and stop requesting
+      // tools when less than a minute remains in this turn.
+      const toolChoice = turn.preparationToolChoice ?? (turn.steps === 7 || remainingMs <= 60_000 ? "none" : "auto");
+      // The broker deduplicates by call ID and request hash. A replay must not
+      // change that request just because less time remains after interruption.
+      turn.preparationToolChoice = toolChoice;
+      await session.save();
+      const commandTimeoutMs = Math.min(165_000, remainingMs);
+      const timeoutMs = Math.max(1, Math.min(150_000, commandTimeoutMs - 5000));
+      await sandbox.writeFiles([{ path: "/workspace/task.json", content: JSON.stringify({ caseId: session.caseId, callId, model: session.state.model, system: session.state.system, messages: session.state.messages, tools: definitions, toolChoice, timeoutMs, resultPath }) }]);
+      const command = await sandbox.runCommand({ cmd: "node", args: ["--import", "/opt/evidence-harness/node_modules/tsx/dist/loader.mjs", "/opt/evidence-harness/instruction-agent.ts", "/workspace/task.json"], cwd: "/workspace", timeoutMs: commandTimeoutMs, signal: AbortSignal.timeout(commandTimeoutMs + 5000) });
       if (command.exitCode !== 0) throw new Error(`Brokered preparation failed (exit ${command.exitCode}); refusing independent processing fallback`);
       const bytes = await sandbox.readFileToBuffer({ path: resultPath });
       if (!bytes || bytes.byteLength > 2_000_000) throw new Error("Preparation checkpoint unavailable");
@@ -54,10 +65,11 @@ export async function prepareInSandbox(session: PhaseSession, deps = { sandbox: 
       if (!Array.isArray(result.messages) || result.messages.some((message) => message.role !== "assistant" && message.role !== "tool")) throw new Error("Invalid preparation messages");
       turn.draft = result.text;
       turn.done = result.finishReason === "stop" && Boolean(result.text.trim());
+      delete turn.preparationToolChoice;
       await session.append(result.messages);
-      if (result.finishReason !== "tool-calls" && !turn.done) throw new Error("Preparation ended without a complete final response; explicit recovery required");
+      if (result.finishReason !== "tool-calls" && !turn.done) throw new FatalError("Preparation ended without a complete final response; explicit recovery required");
     }
-    if (!turn.done) throw new Error("Preparation budget exhausted without a final response; explicit recovery required");
+    if (!turn.done) throw new FatalError(`Preparation budget exhausted without a final response (${session.state.phase}/${session.state.seat}, ${turn.steps}/8 steps); explicit recovery required`);
     await session.finish();
     return turn.draft!;
   } finally {
