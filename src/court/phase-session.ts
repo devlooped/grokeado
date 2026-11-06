@@ -10,7 +10,7 @@ import { languageRule } from "../domain/language.ts";
 import type { CourtModel } from "./models.ts";
 import type { SeatId, TurnOutcome } from "./turns.ts";
 
-export type PhaseTurn = { id: string; startedAt: string; expiresAt: string; start: number; steps: number; inFlightStep?: string; preparationToolChoice?: "auto" | "none"; preparationCommand?: { id: string; resultPath: string }; preparationBound?: boolean; timedOut?: boolean; filing?: { step: number; output?: unknown; error?: string }; events: TurnOutcome["events"]; done: boolean; complete: boolean; draft?: string; results: Record<string, { input: string; output: unknown }> };
+export type PhaseTurn = { id: string; startedAt: string; expiresAt: string; start: number; steps: number; inFlightStep?: string; preparationToolChoice?: "auto" | "none"; preparationCommand?: { id: string; resultPath: string }; preparationBound?: boolean; timedOut?: boolean; reasoned?: boolean; answer?: { step: number; output?: unknown; error?: string }; events: TurnOutcome["events"]; done: boolean; complete: boolean; draft?: string; results: Record<string, { input: string; output: unknown }> };
 export type PhaseState = {
   id: string; createdAt: string; phase: InstructionPhase; seat: SeatId; channel: "preparation" | "decision";
   model: CourtModel; system: string; tools: string; messages: ModelMessage[]; cursor: number;
@@ -50,8 +50,8 @@ export function phaseSystem(phase: InstructionPhase, seat: SeatId, language: str
         ? "Research with your search tools and report to the decision agent, for each claim, the sources you found: exact URL, verbatim passage and stance, nothing more. Do not assess the sources or the merits of the claims, do not take court actions and do not give a verdict."
         : "Research with your search tools and write a report for the decision agent; do not take court actions or give a final verdict."
       : phase === "instruction"
-        ? "Answer only with your filing, in the requested format: the host files it as your instruction. Copy the URLs and quotes of the preparation report exactly; do not assess the sources or the merits of the claims."
-        : "Record decisions only through the court tools authorized for the current task. The tools of the phase are stable; the host rejects actions outside the turn.",
+        ? "First decide, in brief prose, which sources of the preparation report you file for each claim, with their verbatim quotes and stances, and what you searched for in both directions. The host then asks you for that filing in its format and files it as your instruction. Copy the URLs and quotes of the preparation report exactly; do not assess the sources or the merits of the claims."
+        : "First decide, in brief prose, your vote on each source of the index and its concrete reason. The host then asks you for those votes in their format and records them.",
   ].join("\n");
   return [
     languageRule(language),
@@ -98,7 +98,7 @@ export class PhaseSession {
     this.revision = await this.repository.save(this.caseId, this.key, this.revision, this.state);
   }
 
-  async begin(id: string, record: readonly CourtEvent[], task: string): Promise<PhaseTurn> {
+  async begin(id: string, record: readonly CourtEvent[], task: string, budgetMs = 300_000): Promise<PhaseTurn> {
     const previous = this.state.turns[id];
     if (previous) {
       if (!previous.complete) { this.state.activeTurn = previous; await this.save(); }
@@ -117,7 +117,7 @@ export class PhaseSession {
     this.state.messages.push({ role: "user", content: JSON.stringify({ events: unseen, task }) });
     this.state.cursor = Math.max(this.state.cursor, ...record.map((event) => (event as RecordedEvent).seq || 0));
     const now = Date.now();
-    const turn: PhaseTurn = { id, startedAt: new Date(now).toISOString(), expiresAt: new Date(now + 300_000).toISOString(), start: this.state.messages.length, steps: 0, events: [], done: false, complete: false, results: {} };
+    const turn: PhaseTurn = { id, startedAt: new Date(now).toISOString(), expiresAt: new Date(now + budgetMs).toISOString(), start: this.state.messages.length, steps: 0, events: [], done: false, complete: false, results: {} };
     this.state.turns[id] = turn;
     this.state.activeTurn = turn;
     await this.save();

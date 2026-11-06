@@ -1,6 +1,6 @@
 import { z } from "zod";
 import MarkdownIt from "markdown-it";
-import { COUNSEL, VERDICTS, type CourtEvent, type Evidence } from "../domain/court.ts";
+import { COUNSEL, VERDICTS, project, type CourtEvent, type Evidence } from "../domain/court.ts";
 import { planTurn, seatOf, type Docket, type StampedEvent, type TurnSpec } from "../court/turns.ts";
 import { Rejection } from "../court/toolset.ts";
 import { validateCorpusCitations, type SettledCorpus } from "../evidence/settled.ts";
@@ -94,6 +94,49 @@ export function instructionFiling(output: InstructionFilingOutput): { input: z.i
     else proposals.push(parsed.data);
   }
   return { input: { proposals, searches: Object.entries(output.searches).map(([claimId, search]) => ({ claimId, ...search })) }, dropped };
+}
+
+// Pipeline 3 records the source review as a typed answer too: one vote for
+// each source of the index, keyed by its ID, so that none can be left out.
+export function sourceReviewSchema(sourceIds: readonly string[]) {
+  const vote = z.object({
+    veto: z.boolean().describe("true to exclude the source from the corpus"),
+    reason: z.string().describe("The concrete reason for your vote, in at least one full sentence"),
+  }).strict();
+  return z.object({
+    votes: z.object(Object.fromEntries(sourceIds.map((id) => [id, vote]))).strict().describe("Your vote on each source of the index"),
+  }).strict();
+}
+
+export type SourceReviewOutput = { votes: Record<string, { veto: boolean; reason: string }> };
+
+// A typed decision of pipeline 3: the seat first answers in prose, without a
+// format, then the host asks in a follow-up for the same decision in the
+// format, and records it with the court action. Models that always think
+// (Claude) cannot combine thinking with a forced answer in one request.
+export type TypedDecision = {
+  action: "file_instruction" | "review_sources";
+  schema: z.ZodType;
+  // The follow-up message that asks for the typed answer.
+  request: string;
+  // The artifact that records what the host filed.
+  artifact: string;
+  input(output: unknown): { input: unknown; dropped: DroppedProposal[] };
+};
+
+export function typedDecision(phase: InstructionPhase, record: readonly CourtEvent[]): TypedDecision | undefined {
+  const view = project(record);
+  if (phase === "instruction") return {
+    action: "file_instruction", schema: instructionFilingSchema(view.claims.map((claim) => claim.id)), artifact: "filing.json",
+    request: "Now give the filing you decided, in the requested format: for each source, its exact URL and the verbatim quote, copied from the preparation report in the source's language, its claim and its stance; and for each claim what you searched for in both directions.",
+    input: (output) => instructionFiling(output as InstructionFilingOutput),
+  };
+  if (phase === "criticism") return {
+    action: "review_sources", schema: sourceReviewSchema([...view.sources.values()].map((source) => source.id)), artifact: "review.json",
+    request: "Now give the votes you decided, in the requested format: one for each source of the index, with its concrete reason.",
+    input: (output) => ({ input: { votes: Object.entries((output as SourceReviewOutput).votes).map(([sourceId, vote]) => ({ sourceId, ...vote })) }, dropped: [] }),
+  };
+  return undefined;
 }
 
 const prose = new Set(["text", "quote", "reason", "grounds", "rationale", "reasoning", "supporting", "opposing", "commentary"]);

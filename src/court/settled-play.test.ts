@@ -163,10 +163,16 @@ test("pipeline 3: analysts file URL and quote proposals, the host collects them 
   assert.equal(project(events).sources.size, 3);
   assert.equal((await loadSettledCorpus("fixture", events, artifacts)).documents.size, 2, "three vetoes exclude the unreliable fixture");
   const instruction = requests.filter((request) => request.kind === "instruction");
-  assert.equal(instruction.length, 4, "each analyst files with one typed answer");
-  for (const request of instruction) assert.deepEqual([request.tools, request.format], [[], "json"]);
+  // Each analyst decides in prose, then files the same decision as a typed answer.
+  assert.equal(instruction.length, 8);
+  assert.ok(instruction.every((request) => !request.tools.length));
+  assert.equal(instruction.filter((request) => request.format === "json").length, 4);
+  assert.ok(instruction.filter((request) => request.format).every((request) => request.prompt.includes("Now give the filing you decided")));
   const reviews = requests.filter((request) => request.kind === "source_review");
-  assert.ok(reviews.length && reviews.every((request) => request.tools.join() === "review_sources" && /E1 · [^]*E2 · [^]*E3 · /.test(request.prompt)));
+  assert.equal(reviews.length, 8);
+  assert.ok(reviews.every((request) => !request.tools.length && /E1 · [^]*E2 · [^]*E3 · /.test(request.prompt)));
+  assert.equal(reviews.filter((request) => request.format === "json").length, 4);
+  assert.ok(reviews.filter((request) => request.format).every((request) => request.prompt.includes("Now give the votes you decided")));
   const preparation = repository.states.get("fixture:instruction:grok:preparation")?.body;
   assert.match(String(preparation?.tools), /"type":"provider"/, "pipeline 3 preparation holds the provider's tools");
   assert.ok(parseCaseLog(buildCaseLog(events, audit, [])).length > events.length);
@@ -179,13 +185,15 @@ test("pipeline 3: a typed filing that does not parse, or that the host rejects, 
   const record = [{ type: "claims_entered", claims: [{ id: "A1", quote: "", text: "SIMULACIÓN LOCAL: afirmación." }], seq: 1, at: "2026-11-05T00:00:00.000Z" }] as RecordedEvent[];
   const proposal = { claimId: "A1", url: "https://example.org/report", quote: "The report states the figure verbatim.", stance: "supports", commentary: "" };
   const answers = [
+    "Presento la fuente del informe para A1.",
     "Here is my filing: sources below.",
     JSON.stringify({ proposals: [proposal], searches: { A1: { supporting: "Busqué a favor.", opposing: "corta" } } }),
     JSON.stringify({ proposals: [proposal, { ...proposal, quote: "short" }], searches: { A1: { supporting: "Busqué a favor en fuentes oficiales.", opposing: "Busqué en contra en medios establecidos." } } }),
   ];
   const prompts: string[] = [];
   const model = new MockLanguageModelV4({ doGenerate: async (options) => {
-    assert.equal(options.responseFormat?.type, "json");
+    // The prose decision first, then its typed form in the same conversation.
+    assert.equal(options.responseFormat?.type, prompts.length ? "json" : undefined);
     assert.equal(options.tools, undefined);
     prompts.push(JSON.stringify(options.prompt));
     return { content: [{ type: "text" as const, text: answers[prompts.length - 1]! }], finishReason: { unified: "stop" as const, raw: undefined },
@@ -197,15 +205,15 @@ test("pipeline 3: a typed filing that does not parse, or that the host rejects, 
   const spec = { kind: "instruction" as const, counsel: "grok" as const };
   let units = 0, outcome;
   while (!(outcome = await advanceSharedTurn("fixture", docket, spec, record, 0, deps))) units++;
-  assert.equal(prompts.length, 3);
-  assert.ok(units >= 5, "every generation and every filing runs in a unit of its own");
-  assert.match(prompts[1]!, /did not match the filing format/);
-  assert.match(prompts[2]!, /could not file your answer: searches\.0\.opposing: /);
+  assert.equal(prompts.length, 4);
+  assert.ok(units >= 6, "every generation and every filing runs in a unit of its own");
+  assert.match(prompts[1]!, /Presento la fuente del informe para A1\.[^]*Now give the filing you decided/);
+  assert.match(prompts[2]!, /did not match the requested format/);
+  assert.match(prompts[3]!, /could not record your answer: searches\.0\.opposing: /);
   assert.equal(outcome.done, true);
   assert.deepEqual(outcome.events.map((event) => event.type), ["evidence_proposed", "instruction_completed"]);
-  assert.deepEqual(audit.filter((body) => body.kind === "model_step").map((body) => body.data.toolCalls?.map((call) => call.toolName)), [[], ["file_instruction"], ["file_instruction"]]);
-  const bytes = [...(await artifacts.read("fixture")).entries()].find(([path]) => path.endsWith("decision-2/filing.json"))![1];
+  assert.deepEqual(audit.filter((body) => body.kind === "model_step").map((body) => body.data.toolCalls?.map((call) => call.toolName)), [[], [], ["file_instruction"], ["file_instruction"]]);
+  const bytes = [...(await artifacts.read("fixture")).entries()].find(([path]) => path.endsWith("decision-3/filing.json"))![1];
   const filing = JSON.parse(typeof bytes === "string" ? bytes : new TextDecoder().decode(bytes));
   assert.deepEqual(filing.dropped.map((entry: { reason: string }) => entry.reason.split(":")[0]), ["quote"]);
 });
-

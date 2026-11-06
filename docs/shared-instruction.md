@@ -51,10 +51,14 @@ pipeline 1 cases keep their original tools, artifact formats, and download URLs;
   workflow steps, never one: each preparation call starts detached in the VM,
   and steps of at most a minute wait for it until it ends; each decision
   generation is a step of its own, of at most 150 seconds. In pipeline 3 an
-  analyst files its instruction as the typed answer of a decision generation of
-  at most 240 seconds, without tools, and the host files that answer in the next
+  analyst decides its instruction filing, and its source review votes, in two
+  answers of the same conversation, without tools: first in prose, with the
+  model's own thinking and no format, then, after a follow-up message that asks
+  for it, as a typed answer (structured output) of at most 240 seconds. Models
+  that always think, such as Claude, cannot combine thinking with a forced tool
+  call or answer in one request. The host records the typed answer in the next
   step; an answer that does not parse, or that the host rejects, gets the reason
-  and another generation while the turn has time. It still fails closed
+  and another typed generation while the turn (600 seconds) has time. It still fails closed
   if the budget expires without a nonempty final response; a partial draft cannot advance the decision
   channel. Exhaustion and incomplete final responses are non-retryable workflow
   failures: replaying an already spent checkpoint cannot replenish its budget.

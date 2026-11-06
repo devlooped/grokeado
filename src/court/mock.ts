@@ -17,14 +17,17 @@ export interface MockTurn {
   record: readonly CourtEvent[];
   submission: Submission;
   shared?: boolean;
-  // Pipeline 3: instruction files URL + quote proposals for the host to collect.
+  // Pipeline 3: instruction files URL + quote proposals for the host to collect,
+  // and both instruction and source review answer in prose, then typed.
   native?: boolean;
 }
 
 type Call = { name: string; input: unknown };
 const call = (name: string, input: unknown): Call => ({ name, input });
-// A typed answer in place of a tool call: the pipeline 3 instruction filing.
+// A typed answer in place of a tool call (the pipeline 3 instruction filing
+// and source review), and the prose decision that comes before it.
 const OUTPUT = "(typed output)";
+const TEXT = "(text)";
 const prefix = "SIMULACIÓN LOCAL: ";
 const sourceUrl = (claimId: string, side: string) => "https://sources.example.test/" + claimId + "/" + side;
 
@@ -46,7 +49,7 @@ function responses({ spec, record, submission, native }: MockTurn): Call[][] {
     case "instruction": {
       const sides = ["support", "opposition", "unreliable"] as const;
       // The quote is in every fictitious page the mock downloader returns.
-      if (native) return [[call(OUTPUT, {
+      if (native) return [[call(TEXT, prefix + "Decido presentar los documentos ficticios de cada afirmación.")], [call(OUTPUT, {
         proposals: view.claims.flatMap((c) => sides.map((side) => ({
           claimId: c.id, url: sourceUrl(c.id, side), quote: "Documento ficticio con datos 42, sin valor probatorio.",
           stance: side === "support" ? "supports" : side === "opposition" ? "opposes" : "context", commentary: "",
@@ -82,11 +85,14 @@ function responses({ spec, record, submission, native }: MockTurn): Call[][] {
       }
       return [[call("unify_evidence", { groups: [...groups.values()].map((evidenceIds) => ({ evidenceIds })) })]];
     }
-    case "source_review":
-      return [[call("review_sources", { votes: [...view.sources.values()].map((s) => {
+    case "source_review": {
+      const votes = [...view.sources.values()].map((s) => {
         const veto = s.url.endsWith("/unreliable") && spec.counsel !== "chatgpt";
         return { sourceId: s.id, veto, reason: prefix + (veto ? "La fuente ficticia no identifica autores ni metodología." : "No veto esta fuente en el escenario de prueba.") };
-      }) })]];
+      });
+      if (native) return [[call(TEXT, prefix + "Decido mis votos sobre las fuentes ficticias.")], [call(OUTPUT, { votes: Object.fromEntries(votes.map(({ sourceId, ...vote }) => [sourceId, vote])) })]];
+      return [[call("review_sources", { votes })]];
+    }
     case "statement":
       return [[statement()]];
     case "objection": {
@@ -130,8 +136,8 @@ export function createMockSeat(turn: MockTurn, search: boolean) {
     doGenerate: async () => {
       const index = generation++;
       const calls = script[index] ?? [];
-      if (calls[0]?.name === OUTPUT) return {
-        content: [{ type: "text" as const, text: JSON.stringify(calls[0].input) }],
+      if (calls[0]?.name === OUTPUT || calls[0]?.name === TEXT) return {
+        content: [{ type: "text" as const, text: calls[0].name === TEXT ? String(calls[0].input) : JSON.stringify(calls[0].input) }],
         finishReason: { unified: "stop" as const, raw: undefined },
         usage: { inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 }, outputTokens: { total: 0, text: 0, reasoning: 0 } },
         warnings: [],
