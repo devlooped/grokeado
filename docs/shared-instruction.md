@@ -32,7 +32,10 @@ pipeline 1 cases keep their original tools, artifact formats, and download URLs;
   Preparation reserves its eighth and last step for a response with tool calls
   disabled, also disabling tools when at most a minute remains in its
   300-second turn. Preparation sandboxes also have a 300-second timeout.
-  Model/command timeouts respect the remaining turn time. It still fails closed
+  Model/command timeouts respect the remaining turn time. The turn spans many
+  workflow steps, never one: each preparation call starts detached in the VM,
+  and steps of at most a minute wait for it until it ends; each decision
+  generation is a step of its own, of at most 150 seconds. It still fails closed
   if the budget expires without a nonempty final response; a partial draft cannot advance the decision
   channel. Exhaustion and incomplete final responses are non-retryable workflow
   failures: replaying an already spent checkpoint cannot replenish its budget.

@@ -3,7 +3,7 @@ import test from "node:test";
 import { Sandbox } from "@vercel/sandbox";
 import { FatalError } from "workflow";
 import { MemoryPhaseRepository, PhaseSession } from "../court/phase-session.ts";
-import { deleteCaseSandboxes, prepareInSandbox } from "./preparation.ts";
+import { advancePreparation, deleteCaseSandboxes, prepareInSandbox } from "./preparation.ts";
 
 test("preparation requires a final response, preserves checkpoints on exhaustion, and resumes the same sandbox", async () => {
   const keys = ["INSTRUCTION_TOOL_ORIGIN", "INSTRUCTION_SANDBOX_SNAPSHOT_ID", "INSTRUCTION_SANDBOX_TEAM_ID", "INSTRUCTION_SANDBOX_PROJECT_ID"] as const;
@@ -24,7 +24,14 @@ test("preparation requires a final response, preserves checkpoints on exhaustion
           assert.ok(files.find((file) => file.path === "/opt/evidence-harness/compute.ts")?.content.includes("export"));
         }
       },
-      runCommand: async (command: { cmd: string }) => { if (command.cmd === "node") { runs++; return { exitCode }; } return { exitCode: 0 }; },
+      runCommand: async (command: { cmd: string; detached?: boolean }) => {
+        if (command.cmd !== "node") return { exitCode: 0 };
+        assert.equal(command.detached, true, "a model call never holds the step that starts it");
+        runs++;
+        return { cmdId: `call-${runs}`, wait: async () => ({ exitCode }) };
+      },
+      // A stopped VM loses the call it was running.
+      getCommand: async () => { throw new Error("Command not found"); },
       readFileToBuffer: async () => {
         if (interruptRead) { interruptRead = false; throw new Error("Interrupted before message checkpoint"); }
         return Buffer.from(JSON.stringify(synthesize && tasks.at(-1)?.toolChoice === "none"
@@ -42,7 +49,7 @@ test("preparation requires a final response, preserves checkpoints on exhaustion
           assert.deepEqual(input.keepLastSnapshots, { count: 1, deleteEvicted: true }, "each stop replaces the previous resume snapshot");
           creates++; return sandbox;
         },
-        get: async (input: { name: string; resume: boolean }) => { assert.deepEqual(input, { name: sandbox.name, resume: true }); resumes++; return sandbox; },
+        get: async (input: { name: string; resume?: boolean }) => { assert.equal(input.name, sandbox.name); if (input.resume) resumes++; return sandbox; },
       } as unknown as typeof Sandbox,
       bind: async (_caseId: string, name: string) => { assert.equal(name, sandbox.name); },
     };
@@ -62,8 +69,8 @@ test("preparation requires a final response, preserves checkpoints on exhaustion
     assert.equal(runs, 8, "retry must not repeat exhausted model steps");
     assert.equal(JSON.stringify(session.state.messages), prefix);
     assert.equal(creates, 1);
-    assert.equal(resumes, 1);
-    assert.equal(stops, 2);
+    assert.equal(resumes, 0, "an exhausted retry does not resume the VM");
+    assert.equal(stops, 1);
     assert.equal(harnessUploads, 1, "new sandboxes get the deployed harness; resumes retain it");
 
     synthesize = true;
@@ -87,6 +94,7 @@ test("preparation requires a final response, preserves checkpoints on exhaustion
     assert.equal(await prepareInSandbox(interrupted, deps), "Final analysis");
     assert.deepEqual(tasks.slice(beforeInterruption).map((task) => task.toolChoice), ["auto", "auto", "none"]);
     assert.equal(tasks[beforeInterruption].callId, tasks[beforeInterruption + 1].callId, "replay must retain the call ID and tool choice for the broker's request hash");
+    assert.equal(resumes, 1, "the retry resumes the VM of the interrupted call");
     assert.equal(replayTurn.preparationToolChoice, undefined);
 
     const nearDeadline = await PhaseSession.open("fixture-deadline", initial, repository);
@@ -126,6 +134,49 @@ test("preparation requires a final response, preserves checkpoints on exhaustion
     await assert.rejects(prepareInSandbox(failed, deps), /Brokered preparation failed \(exit 1\); refusing independent processing fallback/);
     assert.equal(failed.state.turns.turn.complete, false);
     assert.equal(failed.state.activeTurn, undefined);
+  } finally {
+    keys.forEach((key, index) => { if (previous[index] === undefined) delete process.env[key]; else process.env[key] = previous[index]; });
+  }
+});
+
+test("a call that outlasts one wait continues in a later unit, keeping its grant and its VM", async () => {
+  const keys = ["INSTRUCTION_TOOL_ORIGIN", "INSTRUCTION_SANDBOX_SNAPSHOT_ID", "INSTRUCTION_SANDBOX_TEAM_ID", "INSTRUCTION_SANDBOX_PROJECT_ID"] as const;
+  const previous = keys.map((key) => process.env[key]);
+  Object.assign(process.env, { INSTRUCTION_TOOL_ORIGIN: "https://staging.example.test", INSTRUCTION_SANDBOX_SNAPSHOT_ID: "fixture-snapshot", INSTRUCTION_SANDBOX_TEAM_ID: "fixture-team", INSTRUCTION_SANDBOX_PROJECT_ID: "fixture-project" });
+  try {
+    let runs = 0, stops = 0, binds = 0, finished = false;
+    const running = { cmdId: "call-1", wait: ({ signal }: { signal: AbortSignal }) => finished ? Promise.resolve({ exitCode: 0 }) : new Promise((_, reject) => signal.addEventListener("abort", () => reject(signal.reason))) };
+    const sandbox = {
+      name: "persistent-slow", status: "running", writeFiles: async () => {},
+      runCommand: async (command: { cmd: string }) => { if (command.cmd === "node") { runs++; return running; } return { exitCode: 0 }; },
+      getCommand: async (id: string) => { assert.equal(id, "call-1"); return running; },
+      readFileToBuffer: async () => Buffer.from(JSON.stringify({ messages: [{ role: "assistant", content: "Slow analysis" }], text: "Slow analysis", finishReason: "stop" })),
+      stop: async () => { stops++; },
+    };
+    const deps = {
+      sandbox: { create: async () => sandbox, get: async () => sandbox } as unknown as typeof Sandbox,
+      bind: async () => { binds++; },
+    };
+    const repository = new MemoryPhaseRepository();
+    const initial = { phase: "instruction" as const, seat: "grok" as const, channel: "preparation" as const, model: { id: "fixture/model" }, system: "fixture", tools: "[]", initial: "Canonical material" };
+    const session = await PhaseSession.open("fixture-slow", initial, repository);
+    await session.begin("turn", [], "Prepare");
+    assert.equal(await advancePreparation(session, deps, {}, 10), undefined);
+    assert.equal(session.state.activeTurn?.preparationCommand?.id, "call-1");
+    assert.equal(stops, 0, "the VM keeps running the call between units");
+
+    // A later unit runs in another step: it reloads the checkpoint and reopens the VM.
+    const resumed = await PhaseSession.open("fixture-slow", initial, repository);
+    await resumed.begin("turn", [], "Prepare");
+    assert.equal(resumed.state.activeTurn?.id, "turn", "the grant stays active while the call runs");
+    assert.equal(await advancePreparation(resumed, deps, {}, 10), undefined);
+    finished = true;
+    assert.equal(await advancePreparation(resumed, deps, {}, 10), "Slow analysis");
+    assert.equal(runs, 1, "waiting again never starts the call again");
+    assert.equal(binds, 1, "a turn is bound once");
+    assert.equal(resumed.state.turns.turn.complete, true);
+    assert.equal(resumed.state.activeTurn, undefined);
+    assert.equal(stops, 1, "the VM stops once the turn completes");
   } finally {
     keys.forEach((key, index) => { if (previous[index] === undefined) delete process.env[key]; else process.env[key] = previous[index]; });
   }

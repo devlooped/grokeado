@@ -22,7 +22,7 @@ import { liveSourceDependencies, SourceService } from "../instruction/sources.ts
 import { sourceDownloader } from "../instruction/research.ts";
 import { mockInstructionArtifacts, mockInstructionSources, mockResearchWorker } from "../instruction/mock.ts";
 import { createMockSeat } from "../court/mock.ts";
-import { playSharedTurn } from "../court/settled-play.ts";
+import { advanceSharedTurn } from "../court/settled-play.ts";
 import { settleEvidence } from "../evidence/settled.ts";
 import { caseSourceService } from "../instruction/proxy.ts";
 import { deleteCaseSandboxes } from "../instruction/preparation.ts";
@@ -49,17 +49,31 @@ async function collectShared(caseId: string, submission: Submission, simulated: 
   });
 }
 
-async function playShared(caseId: string, docket: Docket, spec: TurnSpec, record: readonly CourtEvent[], attempt: number): Promise<TurnOutcome> {
+// One unit of a shared turn: a preparation call or a decision generation. The
+// workflow loops over units, so no step lasts as long as the whole turn.
+async function advanceShared(caseId: string, docket: Docket, spec: TurnSpec, record: readonly CourtEvent[], attempt: number): Promise<TurnOutcome | null> {
   "use step";
   const stored = await getCase(caseId);
   if (!stored) throw new Error("Shared case unavailable");
-  const outcome = await playSharedTurn(caseId, docket, spec, record, attempt, docket.simulated ? {
+  const outcome = await advanceSharedTurn(caseId, docket, spec, record, attempt, docket.simulated ? {
     record: stored, reader: new SourceService(caseId, docket.language!, mockInstructionSources), artifacts: mockInstructionArtifacts,
     model: createMockSeat({ spec, record, submission: docket.submission, shared: true }, false).model,
     prepare: async () => "SIMULACIÓN LOCAL: Análisis preparatorio ficticio; no agrega pruebas.", worker: mockResearchWorker,
     audit: async () => {}, activity: recordCaseToolActivity,
   } : undefined);
-  return linkEvidenceRun(outcome, undefined, docket.simulated, docket.models);
+  return outcome ? linkEvidenceRun(outcome, undefined, docket.simulated, docket.models) : null;
+}
+
+// A turn makes progress or spends its time budget at every unit; this bound
+// only stops a defect from looping without end.
+const MAX_TURN_UNITS = 100;
+
+async function playShared(caseId: string, docket: Docket, spec: TurnSpec, record: readonly CourtEvent[], attempt: number): Promise<TurnOutcome> {
+  for (let unit = 0; unit < MAX_TURN_UNITS; unit++) {
+    const outcome = await advanceShared(caseId, docket, spec, record, attempt);
+    if (outcome) return outcome;
+  }
+  throw new Error("Shared turn did not finish within " + MAX_TURN_UNITS + " steps");
 }
 
 async function settleShared(caseId: string, language: string, events: readonly RecordedEvent[], simulated: boolean) {

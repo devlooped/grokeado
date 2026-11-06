@@ -7,7 +7,7 @@ import { loadSettledCorpus } from "../evidence/settled.ts";
 import { sha256 } from "../evidence/validate.ts";
 import { CourtActionSchemas, createCourtActions, phaseActions, turnPhase } from "../instruction/court-tools.ts";
 import { caseSourceService } from "../instruction/proxy.ts";
-import { preparationDefinitions, prepareInSandbox } from "../instruction/preparation.ts";
+import { advancePreparation, preparationDefinitions } from "../instruction/preparation.ts";
 import type { SourceService } from "../instruction/sources.ts";
 import { executeSourceTool, SourceToolSchemas, sourceToolsFor } from "../instruction/tools.ts";
 import { getCase, recordCaseToolActivity, saveCaseAuditRecord } from "../store.ts";
@@ -18,13 +18,29 @@ import { seatOf, type Docket, type TurnOutcome, type TurnSpec } from "./turns.ts
 export type SharedTurnDependencies = {
   reader: SourceService; artifacts: ArtifactStore; record: CaseRecord;
   repository?: PhaseRepository; model?: LanguageModel;
-  prepare?(session: PhaseSession): Promise<string>;
+  // One unit of preparation: the draft once complete, undefined while under way.
+  prepare?(session: PhaseSession): Promise<string | undefined>;
   worker?: Parameters<typeof executeSourceTool>[1]["worker"];
   audit: typeof saveCaseAuditRecord;
   activity: typeof recordCaseToolActivity;
 };
 
+// Time allowed to one decision generation and its tools. With setup, its step
+// stays within the function duration even when the runtime starts it late.
+const DECISION_GENERATION_MS = 150_000;
+
+// Runs every unit of a shared turn in this process (tests and scripts).
 export async function playSharedTurn(caseId: string, docket: Docket, spec: TurnSpec, record: readonly CourtEvent[], attempt: number, injected?: SharedTurnDependencies): Promise<TurnOutcome> {
+  for (;;) {
+    const outcome = await advanceSharedTurn(caseId, docket, spec, record, attempt, injected);
+    if (outcome) return outcome;
+  }
+}
+
+// One bounded unit of a shared turn: one preparation unit or one decision
+// generation. Returns the outcome once the turn ends, undefined while it is
+// under way. Every unit is checkpointed, so each runs in a workflow step of its own.
+export async function advanceSharedTurn(caseId: string, docket: Docket, spec: TurnSpec, record: readonly CourtEvent[], attempt: number, injected?: SharedTurnDependencies): Promise<TurnOutcome | undefined> {
   const stored = injected?.record ?? await getCase(caseId);
   if (!stored || stored.pipelineVersion !== 2 || !docket.models || !docket.language) throw new Error("Shared pipeline requires its durable processing snapshot");
   const artifacts = injected?.artifacts ?? caseArtifactStore;
@@ -47,7 +63,9 @@ export async function playSharedTurn(caseId: string, docket: Docket, spec: TurnS
   const prepTurn = await preparation.begin(id, record, localizedTask);
   let draft = prepTurn.draft ?? "";
   if (!prepTurn.complete) {
-    draft = await (injected?.prepare ?? prepareInSandbox)(preparation);
+    const prepared = await (injected?.prepare ?? advancePreparation)(preparation);
+    if (prepared === undefined) return undefined;
+    draft = prepared;
     if (!prepTurn.complete) { prepTurn.draft = draft; await preparation.finish(); }
   }
   const names = phaseActions(phase, seat);
@@ -82,8 +100,9 @@ export async function playSharedTurn(caseId: string, docket: Docket, spec: TurnS
       return output;
     }),
   };
+  const more = () => (!turn.done || turn.inFlightStep) && turn.steps < 20 && Date.now() < Date.parse(turn.expiresAt);
   try {
-    while ((!turn.done || turn.inFlightStep) && turn.steps < 20 && Date.now() < Date.parse(turn.expiresAt)) {
+    if (more()) {
       const stepId = turn.inFlightStep ?? `decision:${session.state.id}:${id}:${turn.steps}`;
       turn.inFlightStep = stepId;
       await session.save();
@@ -93,7 +112,7 @@ export async function playSharedTurn(caseId: string, docket: Docket, spec: TurnS
         const request = JSON.stringify({ modelId: model.id, providerOptions: session.state.model.providerOptions, system: session.state.system, messages: session.state.messages, tools: schemas });
         const generated = await generateText({ model: injected?.model ?? gateway(model.id), providerOptions: session.state.model.providerOptions,
           system: session.state.system, messages: session.state.messages, tools, toolChoice: "required", stopWhen: stepCountIs(1),
-          maxRetries: 0, abortSignal: AbortSignal.timeout(Math.max(1, Date.parse(turn.expiresAt) - Date.now())),
+          maxRetries: 0, abortSignal: AbortSignal.timeout(Math.max(1, Math.min(DECISION_GENERATION_MS, Date.parse(turn.expiresAt) - Date.now()))),
         });
         // AI SDK 7 accumulates all assistant/tool messages here, not on finalStep.
         const result = { messages: generated.responseMessages, usage: generated.usage, at: new Date().toISOString(), toolCalls: generated.toolCalls.map(({ toolName, toolCallId, input }) => ({ toolName, toolCallId, input })) };
@@ -103,6 +122,8 @@ export async function playSharedTurn(caseId: string, docket: Docket, spec: TurnS
       await audit(caseId, stepId, { schemaVersion: 2, id: `step:${stepId}`, kind: "model_step", at: result.at, seat, phase, modelId: model.id, effort: modelEffort(model), data: { sessionId: session.state.id, turnId: id, channel: "decision", sequence: session.state.messages.length, step: turn.steps, usage: result.usage, toolCalls: result.toolCalls, request: result.requestPath, result: result.resultPath } });
       delete turn.inFlightStep;
       await session.append(result.messages as ModelMessage[]);
+      // The next generation runs in a step of its own.
+      if (more()) return undefined;
     }
     if (turn.inFlightStep) throw new Error("Uncheckpointed model step blocks phase continuation");
     await session.finish();

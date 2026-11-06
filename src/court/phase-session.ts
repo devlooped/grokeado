@@ -9,7 +9,7 @@ import { sha256 } from "../evidence/validate.ts";
 import type { CourtModel } from "./models.ts";
 import type { SeatId, TurnOutcome } from "./turns.ts";
 
-export type PhaseTurn = { id: string; expiresAt: string; start: number; steps: number; inFlightStep?: string; preparationToolChoice?: "auto" | "none"; events: TurnOutcome["events"]; done: boolean; complete: boolean; draft?: string; results: Record<string, { input: string; output: unknown }> };
+export type PhaseTurn = { id: string; expiresAt: string; start: number; steps: number; inFlightStep?: string; preparationToolChoice?: "auto" | "none"; preparationCommand?: { id: string; resultPath: string }; preparationBound?: boolean; events: TurnOutcome["events"]; done: boolean; complete: boolean; draft?: string; results: Record<string, { input: string; output: unknown }> };
 export type PhaseState = {
   id: string; phase: InstructionPhase; seat: SeatId; channel: "preparation" | "decision";
   model: CourtModel; system: string; tools: string; messages: ModelMessage[]; cursor: number;

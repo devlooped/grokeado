@@ -72,7 +72,7 @@ try {
     assert.deepEqual(fresh.state.turns, {});
     await fresh.begin("fresh-turn", [], "Fresh task");
     const sandbox = {
-      name: `fresh-${id}`, writeFiles: async () => {}, runCommand: async () => ({ exitCode: 0 }), stop: async () => {},
+      name: `fresh-${id}`, writeFiles: async () => {}, runCommand: async () => ({ exitCode: 0, cmdId: "fresh-call", wait: async () => ({ exitCode: 0 }) }), stop: async () => {},
       readFileToBuffer: async () => Buffer.from(JSON.stringify({ messages: [{ role: "assistant", content: "Fresh analysis" }], text: "Fresh analysis", finishReason: "stop" })),
     };
     let creates = 0;

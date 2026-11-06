@@ -12,7 +12,7 @@ import { DEFAULT_MODELS, modelSnapshot } from "./models.ts";
 import { createMockSeat } from "./mock.ts";
 import { MemoryPhaseRepository } from "./phase-session.ts";
 import { holdSession } from "./procedure.ts";
-import { playSharedTurn } from "./settled-play.ts";
+import { advanceSharedTurn, playSharedTurn } from "./settled-play.ts";
 
 test("four independent source-backed analysts settle once, then every debate path is corpus-only and sessions continue", async () => {
   const artifacts = new MemoryArtifactStore(), operations = new MemoryOperationRepository(), repository = new MemoryPhaseRepository();
@@ -32,15 +32,25 @@ test("four independent source-backed analysts settle once, then every debate pat
     settle: (record) => settleEvidence("fixture", "es", record, reader(), artifacts),
     play: async (spec, record, attempt) => {
       const mock = createMockSeat({ spec, record, submission, shared: true }, false).model;
+      let generations = 0;
       const model = new MockLanguageModelV4({ doGenerate: async (options) => {
+        generations++;
         const phase = record.some((event) => event.type === "instruction_closed") ? "debate" : "instruction";
         requests.push({ phase, seat: "counsel" in spec ? spec.counsel : "judge", prompt: options.prompt, tools: (options.tools ?? []).map((tool) => tool.name), providerOptions: options.providerOptions });
         return mock.doGenerate(options);
       } });
-      return playSharedTurn("fixture", { submission, today: "fixture", language: "es", models: DEFAULT_MODELS, simulated: true }, spec, record, attempt, {
-        record: stored, reader: reader(), artifacts, repository, model, worker: mockResearchWorker,
-        prepare: async () => "SIMULACIÓN LOCAL: análisis preparatorio, no prueba.", audit: async (_id, _key, body) => { audit.push(body); }, activity: async (_id, body) => { audit.push(body); },
-      }).catch(async (error) => { throw new Error(JSON.stringify((await operations.list("fixture")).filter((operation) => operation.status === "uncertain").map(({ stage, error }) => ({ stage, error }))), { cause: error }); });
+      // The workflow runs each unit in a step of its own: never more than one generation.
+      for (let prepared = false; ;) {
+        const before = generations;
+        const outcome = await advanceSharedTurn("fixture", { submission, today: "fixture", language: "es", models: DEFAULT_MODELS, simulated: true }, spec, record, attempt, {
+          record: stored, reader: reader(), artifacts, repository, model, worker: mockResearchWorker,
+          // Preparation takes two units: one still under way, one complete.
+          prepare: async () => (prepared = !prepared) ? undefined : "SIMULACIÓN LOCAL: análisis preparatorio, no prueba.",
+          audit: async (_id, _key, body) => { audit.push(body); }, activity: async (_id, body) => { audit.push(body); },
+        }).catch(async (error) => { throw new Error(JSON.stringify((await operations.list("fixture")).filter((operation) => operation.status === "uncertain").map(({ stage, error }) => ({ stage, error }))), { cause: error }); });
+        assert.ok(generations - before <= 1, "one decision generation per unit");
+        if (outcome) return outcome;
+      }
     },
   });
   assert.equal(events.at(-1)?.type, "session_closed");

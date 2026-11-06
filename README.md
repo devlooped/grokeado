@@ -209,8 +209,12 @@ bounded follow-up research and all four evaluators. It separates task complexity
 from evidence sufficiency, with English identifiers and Spanish reports.
 Use `npm run test:evals` for offline checks and `npm run eval:tiers`
 for the paid experiment. It does not change production court behavior.
-Each seat attempt has a 20-generation limit and a 270-second timeout (override
-with `COURT_TURN_TIMEOUT_MS`). The court retries unfinished turns once; the
-Workflow runtime also retries infrastructure failures. A running workflow can
-outlast a single HTTP request, but an individual step is still bounded by the
-hosting plan's function duration.
+A running workflow can outlast a single HTTP request, but each step is bounded
+by the hosting plan's function duration (300 seconds on Vercel Hobby). Shared
+turns therefore run as many short steps: each decision generation (at most 150
+seconds) is a step of its own, and each preparation call runs detached in its
+sandbox while steps of at most a minute wait for it. Retries stay in the
+workflow: the court retries unfinished turns once, each attempt in steps of its
+own, and the Workflow runtime retries failed steps. Legacy (pipeline 1) seat
+attempts keep their 20-generation limit and 270-second timeout (override with
+`COURT_TURN_TIMEOUT_MS`).
