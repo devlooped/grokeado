@@ -4,7 +4,7 @@ import { parseHTML } from "linkedom";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { COUNSEL, type CourtEvent, type RecordedEvent, type SeatModels } from "../domain/court.ts";
-import { SessionDialogue } from "./acta.tsx";
+import { SessionDialogue } from "./case.tsx";
 import type { ToolActivity } from "../domain/tool-activity.ts";
 
 const opened: CourtEvent = {
@@ -59,7 +59,7 @@ test("the live dialogue shows complete moderator and analyst messages in recorde
   assert.equal(document.querySelector('#I1 a[href="#A1"]')?.textContent, "A1");
 });
 
-test("the live dialogue retains evidence and reliability votes instead of hiding them as in a completed acta", () => {
+test("the live dialogue retains evidence and reliability votes instead of hiding them as in a completed case record", () => {
   const evidence = { id: "P1", by: "grok" as const, claimId: "A1", title: "Informe oficial", url: "https://example.org/report", excerpt: "Fragmento público del informe.", stance: "opposes" as const };
   const document = render([
     opened, claims,
@@ -80,7 +80,7 @@ test("refreshing the recorded events adds complete messages and never exposes in
   const internal = { type: "reasoning", text: "PRIVATE THINKING TRACE" } as unknown as CourtEvent;
   const initial: CourtEvent[] = [opened, internal, { type: "instruction_opened" }];
   const before = render(initial);
-  assert.match(before.querySelector("section")!.textContent, /Esperando la primera intervención/);
+  assert.ok(before.querySelector('[role="log"]'), "the empty timeline remains accessible without a visible placeholder");
   assert.equal(before.querySelector('[role="log"] > ol')!.children.length, 0);
   const after = render([...initial, claims, {
     type: "statement", id: "I1", by: "grok", stage: "opening", text: "Mensaje público completo.", evidenceIds: [],

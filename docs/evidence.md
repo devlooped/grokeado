@@ -74,7 +74,7 @@ when no usable content is available it falls back to Spanish. Spanish means
 Latin American Spanish. The resolved language is saved for retries. Analyst
 filed titles and excerpts, including quotations, are translated before they enter
 the record and are unified for source criticism. Their original text is retained
-in the event record and can be inspected in the acta. Translation failure stops
+in the event record and can be inspected in the case record. Translation failure stops
 the case instead of silently publishing an untranslated contribution. Each
 instruction attempt also completes the archival download/translation described
 above before source criticism begins; these downloads are not fed to the review.
@@ -93,7 +93,7 @@ Rebuild and configure the evidence sandbox snapshot using
 `npm run evidence:snapshot` after deploying the updated harness; older snapshots still
 contain the former Spanish-only instruction, although the promotion translation
 step applies the case language after download.
-The ZIP also contains `acta.jsonl`, the complete committed event record,
+The ZIP also contains `case.jsonl`, the complete committed event record,
 including evidence submissions, source reviews, objections, votes, and decisions.
 The closing step also writes `cases/{caseId}/transcript.jsonl` and includes it at
 the ZIP root. It merges sandbox evidence steps (tagged `evidence_step` with

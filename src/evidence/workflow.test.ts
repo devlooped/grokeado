@@ -14,7 +14,7 @@ test("a scanned fixture can be cited by another seat only after exposicion", asy
     now: "2026-10-30T12:00:00.000Z",
     submission: { kind: "link", url: "https://example.test/scan.pdf" },
     download: { ok: true, bytes: pdf, contentType: "application/pdf", finalUrl: "https://example.test/scan.pdf", redirects: 0 },
-    recognize: async () => ({ text: "Acta escaneada del 3 de marzo de 2024. Ana Pérez ana@example.com", confidence: 0.4, tool: "tesseract-spa" }),
+    recognize: async () => ({ text: "Documento de un caso escaneado del 3 de marzo de 2024. Ana Pérez ana@example.com", confidence: 0.4, tool: "tesseract-spa" }),
   });
   assert.deepEqual(validateEvidenceTree(bundle), []);
 

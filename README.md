@@ -55,7 +55,7 @@ in the audit trail. Distinct URLs remain separate sources.
 All four analysts independently review every shared source, including their own,
 and record a veto or a decision not to veto, with a concrete reliability reason.
 **Three of the four analysts** must veto a source to exclude it; ties and absences
-do not lower that threshold. The acta preserves all votes, reasons and excluded
+do not lower that threshold. The case record preserves all votes, reasons and excluded
 sources. An unfinished moderator unification suspends the court after one retry.
 
 Only after criticism ends does the court begin opening statements, rebuttals,
@@ -140,7 +140,7 @@ three votes. They also supply statements, an objection/reply/ruling and final
 `no_verificable` votes. Source URLs use the reserved `.test` domain. The mock does
 not analyze arbitrary claims or submitted images: all evidence and conclusions
 are invented solely to exercise the application. Cases persist their simulation
-flag so the acta and result remain visibly labeled even after switching modes.
+flag so the case record and result remain visibly labeled even after switching modes.
 
 To test individual mocked turns without a database, server or credentials:
 

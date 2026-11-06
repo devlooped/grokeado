@@ -46,10 +46,10 @@ New cases use `instruction/` for originals, canonical processing and provisional
 research; immutable `evidence/` for admitted case-language sources; and
 `discussion/` for later analytical drafts. The complete ZIP includes these
 namespaces plus one root `case.jsonl`, a typed union of court events, model steps
-and source-operation provenance. It omits overlapping `acta.jsonl`,
+and source-operation provenance. It omits a separate
 `transcript.jsonl` and private conversation checkpoints.
 
-The acta links admitted `E1` and `E1#p1:b2` references to safe Markdown previews.
+The case record links admitted `E1` and `E1#p1:b2` references to safe Markdown previews.
 Downloads remain public-read audit artifacts, **not a privacy boundary** and not
 the input mounted into debate sandboxes. Legacy archives are not rewritten.
 

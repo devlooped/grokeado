@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { caseOutcome } from "./acta.ts";
+import { caseOutcome } from "./case.ts";
 import type { ClaimView, Verdict } from "./court.ts";
 
 const claim = (id: string, verdict?: Verdict): ClaimView => ({

@@ -29,16 +29,16 @@ function crc32(bytes: Uint8Array): number {
 // Write a standard ZIP with UTF-8 paths, deflated contents, and a central directory.
 // Reject ZIP64 sizes rather than emit a truncated archive.
 export async function createEvidenceArchive(files: EvidenceFiles): Promise<Buffer> {
-  const settled = files.has("case.jsonl");
-  if (settled ? !files.has("instruction/base/submission.json") : !files.has("evidence/base/index.md")) throw new Error("El expediente no contiene el índice base.");
-  if (settled && [...files.keys()].some((path) => /(?:^|\/)(?:acta|transcript)\.jsonl$/.test(path))) throw new Error("New archives contain only one public case.jsonl log");
+  const settled = files.has("instruction/base/submission.json");
+  if (settled ? !files.has("case.jsonl") : !files.has("evidence/base/index.md")) throw new Error("El expediente no contiene el índice base.");
+  if (settled && [...files.keys()].some((path) => /(?:^|\/)(?:transcript)\.jsonl$/.test(path))) throw new Error("New archives contain only one public case.jsonl log");
   if (files.size >= 0xffff) throw new Error("El expediente contiene demasiados archivos para un ZIP.");
 
   const entries: Buffer[] = [];
   const directory: Buffer[] = [];
   let offset = 0;
   for (const [path, content] of [...files].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)) {
-    const bytes = settled || path === "case.json" ? normalizeArtifactBytes(path, content) : path === "transcript.jsonl" || path === "acta.jsonl" ? (typeof content === "string" ? Buffer.from(content) : content) : normalizeEvidenceBytes(path, content);
+    const bytes = settled || path === "case.json" ? normalizeArtifactBytes(path, content) : path === "transcript.jsonl" || path === "case.jsonl" ? (typeof content === "string" ? Buffer.from(content) : content) : normalizeEvidenceBytes(path, content);
     if (/[:\x00-\x1f]/.test(path)) throw new Error(`Invalid archive path: ${path}`);
     const name = Buffer.from(path, "utf8");
     if (name.length > 0xffff) throw new Error(`Archive path is too long: ${path}`);
@@ -110,7 +110,7 @@ export async function archiveEvidence(caseId: string, store: ArchiveStore = { re
     const log = buildCaseLog(events, audit, await store.getSourceOperations(caseId));
     await store.artifacts.write(caseId, new Map([["case.jsonl", log], ["case.json", JSON.stringify(caseUsageArtifact(caseId, audit), null, 2)]]));
     const files = await store.artifacts.read(caseId);
-    for (const path of files.keys()) if (/(?:^|\/)(?:acta|transcript)\.jsonl$/.test(path)) files.delete(path);
+    for (const path of files.keys()) if (/(?:^|\/)(?:transcript)\.jsonl$/.test(path)) files.delete(path);
     return store.writeEvidenceArchive(caseId, await createEvidenceArchive(files));
   }
   const files = await store.readEvidenceTree(caseId);
@@ -118,7 +118,7 @@ export async function archiveEvidence(caseId: string, store: ArchiveStore = { re
   const { transcript, updatedRuns } = buildCaseTranscript(files, events);
   for (const [path, content] of updatedRuns) files.set(path, new TextEncoder().encode(content));
   files.set("transcript.jsonl", new TextEncoder().encode(transcript));
-  files.set("acta.jsonl", new TextEncoder().encode(events.map((event) => JSON.stringify(event)).join("\n") + (events.length ? "\n" : "")));
+  files.set("case.jsonl", new TextEncoder().encode(events.map((event) => JSON.stringify(event)).join("\n") + (events.length ? "\n" : "")));
   const usage = JSON.stringify(caseUsageArtifact(caseId, await store.getCaseAuditRecords?.(caseId) ?? []), null, 2);
   files.set("case.json", new TextEncoder().encode(usage));
   await store.artifacts?.write(caseId, new Map([["case.json", usage]]));

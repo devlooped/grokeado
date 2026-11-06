@@ -79,7 +79,7 @@ const TIER_DEFAULTS: Record<Counsel, Record<TierName, string>> = {
 const TIER_LABEL: Record<TierName, string> = { fact: "hechos", comparison: "comparación", assessment: "evaluación" };
 const COUNSEL_LABEL: Record<Counsel, string> = { grok: "Grok", gemini: "Gemini", claude: "Claude", chatgpt: "ChatGPT" };
 
-// AI Gateway catalog IDs, shared by execution and the recorded acta. These are
+// AI Gateway catalog IDs, shared by execution and the recorded case events. These are
 // the defaults; an admin can override each role from /admin.
 export const MODEL_ROLES: readonly ModelRoleDefinition[] = [
   { key: "judge", group: "Debate", label: "Moderador", description: "Instruye el caso, resuelve objeciones y desempata.", kind: "language", defaultId: "spacexai/grok-4.7", defaultEffort: "high", configurableEffort: true, requires: SEAT },

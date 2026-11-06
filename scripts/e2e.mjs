@@ -37,13 +37,13 @@ if (mode === "case") {
   const votes = page.locator('article[data-claim] [role="group"] span[aria-label][title]');
   const chips = await votes.count();
   const seals = await page.locator("span[aria-label^='Desempate del moderador']").count();
-  console.log("claims=" + claims + " voteChips=" + chips + " judgeSeals=" + seals + " actaEntries=" + (await page.locator("section ol > li").count()));
+  console.log("claims=" + claims + " voteChips=" + chips + " judgeSeals=" + seals + " caseEntries=" + (await page.locator("section ol > li").count()));
   for (const label of await votes.evaluateAll((els) => els.map((e) => e.getAttribute("aria-label")))) console.log("  " + label);
   assert(claims > 0 && chips === claims * 4, "every claim shows exactly four analyst vote icons");
   await page.screenshot({ path: out + "/case-" + arg + ".png", fullPage: true });
   await page.screenshot({ path: out + "/case-" + arg + "-top.png" });
   await page.getByRole("heading", { name: "Registro del debate" }).scrollIntoViewIfNeeded();
-  await page.screenshot({ path: out + "/case-" + arg + "-acta.png" });
+  await page.screenshot({ path: out + "/case-" + arg + "-case.png" });
   await page.locator("[id^=S]").first().scrollIntoViewIfNeeded();
   await page.screenshot({ path: out + "/case-" + arg + "-debate.png" });
   await page.setViewportSize({ width: 390, height: 844 });

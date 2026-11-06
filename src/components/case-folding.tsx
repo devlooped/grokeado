@@ -2,8 +2,8 @@
 
 import { useEffect, useRef } from "react";
 
-// The acta folds into stages, analyst groups and cards, all plain <details>. These
-// controls open or close every fold of their scope: the whole acta, or one stage
+// The case record folds into stages, analyst groups and cards, all plain <details>. These
+// controls open or close every fold of their scope: the whole case record, or one stage
 // (whose own fold stays open when collapsing, so its structure shows).
 export function FoldButtons({ label }: { label: string }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -43,7 +43,7 @@ export function FoldNavigation() {
         return false;
       }
       const target = document.getElementById(id);
-      if (!target?.closest("[data-acta]")) return false;
+      if (!target?.closest("[data-case]")) return false;
       let hidden = false;
       for (let details: HTMLDetailsElement | null | undefined = target.closest("details"); details; details = details.parentElement?.closest("details")) {
         if (details.open) continue;

@@ -90,7 +90,7 @@ test("new archives contain instruction/evidence/discussion and one complete root
     { provider: "openai", model: "openai/test", effort: "high", role: "analyst", inputTokens: 100, outputTokens: 20, cacheReadTokens: 0, cacheWriteTokens: 0, calls: 1, unknownUsageCalls: 0 },
     { provider: "openai", model: "openai/test", effort: "high", role: "coverSearch", inputTokens: 200, outputTokens: 30, cacheReadTokens: 0, cacheWriteTokens: 0, calls: 1, unknownUsageCalls: 0 },
   ] });
-  assert.ok([...extracted.keys()].every((path) => !/(?:acta|transcript)\.jsonl$|phase_session|checkpoint/.test(path)));
+  assert.ok([...extracted.keys()].every((path) => !/transcript\.jsonl$|phase_session|checkpoint/.test(path)));
   assert.deepEqual(parseCaseLog(extracted.get("case.jsonl")!.toString()).filter((record) => record.kind === "court_event").map((record) => record.data), events);
   const first = zip;
   await archiveEvidence("fixture", dependencies);
@@ -133,7 +133,7 @@ test("reads the final tree and uploads it, propagating read or write errors", as
   assert.equal(unzip(saved).size, files.size + 3);
   assert.deepEqual(JSON.parse(unzip(saved).get("case.json")!.toString()), { schemaVersion: 1, caseId: "case-1", usage: [] });
   assert.equal(unzip(saved).get("transcript.jsonl")!.toString(), transcript);
-  assert.equal(unzip(saved).get("acta.jsonl")!.toString(), "");
+  assert.equal(unzip(saved).get("case.jsonl")!.toString(), "");
   await assert.rejects(archiveEvidence("case-1", {
     ...dependencies,
     readEvidenceTree: async () => { throw new Error("read failed"); },
@@ -174,7 +174,7 @@ test("persists the same merged transcript in the run, case blob and ZIP on retri
   await archiveEvidence("case-1", store);
   const firstZip = zip;
   const extracted = unzip(zip);
-  assert.deepEqual(extracted.get("acta.jsonl")!.toString().trim().split("\n").map((line) => JSON.parse(line)), [session, event]);
+  assert.deepEqual(extracted.get("case.jsonl")!.toString().trim().split("\n").map((line) => JSON.parse(line)), [session, event]);
   assert.equal(extracted.get("transcript.jsonl")!.toString(), transcript);
   assert.equal(extracted.get(run)!.toString(), stored.get(run)!.toString());
   assert.deepEqual(extracted.get(run)!.toString().trim().split("\n").map((line) => JSON.parse(line)), [{ ...step, modelId: "grok-id", effort: null }, { ...event, modelId: "grok-id", effort: null }]);

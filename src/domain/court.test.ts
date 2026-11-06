@@ -18,7 +18,7 @@ test("a three-way split or a missing majority goes to the judge", () => {
 });
 
 test("historical content consensus is reported without inventing votes; new records need a judgment", async () => {
-  const { contentOutcome, caseShareMetadata } = await import("./acta.ts");
+  const { contentOutcome, caseShareMetadata } = await import("./case.ts");
   const summary: CourtEvent = { type: "case_summary", text: "A1, Verdadero; A2, Falso. Los cuatro analistas coincidieron en considerar engañoso el enunciado completo." };
   const view = project([summary]);
   assert.deepEqual(contentOutcome(view), { verdict: "enganoso", method: "reported" });
@@ -33,7 +33,7 @@ test("historical content consensus is reported without inventing votes; new reco
 });
 
 test("historical and misleading verdicts have distinct labels in records and sharing metadata", async () => {
-  const { caseShareMetadata, describe } = await import("./acta.ts");
+  const { caseShareMetadata, describe } = await import("./case.ts");
   const c = { id: "abc", createdAt: "2026-10-31T00:00:00Z", status: "resolved" as const, submission: { kind: "text" as const, text: "Afirmación" } };
   const events: CourtEvent[] = [
     { type: "claims_entered", claims: [{ id: "A1", quote: "Afirmación", text: "Afirmación" }] },
@@ -67,7 +67,7 @@ test("projection attaches votes and judgments to claims and strikes sustained ob
 });
 
 test("caseShareMetadata uses one mixed outcome icon without vote icons", async () => {
-  const { caseShareMetadata } = await import("./acta.ts");
+  const { caseShareMetadata } = await import("./case.ts");
   const c = {
     id: "abc123",
     createdAt: "2026-10-31T00:00:00Z",

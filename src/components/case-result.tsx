@@ -1,4 +1,4 @@
-import { caseOutcome, contentOutcome, VERDICT_LABEL } from "@/domain/acta.ts";
+import { caseOutcome, contentOutcome, VERDICT_LABEL } from "@/domain/case.ts";
 import { COUNSEL, MODEL_NAME, seatModels, type CaseRecord, type CaseView, type ClaimView, type RecordedEvent, type SeatModels } from "@/domain/court.ts";
 import { Cited, citationRefs, type Citations } from "./citations.tsx";
 import { ClaimsIcon, GavelIcon, JudgeSeal, MegaphoneIcon, VERDICT_TEXT, VerdictDot, VoteChip } from "./marks.tsx";

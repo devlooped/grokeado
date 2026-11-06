@@ -15,5 +15,5 @@ test("new artifacts are write-once across every namespace and generic writer", a
 });
 
 test("artifact paths reject traversal, private checkpoints, hash spoofing, and legacy root logs", () => {
-  for (const path of ["acta.jsonl", "transcript.jsonl", "phase-sessions/a.json", "instruction/../evidence/E1.md", "instruction//a", "evidence/./a", "evidence/.sha256/fake.json", "discussion/a\\b", "evidence/E1.md\0", "C:/evidence/E1.md"]) assert.throws(() => normalizeArtifactBytes(path, "x"));
+  for (const path of ["case-log.jsonl", "transcript.jsonl", "phase-sessions/a.json", "instruction/../evidence/E1.md", "instruction//a", "evidence/./a", "evidence/.sha256/fake.json", "discussion/a\\b", "evidence/E1.md\0", "C:/evidence/E1.md"]) assert.throws(() => normalizeArtifactBytes(path, "x"));
 });

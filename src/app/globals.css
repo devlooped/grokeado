@@ -201,7 +201,7 @@ html[data-theme="dark"] .theme-icon-sun {
   opacity: 0.6;
 }
 
-/* Folds of the acta: stages, analyst runs and source cards. */
+/* Folds of the case record: stages, analyst runs and source cards. */
 .fold-summary {
   list-style: none;
 }

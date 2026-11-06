@@ -6,13 +6,13 @@ import { notFound, permanentRedirect } from "next/navigation";
 import { connection } from "next/server";
 import { unstable_cache } from "next/cache";
 import { Suspended } from "@/components/suspended.tsx";
-import { Acta, SessionDialogue } from "@/components/acta.tsx";
+import { Case, SessionDialogue } from "@/components/case.tsx";
 import { EvidencePanel } from "@/components/evidence-panel.tsx";
 import { CaseUpdates } from "@/components/case-updates.tsx";
 import { GavelIcon } from "@/components/marks.tsx";
 import { CaseResult } from "@/components/case-result.tsx";
 import { SessionProgress } from "@/components/session-progress.tsx";
-import { caseShareMetadata, submissionExcerpt } from "@/domain/acta.ts";
+import { caseShareMetadata, submissionExcerpt } from "@/domain/case.ts";
 import { caseCardImageUrl } from "@/domain/case-card.ts";
 import { COUNSEL_NAMES, seatModels, type CaseRecord, type RecordedEvent } from "@/domain/court.ts";
 import { project } from "@/domain/court.ts";
@@ -137,7 +137,7 @@ async function ResolvedCase({ c, id, revision }: { c: CaseRecord; id: string; re
           <p className="mt-1 text-sm text-ink-soft">Todo lo que pasó en el debate, completo y en orden.</p>
         </div>
         <div className="mt-8">
-          <Acta events={events} view={view} caseId={id} sourceAliases={aliases} models={models} />
+          <Case events={events} view={view} caseId={id} sourceAliases={aliases} models={models} />
         </div>
       </section>
 

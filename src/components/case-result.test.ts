@@ -6,7 +6,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { COUNSEL, project, type CaseRecord, type CourtEvent } from "../domain/court.ts";
 import { displayHistoricalCitations } from "../domain/historical-citations.ts";
 import { CaseResult } from "./case-result.tsx";
-import { Acta } from "./acta.tsx";
+import { Case } from "./case.tsx";
 
 const c: CaseRecord = {
   id: "fixture", createdAt: "2026-10-30T14:00:00.000Z", status: "resolved",
@@ -216,7 +216,7 @@ test("claim, intervention and objection references link consistently across the 
   const view = project(recorded);
   const html = renderToStaticMarkup(createElement("main", null,
     createElement(CaseResult, { c, view, events: recorded }),
-    createElement(Acta, { events: recorded, view, caseId: c.id }),
+    createElement(Case, { events: recorded, view, caseId: c.id }),
   ));
   const { document } = parseHTML(html);
   for (const id of ["A1", "A2", "I1", "I2", "O1"]) {
@@ -225,7 +225,7 @@ test("claim, intervention and objection references link consistently across the 
   }
   for (const id of ["I1", "I2", "O1"]) {
     const target = document.getElementById(id)!;
-    assert.ok(target.closest("[data-acta]"));
+    assert.ok(target.closest("[data-case]"));
     assert.ok(target.closest("details"), "the target is inside a fold");
     assert.ok(target.querySelector(`a[href="#${id}"]`), "the entry has its own permalink");
   }
@@ -241,9 +241,9 @@ test("claim, intervention and objection references link consistently across the 
   assert.deepEqual([...vote.querySelectorAll("a")].map((a) => a.getAttribute("href")), ["#A2", "#O1", "#I1"]);
   const moderator = document.querySelector("#fundamentos-A1 li.border-l-2")!;
   assert.deepEqual([...moderator.querySelectorAll("a")].map((a) => a.getAttribute("href")), ["#I2", "#O1", "#A2"]);
-  const acta = document.querySelector("[data-acta]")!;
-  assert.ok(acta.querySelectorAll('a[href="#A2"]').length >= 6, "claim references are linked throughout the record");
-  assert.ok(acta.querySelectorAll('a[href="#O1"]').length >= 4, "the reply and ruling identify their objection");
+  const caseRecord = document.querySelector("[data-case]")!;
+  assert.ok(caseRecord.querySelectorAll('a[href="#A2"]').length >= 6, "claim references are linked throughout the record");
+  assert.ok(caseRecord.querySelectorAll('a[href="#O1"]').length >= 4, "the reply and ruling identify their objection");
 });
 
 test("the displayed historical summary links rewritten source references", () => {

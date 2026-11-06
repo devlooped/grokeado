@@ -1,5 +1,5 @@
 import { ModelMark, VerdictGlyph } from "./marks.tsx";
-import { caseOutcome, contentOutcome, submissionExcerpt, VERDICT_LABEL } from "../domain/acta.ts";
+import { caseOutcome, contentOutcome, submissionExcerpt, VERDICT_LABEL } from "../domain/case.ts";
 import { caseCardVotes } from "../domain/case-card.ts";
 import { MODEL_NAME, type CaseRecord, type CaseView, type Verdict } from "../domain/court.ts";
 

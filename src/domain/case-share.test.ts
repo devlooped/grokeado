@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { caseShareMetadata } from "./acta.ts";
+import { caseShareMetadata } from "./case.ts";
 import { type CaseRecord, type CourtEvent } from "./court.ts";
 
 const c: CaseRecord = { id: "ABC", createdAt: "2026-01-01", status: "resolved", submission: { kind: "link", url: "https://example.org" } };

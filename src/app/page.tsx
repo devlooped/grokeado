@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { connection } from "next/server";
-import { submissionExcerpt, VERDICT_LABEL } from "@/domain/acta.ts";
+import { submissionExcerpt, VERDICT_LABEL } from "@/domain/case.ts";
 import { caseCardImageUrl } from "@/domain/case-card.ts";
 import { COUNSEL, MODEL_NAME, project, seatModels, type CaseRecord, type ClaimView, type SeatModels } from "@/domain/court.ts";
 import { GavelIcon, VERDICT_TEXT, VoteChip } from "@/components/marks.tsx";

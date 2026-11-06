@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { VERDICT_LABEL } from "@/domain/acta.ts";
+import { VERDICT_LABEL } from "@/domain/case.ts";
 import { COUNSEL, COUNSEL_NAMES, MODEL_NAME, VERDICTS, type Verdict } from "@/domain/court.ts";
 import { GavelIcon, ModelMark, VERDICT_TEXT, VerdictGlyph } from "@/components/marks.tsx";
 import { REQUEST_PANEL_ID } from "@/lib/request-panel.ts";

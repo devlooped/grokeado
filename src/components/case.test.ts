@@ -5,11 +5,11 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { COUNSEL, project, type CourtEvent, type RecordedEvent } from "../domain/court.ts";
 import { displayHistoricalCitations } from "../domain/historical-citations.ts";
-import { Acta } from "./acta.tsx";
+import { Case } from "./case.tsx";
 
 function render(events: CourtEvent[]) {
   const recorded: RecordedEvent[] = events.map((e, i) => ({ ...e, seq: i + 1, at: "2026-10-30T14:00:00.000Z" }));
-  return renderToStaticMarkup(createElement(Acta, { events: recorded, view: project(recorded), caseId: "fixture" }));
+  return renderToStaticMarkup(createElement(Case, { events: recorded, view: project(recorded), caseId: "fixture" }));
 }
 
 test("majority results show small vote chips with agreeing analysts first and dissent last", () => {
@@ -43,7 +43,7 @@ test("majority results show small vote chips with agreeing analysts first and di
   assert.ok(result.textContent.includes("Desempate del moderador sobre A1: Verdadero. Razón del moderador."));
 });
 
-test("the acta labels translated contributions and retains their originals in both stages", () => {
+test("the case record labels translated contributions and retains their originals in both stages", () => {
   const evidence = { id: "P1", by: "grok" as const, claimId: "A1", title: "Informe oficial", url: "https://example.org/report", excerpt: "El investigado no entregó los documentos.", stance: "opposes" as const, translation: { language: "es", original: { title: "Relatório oficial", excerpt: "O investigado não entregou os documentos." } } };
   const html = render([
     { type: "instruction_opened" },
@@ -59,7 +59,7 @@ test("the acta labels translated contributions and retains their originals in bo
   }
 });
 
-test("the acta displays shared attribution, bilateral searches, all reliability votes and the exclusion warning", () => {
+test("the case record displays shared attribution, bilateral searches, all reliability votes and the exclusion warning", () => {
   const url = "https://example.org/report";
   const html = render([
     { type: "instruction_opened" },
@@ -74,12 +74,12 @@ test("the acta displays shared attribution, bilateral searches, all reliability 
     { type: "statement", id: "I1", by: "claude", stage: "opening", text: "Sin pruebas admitidas, no puedo verificar la afirmación.", evidenceIds: [] },
   ]);
   for (const text of ["Instrucción", "Busqué tablas oficiales a favor.", "Busqué documentos en contra, sin resultados.", 'id="S1"', "Aportada por Grok, Gemini", "a favor", "en contra", "3/4 votos por anular", "Anulada", "No identifica autores ni métodos verificables.", "La fuente permite consultar los documentos originales.", "No puede usarse como prueba", "Termina la instrucción"]) {
-    assert.ok(html.includes(text), "Missing acta content: " + text);
+    assert.ok(html.includes(text), "Missing case content: " + text);
   }
   assert.ok(html.indexOf("Termina la instrucción") < html.indexOf('id="I1"'));
 });
 
-test("source cards show each reliability vote and decision once, without repeated acta entries", () => {
+test("source cards show each reliability vote and decision once, without repeated case entries", () => {
   const events: CourtEvent[] = [
     { type: "evidence_unified", sources: [
       { id: "S1", url: "https://example.org/1", title: "Fuente anulada", contributions: [] },
@@ -108,8 +108,8 @@ test("source cards show each reliability vote and decision once, without repeate
   assert.ok(document.getElementById("S2")!.textContent.includes("Admitida"));
   assert.ok(!html.includes("anulada por mayoría (al menos 3 de 4 votos)"));
   assert.ok(!html.includes("admitida; no hubo mayoría para anularla"));
-  assert.equal(document.querySelectorAll("[data-acta] ol > li").length, 3, "no empty list entries for the suppressed events");
-  assert.ok(html.includes("Voto sobre la afirmación."), "claim votes remain in the acta");
+  assert.equal(document.querySelectorAll("[data-case] ol > li").length, 3, "no empty list entries for the suppressed events");
+  assert.ok(html.includes("Voto sobre la afirmación."), "claim votes remain in the case record");
 });
 
 test("source events without a matching card or with an earlier different vote remain visible", () => {
@@ -145,7 +145,7 @@ test("historical unified citations display E and retain old inbound anchors", ()
   ];
   const recorded = original.map((e, i) => ({ ...e, seq: i + 1, at: "2026-10-30T14:00:00.000Z" }));
   const { events, aliases } = displayHistoricalCitations(recorded);
-  const html = renderToStaticMarkup(createElement(Acta, { events, view: project(events), caseId: "fixture", sourceAliases: aliases }));
+  const html = renderToStaticMarkup(createElement(Case, { events, view: project(events), caseId: "fixture", sourceAliases: aliases }));
   assert.ok(html.includes('id="E1"'));
   assert.ok(html.includes('id="S1"'));
   assert.ok(html.includes('href="#E1"'));
@@ -173,7 +173,7 @@ test("citations mentioned in an intervention link inline, and only the unmention
   assert.deepEqual([...objection.querySelectorAll("a")].map((a) => a.getAttribute("href")), ["#O1", "#I1", "#E10", "#I1"]);
 });
 
-test("the acta folds into stages, each analyst's instruction run up to its close, and debate turns", () => {
+test("the case record folds into stages, each analyst's instruction run up to its close, and debate turns", () => {
   const evidence = (id: string, by: "grok" | "gemini"): CourtEvent => ({ type: "evidence_filed", evidence: { id, by, claimId: "A1", title: "Doc " + id, url: "https://example.org/" + id, excerpt: "Dato concreto de " + id + ".", stance: "supports" } });
   const html = render([
     { type: "claims_entered", claims: [{ id: "A1", quote: "", text: "Afirmación." }] },
@@ -200,7 +200,7 @@ test("the acta folds into stages, each analyst's instruction run up to its close
   const stages = [...document.querySelectorAll("[data-fold-scope=section] > details")];
   assert.deepEqual(stages.map((d) => d.querySelector("h3")!.textContent), ["Apertura", "Instrucción", "Crítica de fuentes", "Exposiciones iniciales", "Conclusiones y votos", "Resultado"]);
   assert.ok(stages.every((d) => !d.hasAttribute("open")), "stages start collapsed");
-  assert.equal(document.querySelectorAll("[data-acta] button[aria-label^='Expandir todo']").length, stages.length + 1, "one pair of controls per stage and one for the acta");
+  assert.equal(document.querySelectorAll("[data-case] button[aria-label^='Expandir todo']").length, stages.length + 1, "one pair of controls per stage and one for the case record");
 
   const runs = [...stages[1]!.querySelectorAll("details.fold")];
   assert.equal(runs.length, 2, "one run per analyst");
@@ -219,28 +219,28 @@ test("the acta folds into stages, each analyst's instruction run up to its close
   assert.ok(closing.textContent.includes("También probada."));
 });
 
-test("the stored simulation flag labels the acta independently of the current AI mode", () => {
+test("the stored simulation flag labels the case record independently of the current AI mode", () => {
   const html = render([{ type: "session_opened", simulated: true, judgeModel: "fixture", counselModels: { grok: "fixture", gemini: "fixture", claude: "fixture", chatgpt: "fixture" } }]);
   assert.ok(html.includes("Simulación local"));
   assert.ok(html.includes("fuentes y respuestas ficticias"));
   assert.ok(!html.includes("modera fixture"), "the moderator is introduced by the panel instead");
 });
 
-test("the acta links OKF page citations to the case evidence route", () => {
+test("the case record links OKF page citations to the case evidence route", () => {
   const html = render([
     { type: "statement", id: "I1", by: "grok", stage: "opening", text: "La evidencia disponible permite contrastar la afirmación.", evidenceIds: ["/evidence/grok/passage.md#p3"] },
   ]);
   assert.ok(html.includes('href="/c/fixture/evidence/grok/passage.md#p3"'));
 });
 
-test("the acta omits the moderator's summary because it is already shown in the case result", () => {
+test("the case record omits the moderator's summary because it is already shown in the case result", () => {
   const html = render([{ type: "case_summary", text: "El debate trató las diferencias entre los analistas." }, { type: "session_closed" }]);
   assert.ok(!html.includes("Resumen del moderador"));
   assert.ok(!html.includes("El debate trató las diferencias entre los analistas."));
   assert.ok(html.includes("Termina el debate"));
 });
 
-test("the acta renders historical Insostenible and new Engañoso verdicts", () => {
+test("the case record renders historical Insostenible and new Engañoso verdicts", () => {
   const html = render([
     { type: "vote", by: "grok", claimId: "A1", verdict: "no_verificable", rationale: "Faltan pruebas." },
     { type: "judgment", claimId: "A1", verdict: "enganoso", method: "consensus", reasoning: "" },
@@ -250,7 +250,7 @@ test("the acta renders historical Insostenible and new Engañoso verdicts", () =
   assert.ok(!html.includes("No verificable"));
 });
 
-test("the acta records content votes, abstentions and the moderator's tiebreak", () => {
+test("the case record records content votes, abstentions and the moderator's tiebreak", () => {
   const html = render([
     { type: "content_vote", by: "grok", verdict: "enganoso", rationale: "La narrativa omite contexto." },
     { type: "content_vote", by: "gemini", verdict: null, rationale: "Son afirmaciones independientes." },

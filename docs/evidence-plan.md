@@ -54,7 +54,7 @@ Frontmatter común: `type`, `title`, `description`, `sources[]`, `generated: {by
 | fragment | `page`, `reprocess_of?` (link a la extracción base o ajena) |
 | argument | `stage` (exposicion/objecion/conclusion), `supports[]`, `refutes[]` |
 
-Ids = ruta; links `/evidence/{seat}/x.md#pN`. Las citas del acta usan estas rutas.
+Ids = ruta; links `/evidence/{seat}/x.md#pN`. Las citas del expediente usan estas rutas.
 
 ## Fase 0 — Preliminares (1 día)
 
@@ -142,11 +142,11 @@ Cada etapa = step de evidencia + step de decisión (`runSeat`).
 
 - El orquestador arma el workspace de cada ronda desde Blob; los agentes no editan lo ajeno.
 - El prompt del step de decisión recibe `index.md` de lo promovido y sus links.
-- `CourtEvent` y `acta.ts` admiten citas `/evidence/...#pN`; `components/acta.tsx` las resuelve a fragmento, página y asset.
+- `CourtEvent` y `case.ts` admiten citas `/evidence/...#pN`; `components/case.tsx` las resuelve a fragmento, página y asset.
 
 ## Fase 5 — UI (2 días, solapable con la 4)
 
-- Panel de evidencia en `c/[id]` (índice, documento, fragmento), citas del acta con enlace.
+- Panel de evidencia en `c/[id]` (índice, documento, fragmento), citas del expediente con enlace.
 - Ruta para servir raw/assets desde Blob (similar a `imagen/route.ts`). El store es de lectura pública; la ruta exige que el caso exista.
 - Mostrar autor y, si es reproceso, comparación contra la extracción base.
 
@@ -172,7 +172,7 @@ Cada etapa = step de evidencia + step de decisión (`runSeat`).
 | Costo/latencia | Snapshot, `maxSteps`, tope de gasto por clave, tags de costo |
 | Límite de 270 s | `deadlineAt` en el harness, cierre parcial, resultado `partial` válido |
 | Reintentos del step | Idempotencia: workspace reconstruido desde Blob |
-| Citas rotas | Validar al promover y al registrar en el acta |
+| Citas rotas | Validar al promover y al registrar en el expediente |
 | Brokering/gestión de claves no disponible como se espera | Verificación previa (3.3); plan B: clave dedicada con presupuesto y red restringida al gateway |
 
 ## Orden y estimación

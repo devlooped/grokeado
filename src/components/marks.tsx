@@ -1,4 +1,4 @@
-import { VERDICT_LABEL } from "@/domain/acta.ts";
+import { VERDICT_LABEL } from "@/domain/case.ts";
 import { MODEL_NAME, modelDetail, modelMark, modelName, type Counsel, type ModelUse, type Verdict } from "@/domain/court.ts";
 
 export function ModelMark({ model, className = "size-5", style }: { model: Counsel; className?: string; style?: React.CSSProperties }) {

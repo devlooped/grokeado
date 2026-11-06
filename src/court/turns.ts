@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { describe, EVIDENCE_STANCE_LABEL, STAGE_LABEL } from "../domain/acta.ts";
+import { describe, EVIDENCE_STANCE_LABEL, STAGE_LABEL } from "../domain/case.ts";
 import { COUNSEL, MODEL_NAME, modelName, VERDICTS, imageDescribed, project, type Claim, type Counsel, type CourtEvent, type Stage, type Submission, type SubmissionContext, type UnifiedSource } from "../domain/court.ts";
 import { DEFAULT_MODELS, type ModelConfig } from "./models.ts";
 import { Rejection, tool, type Toolset } from "./toolset.ts";

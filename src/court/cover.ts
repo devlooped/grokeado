@@ -1,6 +1,6 @@
 import { gateway, generateImage, generateText, stepCountIs, tool } from "ai";
 import { z } from "zod";
-import { submissionExcerpt } from "../domain/acta.ts";
+import { submissionExcerpt } from "../domain/case.ts";
 import { project, type Submission } from "../domain/court.ts";
 import { downloadUrl, sniffExtension } from "../evidence/download.ts";
 import { getCase, getEvents, saveCover } from "../store.ts";

@@ -1,6 +1,6 @@
-import { ABSENCE_LABEL, EVIDENCE_STANCE_LABEL, STAGE_LABEL, VERDICT_LABEL } from "@/domain/acta.ts";
+import { ABSENCE_LABEL, EVIDENCE_STANCE_LABEL, STAGE_LABEL, VERDICT_LABEL } from "@/domain/case.ts";
 import { COUNSEL, MODEL_NAME, modelDetail, modelMark, modelName, project, seatModels, type CaseView, type Counsel, type Evidence, type RecordedEvent, type Seat, type SeatModels, type SourceView, type Stage } from "@/domain/court.ts";
-import { FoldButtons, FoldNavigation } from "./acta-folding.tsx";
+import { FoldButtons, FoldNavigation } from "./case-folding.tsx";
 import { CitationLink, Cited, citationHref, citationRefs, mentions, type Citations } from "./citations.tsx";
 import { GavelIcon, JudgeSeal, ModelMark, VERDICT_TEXT, VerdictGlyph, VoteChip } from "./marks.tsx";
 import type { ToolActivity } from "@/domain/tool-activity.ts";
@@ -468,7 +468,7 @@ function SectionFold({ section, index, ctx }: { section: Section; index: number;
   );
 }
 
-export function Acta({ events, view, caseId, sourceAliases = new Map(), models = seatModels({}, events) }: { events: RecordedEvent[]; view: CaseView; caseId: string; sourceAliases?: ReadonlyMap<string, string>; models?: SeatModels }) {
+export function Case({ events, view, caseId, sourceAliases = new Map(), models = seatModels({}, events) }: { events: RecordedEvent[]; view: CaseView; caseId: string; sourceAliases?: ReadonlyMap<string, string>; models?: SeatModels }) {
   // La tarjeta ya muestra el resumen, los votos y la decisión proyectados; conservar solo
   // eventos que no estén representados allí (por ejemplo, registros incompletos).
   const visible = events.filter((e) => {
@@ -483,7 +483,7 @@ export function Acta({ events, view, caseId, sourceAliases = new Map(), models =
   const sections = sectionsOf(visible);
   const ctx: Context = { view, caseId, refs: citationRefs(events, view), sourceAliases, models };
   return (
-    <div data-acta data-fold-scope="acta">
+    <div data-case data-fold-scope="case">
       <FoldNavigation />
       <div className="mb-6 flex items-center justify-end gap-2 text-xs text-ink-soft">
         <span>Todas las etapas</span>
