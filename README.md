@@ -213,4 +213,7 @@ Each seat attempt has a 20-generation limit and a 270-second timeout (override
 with `COURT_TURN_TIMEOUT_MS`). The court retries unfinished turns once; the
 Workflow runtime also retries infrastructure failures. A running workflow can
 outlast a single HTTP request, but an individual step is still bounded by the
-hosting plan's function duration.
+hosting plan's function duration. The combined workflow/step function defaults
+to 600 seconds; set `STEP_TIMEOUT` to a positive whole number of seconds at
+build time to override it, within the hosting plan's limits. This does not
+change the separate turn, model, or sandbox deadlines.

@@ -1,5 +1,6 @@
 import type { NextConfig } from "next";
 import { withWorkflow } from "workflow/next";
+import { configureWorkflowStepTimeout } from "./src/lib/workflow-step-timeout.ts";
 
 const nextConfig: NextConfig = {
   allowedDevOrigins: ["**.ts.net"],
@@ -9,4 +10,11 @@ const nextConfig: NextConfig = {
   experimental: { serverActions: { bodySizeLimit: "5mb" } },
 };
 
-export default withWorkflow(nextConfig);
+const workflowConfig = withWorkflow(nextConfig);
+export default async function config(phase: string, context: { defaultConfig: NextConfig }): Promise<NextConfig> {
+  const config = await workflowConfig(phase, context);
+  if (phase === "phase-production-build") {
+    await configureWorkflowStepTimeout("src/app/.well-known/workflow/v1/config.json", process.env.STEP_TIMEOUT);
+  }
+  return config;
+}
