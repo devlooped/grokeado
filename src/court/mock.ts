@@ -90,7 +90,7 @@ function responses({ spec, record, submission, native }: MockTurn): Call[][] {
         const veto = s.url.endsWith("/unreliable") && spec.counsel !== "chatgpt";
         return { sourceId: s.id, veto, reason: prefix + (veto ? "La fuente ficticia no identifica autores ni metodología." : "No veto esta fuente en el escenario de prueba.") };
       });
-      if (native) return [[call(TEXT, prefix + "Decido mis votos sobre las fuentes ficticias.")], [call(OUTPUT, { votes: Object.fromEntries(votes.map(({ sourceId, ...vote }) => [sourceId, vote])) })]];
+      if (native) return [[call(TEXT, prefix + "Decido mis votos sobre las fuentes ficticias.")], [call(OUTPUT, { votes })]];
       return [[call("review_sources", { votes })]];
     }
     case "statement":

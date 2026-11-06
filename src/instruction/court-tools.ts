@@ -96,19 +96,17 @@ export function instructionFiling(output: InstructionFilingOutput): { input: z.i
   return { input: { proposals, searches: Object.entries(output.searches).map(([claimId, search]) => ({ claimId, ...search })) }, dropped };
 }
 
-// Pipeline 3 records the source review as a typed answer too: one vote for
-// each source of the index, keyed by its ID, so that none can be left out.
-export function sourceReviewSchema(sourceIds: readonly string[]) {
-  const vote = z.object({
+// Pipeline 3 records the source review as a typed answer too. The votes are a
+// list, not an object keyed by E id: with one property per source, Anthropic
+// rejects the schema of a large index ("The compiled grammar is too large").
+// review_sources checks that each source has exactly one vote.
+export const sourceReviewSchema = z.object({
+  votes: z.array(z.object({
+    sourceId: z.string().describe("The E identifier of the source, as in the index (E1, E2, ...)"),
     veto: z.boolean().describe("true to exclude the source from the corpus"),
     reason: z.string().describe("The concrete reason for your vote, in at least one full sentence"),
-  }).strict();
-  return z.object({
-    votes: z.object(Object.fromEntries(sourceIds.map((id) => [id, vote]))).strict().describe("Your vote on each source of the index"),
-  }).strict();
-}
-
-export type SourceReviewOutput = { votes: Record<string, { veto: boolean; reason: string }> };
+  }).strict()).describe("One vote for each source of the index, none left out"),
+}).strict();
 
 // A typed decision of pipeline 3: the seat first answers in prose, without a
 // format, then the host asks in a follow-up for the same decision in the
@@ -132,9 +130,9 @@ export function typedDecision(phase: InstructionPhase, record: readonly CourtEve
     input: (output) => instructionFiling(output as InstructionFilingOutput),
   };
   if (phase === "criticism") return {
-    action: "review_sources", schema: sourceReviewSchema([...view.sources.values()].map((source) => source.id)), artifact: "review.json",
+    action: "review_sources", schema: sourceReviewSchema, artifact: "review.json",
     request: "Now give the votes you decided, in the requested format: one for each source of the index, with its concrete reason.",
-    input: (output) => ({ input: { votes: Object.entries((output as SourceReviewOutput).votes).map(([sourceId, vote]) => ({ sourceId, ...vote })) }, dropped: [] }),
+    input: (output) => ({ input: output, dropped: [] }),
   };
   return undefined;
 }
