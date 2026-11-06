@@ -8,6 +8,7 @@ import { randomUUID } from "node:crypto";
 import { authorizeSandboxBinding, committedPhase, type SandboxBinding } from "./instruction/authorization.ts";
 import { caseFailureMessage, type SnapshotHealth } from "./lib/admin-notifications.ts";
 import { publicToolActivities, ToolActivitySchema, type ToolActivity } from "./domain/tool-activity.ts";
+import type { PromptTranslationCache } from "./evidence/prompt-translation.ts";
 
 export { newCaseId };
 
@@ -133,6 +134,14 @@ async function db(): Promise<Pool> {
          case_id TEXT NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
          sandbox_id TEXT PRIMARY KEY,
          body JSONB NOT NULL
+       );
+       CREATE TABLE IF NOT EXISTS prompt_translations (
+         key TEXT PRIMARY KEY,
+         language TEXT NOT NULL,
+         source TEXT NOT NULL,
+         translation TEXT NOT NULL,
+         model_id TEXT NOT NULL,
+         created_at TEXT NOT NULL
        );`
     )
     .then(async () => {
@@ -657,6 +666,22 @@ export async function getCaseToolActivities(caseId: string): Promise<ToolActivit
   );
   return publicToolActivities(rows.map((row) => row.body));
 }
+
+// Translations of the English prompts for case.jsonl, shared by every case.
+// The key hashes the source text and the language (see prompt-translation.ts).
+export const promptTranslations: PromptTranslationCache = {
+  get: async (keys) => {
+    if (!keys.length) return new Map();
+    const { rows } = await (await db()).query<{ key: string; translation: string }>("SELECT key, translation FROM prompt_translations WHERE key = ANY($1)", [[...keys]]);
+    return new Map(rows.map((row) => [row.key, row.translation]));
+  },
+  save: async ({ key, language, source, translation, modelId }) => {
+    await (await db()).query(
+      "INSERT INTO prompt_translations (key, language, source, translation, model_id, created_at) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (key) DO NOTHING",
+      [key, language, source, translation, modelId, new Date().toISOString()]
+    );
+  },
+};
 
 export async function getSourceOperations(caseId: string): Promise<Operation[]> {
   const { rows } = await (await db()).query<{ body: Operation }>("SELECT body FROM case_source_operations WHERE case_id = $1 ORDER BY operation_key", [caseId]);

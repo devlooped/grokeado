@@ -47,6 +47,7 @@ test("four independent source-backed analysts settle once, then every debate pat
           // Preparation takes two units: one still under way, one complete.
           prepare: async () => (prepared = !prepared) ? undefined : "SIMULACIÓN LOCAL: análisis preparatorio, no prueba.",
           audit: async (_id, _key, body) => { audit.push(body); }, activity: async (_id, body) => { audit.push(body); },
+          prompt: async (_id, _key, body) => { audit.push(body); },
         }).catch(async (error) => { throw new Error(JSON.stringify((await operations.list("fixture")).filter((operation) => operation.status === "uncertain").map(({ stage, error }) => ({ stage, error }))), { cause: error }); });
         assert.ok(generations - before <= 1, "one decision generation per unit");
         if (outcome) return outcome;
@@ -77,6 +78,16 @@ test("four independent source-backed analysts settle once, then every debate pat
   assert.equal(log.filter((record) => record.kind === "court_event").length, events.length);
   assert.ok(log.some((record) => record.kind === "model_step"));
   assert.ok(log.some((record) => record.kind === "tool_call"), "tool activity survives public case-log archival");
+  // Every unit records the same prompt records again: buildCaseLog would reject a changed one.
+  const prompts = log.filter((record) => record.kind === "prompt");
+  for (const channel of ["preparation", "decision"]) {
+    const system = prompts.filter((record) => record.data.role === "system" && record.data.channel === channel);
+    assert.equal(new Set(system.map((record) => `${record.phase}:${record.seat}`)).size, system.length, "one system prompt per session");
+    assert.ok(system.length >= 5 && system.every((record) => String(record.data.text).startsWith("LANGUAGE RULE: The case language is Latin American Spanish.")));
+  }
+  const tasks = prompts.filter((record) => record.data.role === "task");
+  assert.ok(tasks.some((record) => /^Set the claims to examine\./.test(String(record.data.text))));
+  assert.ok(tasks.every((record) => !String(record.data.text).startsWith("{")), "the task text leaves out the machine spec");
 });
 
 test("a retry after generation and court-action checkpoints reuses messages, actions, and the paid step", async () => {

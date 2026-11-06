@@ -12,7 +12,7 @@ import type { SourceService } from "../instruction/sources.ts";
 import { executeSourceTool, SourceToolSchemas, sourceToolsFor } from "../instruction/tools.ts";
 import { getCase, recordCaseToolActivity, saveCaseAuditRecord } from "../store.ts";
 import { modelEffort, seatModel } from "./models.ts";
-import { PhaseSession, phaseSystem, type PhaseRepository } from "./phase-session.ts";
+import { PhaseSession, phaseSystem, type PhaseRepository, type PhaseTurn } from "./phase-session.ts";
 import { seatOf, type Docket, type TurnOutcome, type TurnSpec } from "./turns.ts";
 
 export type SharedTurnDependencies = {
@@ -23,6 +23,8 @@ export type SharedTurnDependencies = {
   worker?: Parameters<typeof executeSourceTool>[1]["worker"];
   audit: typeof saveCaseAuditRecord;
   activity: typeof recordCaseToolActivity;
+  // Records the prompts for case.jsonl; injected runs record none without it.
+  prompt?: typeof saveCaseAuditRecord;
 };
 
 // Time allowed to one decision generation and its tools. With setup, its step
@@ -54,13 +56,29 @@ export async function advanceSharedTurn(caseId: string, docket: Docket, spec: Tu
     : JSON.stringify({ today: docket.today, submission: docket.submission, context: docket.submissionContext });
   const id = sha256(JSON.stringify([spec, attempt, ...record.map((event) => (event as RecordedEvent).seq || 0)]));
   const plan = createCourtActions(docket, spec, record, reader, corpus).plan;
-  const task = `${JSON.stringify(spec)}\n${plan.instruction.replaceAll("web_fetch", "read_source")}\n${phase === "instruction" ? "file_evidence requiere sourceId y blockIds leídos con read_source; el host completa título y pasaje. unify_evidence no recibe grupos: el host agrupa por identidad canónica." : ""}`;
-  const normalize = async (text: string) => (await reader.normalize("", text)).body;
-  const localizedTask = await normalize(task);
+  // The prompts are in English and are not translated: the language rule of the
+  // system prompt makes the seats write in the case language.
+  const instruction = plan.instruction.replaceAll("web_fetch", "read_source");
+  const note = phase === "instruction" ? "file_evidence takes the sourceId and blockIds you read with read_source; the host fills in the title and the passage. unify_evidence takes no groups: the host groups by canonical identity." : "";
+  const task = `${JSON.stringify(spec)}\n${instruction}\n${note}`;
+  // The system prompt and the task of each turn go to case.jsonl, which
+  // translates them into the case language. Their times are checkpointed, so a
+  // retry writes the same records.
+  const prompt = injected ? injected.prompt : saveCaseAuditRecord;
+  const recordPrompts = async (phaseSession: PhaseSession, turn: PhaseTurn) => {
+    if (!prompt) return;
+    const { state } = phaseSession;
+    const base = { schemaVersion: 2, kind: "prompt", seat, phase, modelId: model.id, effort: modelEffort(model) };
+    const data = { sessionId: state.id, channel: state.channel };
+    const system = `prompt:${state.id}:system`, turnPrompt = `prompt:${state.id}:${turn.id}`;
+    await prompt(caseId, system, { ...base, id: system, at: state.createdAt, data: { ...data, role: "system", sequence: 0, text: state.system } });
+    await prompt(caseId, turnPrompt, { ...base, id: turnPrompt, at: turn.startedAt, data: { ...data, role: "task", turnId: turn.id, spec, sequence: turn.start - 1, text: [instruction, note].filter(Boolean).join("\n") } });
+  };
 
   const preparation = await PhaseSession.open(caseId, { phase, seat, channel: "preparation", model,
-    system: await normalize(phaseSystem(phase, seat, docket.language, "preparation")), tools: JSON.stringify(preparationDefinitions(phase)), initial }, injected?.repository);
-  const prepTurn = await preparation.begin(id, record, localizedTask);
+    system: phaseSystem(phase, seat, docket.language, "preparation"), tools: JSON.stringify(preparationDefinitions(phase)), initial }, injected?.repository);
+  const prepTurn = await preparation.begin(id, record, task);
+  await recordPrompts(preparation, prepTurn);
   let draft = prepTurn.draft ?? "";
   if (!prepTurn.complete) {
     const prepared = await (injected?.prepare ?? advancePreparation)(preparation);
@@ -71,11 +89,12 @@ export async function advanceSharedTurn(caseId: string, docket: Docket, spec: Tu
   const names = phaseActions(phase, seat);
   const schemas = Object.fromEntries([...sourceToolsFor(phase).map((name) => [name, z.toJSONSchema(SourceToolSchemas[name], { target: "draft-7" })]), ...names.map((name) => [name, z.toJSONSchema(CourtActionSchemas[name], { target: "draft-7" })])]);
   const session = await PhaseSession.open(caseId, { phase, seat, channel: "decision", model,
-    system: await normalize(phaseSystem(phase, seat, docket.language, "decision")), tools: JSON.stringify(schemas), initial }, injected?.repository);
+    system: phaseSystem(phase, seat, docket.language, "decision"), tools: JSON.stringify(schemas), initial }, injected?.repository);
   const normalizedDraft = draft ? (await reader.normalize("", draft)).body : "";
   const draftPath = `${phase === "debate" ? "discussion" : "instruction/runs"}/${seat}/${id}/draft.md`;
   if (normalizedDraft) await artifacts.write(caseId, new Map([[draftPath, normalizedDraft]]));
-  const turn = await session.begin(id, record, JSON.stringify({ task: localizedTask, preparation: normalizedDraft }));
+  const turn = await session.begin(id, record, JSON.stringify({ task, preparation: normalizedDraft }));
+  await recordPrompts(session, turn);
   if (turn.complete) return { events: turn.events, done: turn.done };
   const actions = createCourtActions(docket, spec, [...record, ...turn.events], reader, corpus);
   let pending = Promise.resolve();

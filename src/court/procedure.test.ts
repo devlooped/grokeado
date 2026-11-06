@@ -41,7 +41,7 @@ function counsel(name: Counsel, votes: Record<string, string> | null): Script {
   return (prompt, tools) => {
     if (tools.includes("vote_content")) return [["vote_content", { verdict: null, rationale: "Las afirmaciones no forman una narrativa común." }]];
     if (tools.includes("review_sources")) return [["review_sources", { votes: [{ sourceId: "E1", veto: false, reason: "Documento oficial con metodología publicada." }] }]];
-    if (tools.includes("object")) return name === "claude" && /intervención I1 de/.test(prompt) ? [["object", { grounds: "La cifra citada no aparece en la fuente." }]] : [["pass", {}]];
+    if (tools.includes("object")) return name === "claude" && /intervention I1 by/.test(prompt) ? [["object", { grounds: "La cifra citada no aparece en la fuente." }]] : [["pass", {}]];
     if (tools.includes("reply_objection")) return [["reply_objection", { text: "La cifra está en la tabla 3 del informe." }]];
     if (tools.includes("cast_votes")) {
       const statement: Call = ["make_statement", { text: "Mantengo mi evaluación según la evidencia.", evidenceIds: [] }];
@@ -50,7 +50,7 @@ function counsel(name: Counsel, votes: Record<string, string> | null): Script {
     }
     if (tools.includes("make_statement")) {
       const p = lastId(prompt, "E") ?? "E1";
-      if (name === "gemini" && /tu exposición inicial/.test(prompt)) {
+      if (name === "gemini" && /your opening statement/.test(prompt)) {
         return [
           ["make_statement", { text: "Cito una evidencia que no está en el registro.", evidenceIds: ["P99"] }],
           ["make_statement", { text: "Cito la evidencia correcta del registro.", evidenceIds: [p] }],
@@ -141,8 +141,8 @@ test("translated contributions reach unification and source review, including af
   assert.ok(filed && filed.type === "evidence_filed");
   assert.equal(filed.evidence.translation?.original.excerpt, "O investigado não entregou os documentos.");
   assert.equal(project(events).sources.get("E1")!.contributions.find((e) => e.by === "grok")?.excerpt, "El investigado no entregó los documentos.");
-  const unification = prompts.judge.find((p) => p.includes("Unificá las pruebas de la instrucción"))!;
-  const review = prompts.grok.find((p) => p.includes("Turno de crítica de fuentes."))!;
+  const unification = prompts.judge.find((p) => p.includes("Unify the evidence of instruction"))!;
+  const review = prompts.grok.find((p) => p.includes("Source review turn."))!;
   for (const prompt of [unification, review]) {
     assert.ok(prompt.includes("El investigado no entregó los documentos."));
     assert.ok(!prompt.includes("O investigado não entregou os documentos."));
@@ -188,7 +188,7 @@ test("a full session reaches consensus where 3 of 4 agree and sends a split to t
   const summaryPrompt = prompts.judge.at(-1)!;
   assert.ok(summaryPrompt.includes("Resultado de A1: Falso (por mayoría)"));
   assert.ok(summaryPrompt.includes("Resultado de A2: Verdadero (desempate del moderador)"));
-  assert.match(summaryPrompt, /no inventes desacuerdos/);
+  assert.match(summaryPrompt, /do not invent disagreements/);
   assert.ok(view.struck.has("I1"), "sustained objection strikes the objected statement");
 
   const rejected = results.find((r) => r.isError && r.tool === "make_statement");
@@ -198,16 +198,16 @@ test("a full session reaches consensus where 3 of 4 agree and sends a split to t
   assert.deepEqual(evidenceIds.slice(0, 2), ["P1", "P2"], "evidence filed in parallel is numbered uniquely");
   assert.equal(new Set(evidenceIds).size, evidenceIds.length);
 
-  assert.equal(prompts.claude.filter((p) => /tu conclusión/.test(p)).length, 2, "a missing vote gets one retry");
+  assert.equal(prompts.claude.filter((p) => /your closing statement/.test(p)).length, 2, "a missing vote gets one retry");
   assert.ok(events.some((e) => e.type === "absence" && e.by === "claude" && e.stage === "closing"), "a counsel that never votes is recorded as absent");
   assert.equal(events.filter((e) => e.type === "vote").length, 6);
 
-  assert.equal(prompts.claude.filter((p) => /Etapa de instrucción:/.test(p)).length, 2, "an unfinished instruction gets one retry");
+  assert.equal(prompts.claude.filter((p) => /Instruction stage:/.test(p)).length, 2, "an unfinished instruction gets one retry");
   assert.ok(events.some((e) => e.type === "absence" && e.by === "claude" && e.stage === "instruction"), "and is then recorded as absent from instruction");
 
   for (const p of prompts.grok) {
-    assert.match(p, /Sos Grok, uno de los cuatro analistas/, "every turn carries the role brief");
-    assert.match(p, /Registro del debate hasta ahora/, "and the record, since seats keep no memory");
+    assert.match(p, /You are Grok, one of the four analysts/, "every turn carries the role brief");
+    assert.match(p, /Debate record so far/, "and the record, since seats keep no memory");
   }
   assert.match(prompts.grok.at(-1)!, /\[I1\]/, "later turns see earlier statements");
 });
@@ -239,7 +239,7 @@ test("an unfinished summary is retried and does not close the case without the m
   const allAgree = (name: Counsel) => counsel(name, { A1: "falso", A2: "falso" });
   const { bench, events, prompts } = makeBench({ judge: silent, grok: allAgree("grok"), gemini: allAgree("gemini"), claude: allAgree("claude"), chatgpt: allAgree("chatgpt") });
   await assert.rejects(holdSession(bench), /no resumió el caso/);
-  assert.equal(prompts.judge.filter((p) => p.includes("El caso ya está decidido")).length, 2);
+  assert.equal(prompts.judge.filter((p) => p.includes("The case is already decided")).length, 2);
   assert.equal(events.filter((e) => e.type === "judgment").length, 2);
   assert.ok(!events.some((e) => e.type === "case_summary" || e.type === "session_closed"));
 });
@@ -287,12 +287,12 @@ test("instruction finishes before opening and only an absolute majority can annu
       assert.ok(events.filter((e) => e.type === "source_review_vote").every((e) => e.seq > events[unified].seq && e.seq < events[closed].seq));
       assert.ok(events.filter((e) => e.type === "evidence_filed").every((e) => e.seq < events[unified].seq));
       for (const name of names) {
-        const prompt = prompts[name].find((p) => /Tenés la palabra para tu exposición inicial/.test(p))!;
-        assert.match(prompt, excluded ? /\[E1\] ANULADA/ : /\[E1\] ADMITIDA/);
-        for (const author of ["Grok", "Gemini", "Claude", "ChatGPT"]) assert.ok(prompt.includes("Aporte de " + author));
+        const prompt = prompts[name].find((p) => /You have the floor for your opening statement/.test(p))!;
+        assert.match(prompt, excluded ? /\[E1\] STRUCK OUT/ : /\[E1\] ADMITTED/);
+        for (const author of ["Grok", "Gemini", "Claude", "ChatGPT"]) assert.ok(prompt.includes("Contribution by " + author));
       }
       if (absent) {
-        assert.equal(prompts.chatgpt.filter((p) => /Turno de crítica de fuentes\./.test(p)).length, 2);
+        assert.equal(prompts.chatgpt.filter((p) => /Source review turn\./.test(p)).length, 2);
         assert.ok(events.some((e) => e.type === "absence" && e.by === "chatgpt" && e.stage === "source_review"));
       }
     });
@@ -303,7 +303,7 @@ test("an unfinished moderator unification blocks exposures rather than silently 
   const silent: Script = (prompt, tools) => tools.includes("unify_evidence") ? [] : judgeScript(prompt, tools);
   const { bench, events, prompts } = makeBench({ judge: silent, grok: counsel("grok", null), gemini: counsel("gemini", null), claude: counsel("claude", null), chatgpt: counsel("chatgpt", null) });
   await assert.rejects(holdSession(bench), /no unificó las pruebas/);
-  assert.equal(prompts.judge.filter((p) => /Unificá las pruebas de la instrucción con/.test(p)).length, 2);
+  assert.equal(prompts.judge.filter((p) => /Unify the evidence of instruction with/.test(p)).length, 2);
   assert.ok(!events.some((e) => e.type === "floor_granted"));
 });
 
@@ -325,7 +325,7 @@ test("instruction with no evidence records unsuccessful searches and shares an e
   assert.equal(events.filter((e) => e.type === "instruction_completed").length, 4);
   assert.ok(!events.some((e) => e.type === "source_review_vote" || e.type === "absence"));
   assert.ok(project(events).claims.every((c) => c.judgment?.verdict === "no_verificable"));
-  assert.ok(prompts.grok.some((p) => p.includes("Sin fuentes. No inventes evidencia")));
+  assert.ok(prompts.grok.some((p) => p.includes("No sources. Do not invent evidence")));
 });
 
 test("a misleading verdict can win a majority or be chosen by the moderator", async () => {
@@ -362,8 +362,8 @@ test("content voting follows all claim judgments and can disagree with their agg
   assert.equal(view.contentVotes.chatgpt?.verdict, "falso");
   assert.ok(events.filter((e) => e.type === "content_vote").every((e) => e.seq > events.filter((x) => x.type === "judgment").at(-1)!.seq));
   assert.ok(events.find((e) => e.type === "content_judgment")!.seq < events.find((e) => e.type === "case_summary")!.seq);
-  assert.match(prompts.grok.find((p) => p.includes("evaluá el contenido enviado como un todo"))!, /Resultado de A1: Verdadero/);
-  assert.match(prompts.grok.find((p) => p.includes("evaluá el contenido enviado como un todo"))!, /Resultado de A2: Falso/);
+  assert.match(prompts.grok.find((p) => p.includes("assess the submitted content as a whole"))!, /Resultado de A1: Verdadero/);
+  assert.match(prompts.grok.find((p) => p.includes("assess the submitted content as a whole"))!, /Resultado de A2: Falso/);
   assert.match(prompts.judge.at(-1)!, /Resultado del contenido completo: Engañoso/);
 });
 
@@ -396,7 +396,7 @@ test("missing content votes are retried and never fabricated", async () => {
   const silent: Script = (prompt, tools) => tools.includes("vote_content") ? [] : counsel("grok", { A1: "falso", A2: "falso" })(prompt, tools);
   const { bench, events, prompts } = makeBench({ judge: judgeScript, grok: silent, gemini: silent, claude: silent, chatgpt: silent });
   await holdSession(bench);
-  assert.equal(prompts.grok.filter((p) => p.includes("evaluá el contenido enviado como un todo")).length, 2);
+  assert.equal(prompts.grok.filter((p) => p.includes("assess the submitted content as a whole")).length, 2);
   assert.equal(events.filter((e) => e.type === "absence" && e.stage === "content").length, 4);
   assert.equal(project(events).contentJudgment, undefined);
 });
@@ -413,6 +413,6 @@ test("an unfinished content tiebreak does not invent a verdict or close the case
   const judge: Script = (prompt, tools) => tools.includes("decide_content") ? [] : judgeScript(prompt, tools);
   const { bench, events, prompts } = makeBench({ judge, ...scripts });
   await assert.rejects(holdSession(bench), /no desempató el contenido completo/);
-  assert.equal(prompts.judge.filter((p) => p.includes("Al menos tres analistas votaron sobre el contenido completo")).length, 2);
+  assert.equal(prompts.judge.filter((p) => p.includes("At least three analysts voted on the whole content")).length, 2);
   assert.ok(!events.some((e) => e.type === "content_judgment" || e.type === "session_closed"));
 });

@@ -25,6 +25,12 @@ test("one deterministic log contains every court event and deduplicated model/so
   assert.equal(parsed.find((record) => record.kind === "source_operation")?.modelId, "fixture/translator");
 });
 
+test("prompt records come before the model steps of their session, whatever their clocks say", () => {
+  const prompt = (id: string, sequence: number, at: string) => ({ schemaVersion: 2, id, kind: "prompt", at, seat: "grok", phase: "debate", modelId: "fixture/model", effort: "high", data: { sessionId: "fixture", channel: "decision", role: id.endsWith("system") ? "system" : "task", sequence, text: "Texto" } });
+  const log = parseCaseLog(buildCaseLog([], [step(2, "2026-11-05T00:00:00.000Z"), prompt("prompt:fixture:t1", 1, "2026-11-05T00:00:05.000Z"), prompt("prompt:fixture:system", 0, "2026-11-05T00:00:04.000Z")], []));
+  assert.deepEqual(log.map((record) => record.id), ["prompt:fixture:system", "prompt:fixture:t1", "step:grok:debate:2"]);
+});
+
 test("case logs reject conflicting IDs and duplicate parsed records instead of dropping outcomes", () => {
   const first = step(1, "2026-11-05T00:00:01.000Z");
   assert.throws(() => buildCaseLog([], [first, { ...first, effort: "low" }], []), /Conflicting/);

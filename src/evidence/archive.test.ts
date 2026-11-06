@@ -97,6 +97,45 @@ test("new archives contain instruction/evidence/discussion and one complete root
   assert.deepEqual(zip, first);
 });
 
+test("case.jsonl publishes the English prompts in the case language, from the shared translation cache", async () => {
+  let artifacts = new MemoryArtifactStore();
+  await artifacts.write("fixture", new Map([["instruction/base/submission.json", '{"kind":"text","text":"Texto"}']]));
+  const events: RecordedEvent[] = [{ type: "dismissed", reason: "Sin afirmaciones verificables.", seq: 1, at: "2026-11-05T00:00:00.000Z" }, { type: "session_closed", seq: 2, at: "2026-11-05T00:00:01.000Z" }];
+  const prompt = { schemaVersion: 2, id: "prompt:session:system", kind: "prompt", at: events[0]!.at, seat: "judge", phase: "intake", modelId: "openai/test", effort: "high", data: { sessionId: "session", channel: "decision", role: "system", sequence: 0, text: "Record decisions only through the court tools." } };
+  const audit: unknown[] = [prompt];
+  const cache = new Map<string, string>();
+  let translations = 0;
+  const dependencies = () => ({
+    getCase: async () => ({ id: "fixture", createdAt: events[0]!.at, status: "resolved" as const, submission: { kind: "text" as const, text: "Texto", resolvedLanguage: "es" }, revision: 1, pipelineVersion: 2 as const }),
+    artifacts, getEvents: async () => events, getCaseAuditRecords: async () => [...audit], getSourceOperations: async () => [],
+    readEvidenceTree: async () => { throw new Error("Legacy reader must not run"); },
+    writeEvidenceTree: async () => { throw new Error("Legacy writer must not run"); },
+    writeCaseTranscript: async () => { throw new Error("Legacy transcript must not run"); },
+    writeEvidenceArchive: async () => ({ downloadUrl: "fixture", etag: "v1" }),
+    prompts: () => ({ language: "es", modelId: "openai/translator",
+      cache: { get: async (keys: readonly string[]) => new Map(keys.flatMap((key) => cache.has(key) ? [[key, cache.get(key)!] as const] : [])), save: async ({ key, translation }: { key: string; translation: string }) => { cache.set(key, translation); } },
+      translate: async (text: string) => {
+        translations++;
+        audit.push({ schemaVersion: 2, id: `usage:${translations}`, kind: "model_step", at: events[1]!.at, modelId: "openai/translator", effort: null, data: { role: "translator", usage: { inputTokens: 10, outputTokens: 5 } } });
+        return text === prompt.data.text ? "Registrá las decisiones solo con las herramientas del tribunal." : text;
+      } }),
+  });
+  await archiveEvidence("fixture", dependencies());
+  const log = new TextDecoder().decode((await artifacts.read("fixture")).get("case.jsonl"));
+  assert.doesNotMatch(log, /Record decisions/);
+  assert.equal(parseCaseLog(log).find((record) => record.kind === "prompt")?.data.text, "Registrá las decisiones solo con las herramientas del tribunal.");
+  assert.ok(parseCaseLog(log).some((record) => record.id === "usage:1"), "the usage of a new translation is published");
+  const usage = JSON.parse(new TextDecoder().decode((await artifacts.read("fixture")).get("case.json")));
+  assert.ok(usage.usage.some((entry: { role: string }) => entry.role === "translator"));
+  // A rerun starts from new artifacts and archives from the cache, without a new translation.
+  audit.splice(1);
+  artifacts = new MemoryArtifactStore();
+  await artifacts.write("fixture", new Map([["instruction/base/submission.json", '{"kind":"text","text":"Texto"}']]));
+  await archiveEvidence("fixture", dependencies());
+  assert.equal(translations, 1);
+  assert.match(new TextDecoder().decode((await artifacts.read("fixture")).get("case.jsonl")), /Registrá las decisiones/);
+});
+
 test("archives the entire evidence tree with reproducible UTF-8 paths and original bytes", async () => {
   const zip = await createEvidenceArchive(files);
   assert.deepEqual(zip, await createEvidenceArchive(new Map([...files].reverse())));

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { RecordedEvent } from "../domain/court.ts";
 import { PhaseSession, phaseSystem, MemoryPhaseRepository } from "./phase-session.ts";
+import { languageRule } from "../domain/language.ts";
 const config = { phase: "debate" as const, seat: "grok" as const, channel: "decision" as const, model: { id: "fixture/model" }, system: phaseSystem("debate", "grok", "es", "decision"), tools: "stable", initial: "question and admitted index" };
 const stamp = (event: Omit<RecordedEvent, "seq" | "at">, seq: number): RecordedEvent => ({ ...event, seq, at: "2026-11-05T00:00:00.000Z" }) as RecordedEvent;
 
@@ -57,19 +58,22 @@ test("new turns allow 300 seconds without renewing the deadline on replay", asyn
   }
 });
 
-test("shared phase instructions require canonical case-language quotations, not preserved foreign quotes", () => {
-  for (const language of ["es", "en"]) {
-    const system = phaseSystem("debate", "judge", language, "decision");
-    assert.match(system, /nunca conserves citas en otro idioma/);
-    assert.doesNotMatch(system, /Conservá las citas textuales originales/);
+test("shared phase instructions are in English and start with the one language rule, quotations included", () => {
+  for (const [language, name] of [["es", "Latin American Spanish"], ["en", "English"]] as const) {
+    for (const phase of ["intake", "instruction", "criticism", "debate"] as const) for (const channel of ["preparation", "decision"] as const) {
+      const system = phaseSystem(phase, "judge", language, channel);
+      assert.ok(system.startsWith(languageRule(language)));
+      assert.match(system, new RegExp(`translate the quotation faithfully into ${name}; never keep it in its original language`));
+      assert.doesNotMatch(system, /[áéíóúñ]|Idioma del caso/, "the instructions themselves are not in the case language");
+    }
   }
 });
 
 test("instruction phases have seats quote original-language sources in the case language", () => {
   for (const phase of ["instruction", "criticism"] as const) {
     const system = phaseSystem(phase, "grok", "es", "decision");
-    assert.match(system, /traducí la cita fielmente al idioma del caso, nunca la conserves en el idioma de la fuente/);
-    assert.doesNotMatch(system, /No traduzcas|ni las traduzcas por tu cuenta/);
+    assert.match(system, /Sources and search results arrive in their original language/);
+    assert.doesNotMatch(system, /already in the case language/);
   }
 });
 

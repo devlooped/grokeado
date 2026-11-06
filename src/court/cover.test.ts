@@ -61,14 +61,14 @@ test("generates when Grok rejects the found image on sight", async () => {
 test("still generates from the brief when the search fails", async (t) => {
   t.mock.method(console, "warn", () => {});
   const d = deps({ choose: async () => { throw new Error("gateway down"); } });
-  const cover = await findCover("Material enviado: x", d);
+  const cover = await findCover("Submitted material: x", d);
   assert.equal(cover.generated, true);
-  assert.deepEqual(d.prompts, [fallbackPrompt("Material enviado: x")]);
+  assert.deepEqual(d.prompts, [fallbackPrompt("Submitted material: x")]);
 });
 
 test("the brief carries the material, the claims and the summary", () => {
   const brief = coverBrief({ kind: "link", url: "https://example.com/nota" }, ["La inflación bajó"], "Resumen");
   assert.match(brief, /https:\/\/example\.com\/nota/);
   assert.match(brief, /- La inflación bajó/);
-  assert.match(brief, /Resumen del caso:\nResumen/);
+  assert.match(brief, /Case summary:\nResumen/);
 });

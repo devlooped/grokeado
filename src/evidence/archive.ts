@@ -1,6 +1,8 @@
 import { deflateRaw } from "node:zlib";
 import { promisify } from "node:util";
-import { getCase, getCaseAuditRecords, getEvents, getSourceOperations } from "../store.ts";
+import { getCase, getCaseAuditRecords, getEvents, getSourceOperations, promptTranslations, type StoredCaseRecord } from "../store.ts";
+import { courtModel, DEFAULT_MODELS } from "../court/models.ts";
+import { cachePromptTranslations, localizePromptRecords, promptTranslator, type PromptTranslate, type PromptTranslationCache } from "./prompt-translation.ts";
 import { caseArtifactStore, findEvidenceArchive, hasEvidenceBase, readEvidenceTree, writeCaseTranscript, writeEvidenceArchive, writeEvidenceTree, type EvidenceArchive } from "./blob.ts";
 import { buildCaseTranscript } from "./transcript.ts";
 import { normalizeEvidenceBytes, type EvidenceFiles } from "./validate.ts";
@@ -99,15 +101,39 @@ type ArchiveStore = {
   getCaseAuditRecords?: typeof getCaseAuditRecords;
   getSourceOperations?: typeof getSourceOperations;
   artifacts?: ArtifactStore;
+  prompts?: (record: StoredCaseRecord) => PromptLocalization;
 };
 
-export async function archiveEvidence(caseId: string, store: ArchiveStore = { readEvidenceTree, getEvents, writeEvidenceTree, writeCaseTranscript, writeEvidenceArchive, getCase, getCaseAuditRecords, getSourceOperations, artifacts: caseArtifactStore }): Promise<EvidenceArchive> {
-  if ((await store.getCase?.(caseId))?.pipelineVersion === 2) {
+export type PromptLocalization = { language: string; cache: PromptTranslationCache; translate: PromptTranslate; modelId: string };
+
+// The prompts of a case are translated by the translator of its model snapshot.
+export function casePromptLocalization(record: StoredCaseRecord): PromptLocalization {
+  const snapshot = record.models?.translator;
+  const model = snapshot ? courtModel(snapshot.id, snapshot.effort) : DEFAULT_MODELS.translator;
+  const { submission } = record;
+  const language = submission.resolvedLanguage ?? (submission.language && submission.language !== "auto" ? submission.language : "es");
+  return { language, cache: promptTranslations, translate: promptTranslator(model, record.id), modelId: model.id };
+}
+
+export async function archiveEvidence(caseId: string, store: ArchiveStore = { readEvidenceTree, getEvents, writeEvidenceTree, writeCaseTranscript, writeEvidenceArchive, getCase, getCaseAuditRecords, getSourceOperations, artifacts: caseArtifactStore, prompts: casePromptLocalization }): Promise<EvidenceArchive> {
+  const stored = await store.getCase?.(caseId);
+  if (stored?.pipelineVersion === 2) {
     if (!store.artifacts || !store.getCaseAuditRecords || !store.getSourceOperations) throw new Error("Durable new-format archive storage unavailable");
     const events = await store.getEvents(caseId);
     if (!events.some((event) => event.type === "dismissed")) await loadSettledCorpus(caseId, events, store.artifacts);
-    const audit = await store.getCaseAuditRecords(caseId);
-    const log = buildCaseLog(events, audit, await store.getSourceOperations(caseId));
+    let audit = await store.getCaseAuditRecords(caseId);
+    let published = audit;
+    // case.jsonl is in the case language: its prompt records, written in
+    // English, carry their cached translation. New translations record their
+    // usage, so the audit records are read again for case.json.
+    if (audit.some((record) => (record as { kind?: unknown } | null)?.kind === "prompt")) {
+      if (!store.prompts) throw new Error("Prompt translation unavailable");
+      const { language, cache, translate, modelId } = store.prompts(stored);
+      await cachePromptTranslations(audit, language, cache, translate, modelId);
+      audit = await store.getCaseAuditRecords(caseId);
+      published = await localizePromptRecords(audit, language, cache, translate, modelId);
+    }
+    const log = buildCaseLog(events, published, await store.getSourceOperations(caseId));
     await store.artifacts.write(caseId, new Map([["case.jsonl", log], ["case.json", JSON.stringify(caseUsageArtifact(caseId, audit), null, 2)]]));
     const files = await store.artifacts.read(caseId);
     for (const path of files.keys()) if (/(?:^|\/)(?:transcript)\.jsonl$/.test(path)) files.delete(path);

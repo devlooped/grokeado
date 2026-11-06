@@ -10,15 +10,22 @@ pipeline 1 cases keep their original tools, artifact formats, and download URLs;
 
 - The host owns acquisition, extraction/OCR, language verification and translation.
   The verifier is a model that sometimes rejects text already in the case
-  language, such as the host's own prompts, so a rejection is checked once more
-  before the translation operation fails for good.
+  language, so a rejection is checked once more before the translation
+  operation fails for good. Only model-written public text (seat prose, filed
+  drafts, admitted sources) is verified and translated.
+- The app's own prompts, tasks, tool descriptions, tool outputs and rejection
+  messages are written in English. Every seat system prompt starts with one
+  language rule (`languageRule`) that names the case language and variant, such
+  as Latin American Spanish, and requires quotations to be translated
+  faithfully, never kept in the source language. Source titles in tool outputs
+  stay in their original language.
   Durable PostgreSQL operation claims deduplicate work within a case. Completed
   stages and confirmed failures are reused. An interrupted external operation
   becomes uncertain, never an automatic paid retry.
 - Instruction and source criticism can discover sources. Criticism research must
   reference a unified `reviewSourceId`; its artifacts are `review_context`, not
   new claim filings. Intake translates the submission and its linked page, and
-  court prompts and actions stay in the case language, but sources and discovery
+  court actions are written in the case language, but sources and discovery
   results are read in their original language until evidence closes: translating
   sources that may never be admitted spent the turns' time. Filed excerpts quote
   the original; seats translate what they quote in their own prose into the case
@@ -59,6 +66,18 @@ research; immutable `evidence/` for admitted case-language sources; and
 namespaces plus one root `case.jsonl`, a typed union of court events, model steps
 and source-operation provenance. It omits a separate
 `transcript.jsonl` and private conversation checkpoints.
+
+So that `case.jsonl` reads in a single language, the English prompts it records
+(system prompts and tasks) are written in the case language when the case
+language is not English. Each translation is cached in the `prompt_translations`
+table under a hash of the source prompt and the target language: a changed
+prompt has a new key and gets a new translation, and an unchanged one is
+translated once for all cases. Before archiving, the workflow fills the cache a
+few prompts per step, with the case's translator model; the archive then only
+reads it. The cache is used only to write `case.jsonl`; the models always
+receive the English prompts, and `case.json` counts the translations as
+translator usage. A prompt that cannot be translated fails the archive step
+rather than leaving English in the export.
 
 The case record links admitted `E1` and `E1#p1:b2` references to safe Markdown previews.
 Downloads remain public-read audit artifacts, **not a privacy boundary** and not

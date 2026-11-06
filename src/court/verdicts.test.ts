@@ -32,13 +32,13 @@ test("one claim requires a content verdict, while multiple independent claims ca
   const single = planTurn({ kind: "content_vote", counsel: "grok" }, record, submission);
   const tools = toAiTools(single.tools);
   const response = await tools.vote_content.execute({ verdict: null, rationale: "No corresponde una valoración global." });
-  assert.match((response as { error: string }).error, /una sola afirmación/);
+  assert.match((response as { error: string }).error, /a single claim/);
   assert.equal(single.done(), false);
   await tools.vote_content.execute({ verdict: "enganoso", rationale: "El contenido omite contexto importante." });
   assert.equal(single.done(), true);
   assert.equal(single.produced[0].type, "content_vote");
   const duplicate = await tools.vote_content.execute({ verdict: "verdadero", rationale: "Otro fundamento distinto." });
-  assert.match((duplicate as { error: string }).error, /Ya registraste/);
+  assert.match((duplicate as { error: string }).error, /You already recorded/);
 
   const multi = planTurn({ kind: "content_vote", counsel: "gemini" }, [{ type: "claims_entered", claims: [
     { id: "A1", quote: "", text: "Primera afirmación." }, { id: "A2", quote: "", text: "Segunda afirmación." },

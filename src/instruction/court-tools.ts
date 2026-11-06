@@ -59,14 +59,14 @@ export async function normalizeCourtInput(value: unknown, reader: SourceService,
 
 export function validateCourtText(corpus: SettledCorpus, value: unknown): void {
   if (typeof value === "string") {
-    if (/(?:[a-z][a-z\d+.-]*:\/\/|\bwww\.)[^\s<>]+/i.test(value)) throw new Rejection("Citá únicamente las pruebas admitidas por su identificador E y sección, no enlaces externos.");
+    if (/(?:[a-z][a-z\d+.-]*:\/\/|\bwww\.)[^\s<>]+/i.test(value)) throw new Rejection("Cite only admitted evidence, by its E identifier and section, not external links.");
     const stack = [...new MarkdownIt({ html: false, linkify: false }).parse(value, {})];
     while (stack.length) {
       const token = stack.pop()!;
       if (token.children) stack.push(...token.children);
       const href = token.attrGet(token.type === "image" ? "src" : "href");
       if (href !== null) {
-        if (typeof href !== "string") throw new Rejection("Referencia no válida.");
+        if (typeof href !== "string") throw new Rejection("Invalid reference.");
         validateCorpusCitations(corpus, [href]);
       }
     }
@@ -95,14 +95,14 @@ export function createCourtActions(docket: Docket, spec: TurnSpec, record: reado
         const filing = CourtActionSchemas.file_evidence.parse(prepared);
         const { source, blocks } = await reader.passages(filing.sourceId, filing.blockIds);
         const excerpt = blocks.map((block) => `[${block.id}] ${block.text}`).join("\n\n");
-        if (excerpt.length > 30_000) throw new Rejection("El aporte debe seleccionar un pasaje más acotado.");
+        if (excerpt.length > 30_000) throw new Rejection("Select a shorter passage for the contribution.");
         prepared = { claimId: filing.claimId, stance: filing.stance, title: source.document.title, url: source.acquisition.finalUrl, excerpt };
         reference = { sourceId: source.sourceId, blockIds: filing.blockIds, ...(filing.commentary ? { commentary: filing.commentary } : {}) };
       } else if (name === "unify_evidence") {
         const contributions = record.flatMap((event) => event.type === "evidence_filed" ? [event.evidence] : []);
         const groups = new Map<string, string[]>();
         for (const contribution of contributions) {
-          if (!contribution.sourceId) throw new Rejection("Falta la identidad canónica de un aporte.");
+          if (!contribution.sourceId) throw new Rejection("A contribution has no canonical source identity.");
           if (!groups.has(contribution.sourceId)) groups.set(contribution.sourceId, []);
           groups.get(contribution.sourceId)!.push(contribution.id);
         }
@@ -126,9 +126,11 @@ export function createCourtActions(docket: Docket, spec: TurnSpec, record: reado
         if (event.type === "evidence_unified") for (const source of event.sources) source.sourceId = source.contributions[0]?.sourceId;
         if (event.type === "statement" && citations) event.evidenceIds = citations;
       }
-      return (await reader.normalize("", output)).body;
+      // Tool outputs and rejections are written by the app, in English like its
+      // prompts: only the model reads them, so they are not translated.
+      return output;
     } catch (error) {
-      if (error instanceof Rejection) return { error: (await reader.normalize("", error.message)).body };
+      if (error instanceof Rejection) return { error: error.message };
       return { error: "court_action_unavailable" };
     }
   };

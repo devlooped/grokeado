@@ -6,17 +6,18 @@ import { resolveCaseLanguage } from "../court/language.ts";
 import { holdSession } from "../court/procedure.ts";
 import type { Docket, TurnOutcome, TurnSpec } from "../court/turns.ts";
 import type { CourtEvent, RecordedEvent, Submission, SubmissionContext } from "../domain/court.ts";
-import { languageInstruction } from "../domain/language.ts";
+import { languageRule } from "../domain/language.ts";
 import { collectEvidenceBase } from "../evidence/collect.ts";
 import { imageDescriber } from "../evidence/describe.ts";
 import { liveContributionDeps, saveContributedSources } from "../evidence/contributions.ts";
 import { translateFiledEvidence, translatorFor } from "../evidence/translate.ts";
-import { archiveEvidence } from "../evidence/archive.ts";
+import { archiveEvidence, casePromptLocalization } from "../evidence/archive.ts";
+import { cachePromptTranslations } from "../evidence/prompt-translation.ts";
 import { blobConfigured, caseArtifactStore } from "../evidence/blob.ts";
 import { runEvidenceStep, type EvidenceStepResult } from "../evidence/sandbox.ts";
 import type { EvidenceSeat, EvidenceStage } from "../evidence/schema.ts";
 import { closeCase, openCase, saveEvents } from "./steps.ts";
-import { getCase, getImage, recordCaseToolActivity, revokeSandboxBindings, saveCaseLanguage, saveCaseModels } from "../store.ts";
+import { getCase, getCaseAuditRecords, getImage, recordCaseToolActivity, revokeSandboxBindings, saveCaseLanguage, saveCaseModels } from "../store.ts";
 import { collectInstruction } from "../instruction/intake.ts";
 import { fatalSourceFailure, liveSourceDependencies, SourceService } from "../instruction/sources.ts";
 import { sourceDownloader } from "../instruction/research.ts";
@@ -129,6 +130,21 @@ async function translateContributions(caseId: string, outcome: TurnOutcome, lang
   return { ...outcome, events: await translateFiledEvidence(outcome.events, language, translatorFor(translator, caseId)) };
 }
 
+// case.jsonl translates the prompts of the case into its language. A few new
+// translations per step, saved in the database cache, so the archive step only
+// reads them. Says whether some are still missing.
+const PROMPT_TRANSLATIONS_PER_STEP = 8;
+const MAX_PROMPT_TRANSLATION_STEPS = 50;
+
+async function translatePrompts(caseId: string): Promise<boolean> {
+  "use step";
+  const stored = await getCase(caseId);
+  if (!blobConfigured() || !stored) return false;
+  const { language, cache, translate, modelId } = casePromptLocalization(stored);
+  const { missing } = await cachePromptTranslations(await getCaseAuditRecords(caseId), language, cache, translate, modelId, PROMPT_TRANSLATIONS_PER_STEP);
+  return missing > 0;
+}
+
 async function archive(caseId: string): Promise<void> {
   "use step";
   if (blobConfigured()) await archiveEvidence(caseId);
@@ -165,18 +181,18 @@ export function linkEvidenceRun(outcome: TurnOutcome, runId?: string, simulated 
 }
 
 function evidenceTask(spec: TurnSpec, targetLanguage: string): { seat: EvidenceSeat; stage: EvidenceStage; task: string } | undefined {
-  const language = " " + languageInstruction(targetLanguage);
+  const language = languageRule(targetLanguage) + "\n\n";
   if (spec.kind === "instruction") {
-    return { seat: spec.counsel, stage: "exposicion", task: "Examiná el expediente base y producí fragmentos neutrales y un borrador de argumento para la exposición." + language };
+    return { seat: spec.counsel, stage: "exposicion", task: language + "Examine the base case file and produce neutral passages and a draft argument for the statement." };
   }
   if (spec.kind === "statement") {
-    return { seat: spec.counsel, stage: spec.stage === "opening" ? "exposicion" : "objecion", task: "Prepará fragmentos y un borrador de argumento para esta intervención, contrastando cualquier fragmento ajeno con el archivo original." + language };
+    return { seat: spec.counsel, stage: spec.stage === "opening" ? "exposicion" : "objecion", task: language + "Prepare passages and a draft argument for this intervention, checking any passage from another seat against the original file." };
   }
   if (spec.kind === "objection") {
-    return { seat: spec.counsel, stage: "objecion", task: "Revisá el material base y los fragmentos de los pares para identificar evidencia que sustente o refute una objeción." + language };
+    return { seat: spec.counsel, stage: "objecion", task: language + "Review the base material and the passages of the other seats to find evidence that supports or refutes an objection." };
   }
   if (spec.kind === "closing") {
-    return { seat: spec.counsel, stage: "conclusion", task: "Prepará una síntesis de evidencia y un borrador de conclusión, señalando límites y contradicciones." + language };
+    return { seat: spec.counsel, stage: "conclusion", task: language + "Prepare a synthesis of the evidence and a draft conclusion, pointing out limits and contradictions." };
   }
 }
 
@@ -229,6 +245,7 @@ export async function courtSession(caseId: string): Promise<void> {
       ...(shared ? { settle: (events: readonly RecordedEvent[]) => settleShared(caseId, language, events, simulated) } : {}),
     });
     await illustrate(caseId, simulated, models);
+    if (shared && !simulated) for (let step = 0; step < MAX_PROMPT_TRANSLATION_STEPS && await translatePrompts(caseId); step++);
     if (!shared || !simulated) await archive(caseId);
     if (shared) {
       await revokeShared(caseId);

@@ -13,14 +13,14 @@ import { assembleWorkspace, citationAuthors, citationsFor, readOnlyHashesFor, wo
 import { saveCaseAuditRecord } from "../store.ts";
 
 const WORKSPACE = "/workspace";
-const EVIDENCE_GUIDE = `# Formato de evidencia
-Todos los documentos Markdown, salvo index.md, requieren encabezado YAML (frontmatter) con estas claves exactas:
+const EVIDENCE_GUIDE = `# Evidence format
+Every Markdown document except index.md needs a YAML header (frontmatter) with these exact keys:
 type, title, description, sources[], generated: { by, at }.
-evidence agrega pages[], extraction: { tool, confidence }, tokens.
-fragment agrega page y puede incluir reprocess_of.
-argument agrega stage (exposicion|objecion|conclusion), supports[], refutes[].
-Escribí title, description y el cuerpo del documento en el idioma indicado en la tarea (manteniendo en inglés las claves YAML y los valores de type).
-Usá anclas de página #pN. Mantené base/ y las carpetas de los demás analistas en modo de solo lectura.`;
+evidence adds pages[], extraction: { tool, confidence }, tokens.
+fragment adds page and may include reprocess_of.
+argument adds stage (exposicion|objecion|conclusion), supports[], refutes[].
+Write title, description and the body of the document in the case language that the language rule of the task names (keep the YAML keys and the values of type as they are).
+Use page anchors #pN. Keep base/ and the folders of the other analysts read-only.`;
 
 export type EvidenceStepResult = {
   status: "ok" | "partial" | "timeout";
