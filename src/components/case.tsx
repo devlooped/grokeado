@@ -547,12 +547,9 @@ export function SessionDialogue({ events, caseId, models = seatModels({}, events
   entries.push(...tools.slice(next));
   return (
     <section aria-labelledby="session-dialogue-title" className="mt-12 text-left">
-      <div className="rule-double pt-4">
-        <h2 id="session-dialogue-title" className="font-display text-3xl">Diálogo del panel</h2>
-        <p className="mt-1 text-sm text-ink-soft">Las intervenciones aparecen completas al registrarse. Sin trazas de razonamiento.</p>
-      </div>
+      <h2 id="session-dialogue-title" className="sr-only">Diálogo del panel</h2>
+      <div className="rule-double pt-4">&nbsp;</div>
       <div role="log" aria-labelledby="session-dialogue-title" aria-live="polite" aria-relevant="additions" className="mt-6">
-        {!entries.length && <p className="text-sm text-ink-soft">Esperando la primera intervención del moderador.</p>}
         <ol className="space-y-6">
           {entries.map(({ key, at, speaker, model, tool, content }) => {
             const mark = model ? modelMark(model.id) : speaker === "judge" ? undefined : speaker;

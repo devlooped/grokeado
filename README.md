@@ -48,9 +48,12 @@ that find no reliable evidence are recorded as such; analysts must not invent
 evidence to create artificial balance.
 
 The moderator then unifies contributions by source URL (ignoring `#` fragments).
-Each shared source receives an `S` identifier and retains every original excerpt,
-claim, orientation and contributing analyst. Original `P` contributions remain
-in the audit trail. Distinct URLs remain separate sources.
+Each newly unified source receives an `E` identifier (such as `E1`) and retains
+every original excerpt, claim, orientation and contributing analyst. Original
+`P` contributions remain in the audit trail. Distinct URLs remain separate sources.
+In case records, known historical `S` source identifiers are displayed as `E`
+references; stored events and original evidence remain unchanged, and old source
+anchors still work.
 
 All four analysts independently review every shared source, including their own,
 and record a veto or a decision not to veto, with a concrete reliability reason.
@@ -61,12 +64,13 @@ sources. An unfinished moderator unification suspends the court after one retry.
 Only after criticism ends does the court begin opening statements, rebuttals,
 objections and final votes. Every seat sees the same closed source dossier and
 may use any admitted source to support or challenge positions, regardless of who
-contributed it. Statements can cite only admitted `S` identifiers. New evidence
-cannot be filed during the debate; excluded sources cannot support statements,
-votes or moderator decisions. If no evidence was found, the empty dossier is
-recorded and analysts are instructed to vote `no_verificable` (presented as
-Insostenible) when evidence is insufficient. The other verdicts are Verdadero,
-Falso and Engañoso (`enganoso`, for misleading or out-of-context claims). The
+contributed it. In new cases, statements can cite only admitted `E` source
+identifiers. New evidence cannot be filed during the debate; excluded sources
+cannot support statements, votes or moderator decisions. If no evidence was
+found, the empty dossier is recorded and analysts are instructed to vote
+`no_verificable` (presented as Insostenible) when evidence is insufficient. The
+other verdicts are Verdadero, Falso and Engañoso (`enganoso`, for misleading or
+out-of-context claims). The
 historical `no_verificable` identifier is retained so existing records remain
 readable. Historical records without instruction events remain readable too.
 
