@@ -3,6 +3,7 @@ import { test } from "node:test";
 import { project, type CourtEvent } from "../domain/court.ts";
 import { composePrompt, planTurn, type TurnPlan } from "./turns.ts";
 import { toAiTools } from "./toolset.ts";
+import { instructionFiling, instructionFilingSchema } from "../instruction/court-tools.ts";
 
 const submission = { kind: "text" as const, text: "Una afirmación verificable y otra afirmación verificable." };
 const claims: CourtEvent = { type: "claims_entered", claims: [
@@ -191,3 +192,22 @@ test("pipeline 3 instruction files URL and quote proposals once, with the bilate
   assert.match(JSON.stringify(await execute(plan, "file_instruction", { proposals: [], searches })), /already closed/);
   assert.equal(project(plan.produced).evidence.size, 0, "a proposal is not evidence until the host collects it");
 });
+test("a typed pipeline 3 filing keeps to the claims, and the host drops only the proposals file_instruction would reject", () => {
+  const schema = instructionFilingSchema(["A1", "A2"]);
+  const searches = { A1: { supporting: "Busqué a favor en fuentes oficiales.", opposing: "Busqué en contra en medios establecidos." }, A2: { supporting: "Busqué a favor en datos públicos.", opposing: "Busqué en contra en informes privados." } };
+  const valid = { claimId: "A1", url: "https://example.org/report", quote: "The report states the figure verbatim.", stance: "supports", commentary: "" };
+  assert.ok(schema.safeParse({ proposals: [valid], searches }).success);
+  assert.ok(!schema.safeParse({ proposals: [{ ...valid, claimId: "A3" }], searches }).success, "only the claims of the case");
+  assert.ok(!schema.safeParse({ proposals: [valid], searches: { A1: searches.A1 } }).success, "every claim reports its searches");
+  const json = JSON.stringify(schema.toJSONSchema());
+  assert.doesNotMatch(json, /minLength|maxLength|"format"|maxItems/, "no constraint a provider's structured output may refuse");
+  const { input, dropped } = instructionFiling({ proposals: [
+    { ...valid, commentary: "  Shows the figure.  " }, { ...valid, quote: "too short" }, { ...valid, url: "not a url" }, ...Array.from({ length: 60 }, () => valid),
+  ], searches });
+  assert.equal(input.proposals.length, 60);
+  assert.deepEqual(input.proposals[0], { ...valid, commentary: "Shows the figure." });
+  assert.ok(!("commentary" in input.proposals[1]!), "an empty commentary is left out");
+  assert.deepEqual(dropped.map((entry) => entry.reason.split(":")[0]), ["quote", "url", "more than 60 proposals"]);
+  assert.deepEqual(input.searches, [{ claimId: "A1", ...searches.A1 }, { claimId: "A2", ...searches.A2 }]);
+});
+

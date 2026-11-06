@@ -4,7 +4,7 @@ import { COUNSEL, VERDICTS, type CourtEvent, type Evidence } from "../domain/cou
 import { planTurn, seatOf, type Docket, type StampedEvent, type TurnSpec } from "../court/turns.ts";
 import { Rejection } from "../court/toolset.ts";
 import { validateCorpusCitations, type SettledCorpus } from "../evidence/settled.ts";
-import type { SourceService } from "./sources.ts";
+import { normalizeOrKeep, type SourceService } from "./sources.ts";
 import type { InstructionPhase } from "./authorization.ts";
 
 const claim = z.string().regex(/^A[1-9]\d*$/);
@@ -49,14 +49,63 @@ export function phaseActions(phase: InstructionPhase, seat: string, native = fal
   return seat === "judge" ? ["rule", "decide", "decide_content", "summarize_case"] : ["make_statement", "object", "pass", "reply_objection", "cast_votes", "vote_content"];
 }
 
+// Pipeline 3 files its instruction as the typed answer of the decision call,
+// not as a tool call, so a seat cannot answer without filing. The schema keeps
+// to what the structured output of every provider accepts (no lengths, formats
+// or optional fields); the host checks the rest when it files.
+export function instructionFilingSchema(claimIds: readonly string[]) {
+  if (!claimIds.length) throw new Error("An instruction filing needs the claims of the case");
+  const claimId = z.enum(claimIds as [string, ...string[]]).describe("The claim the source refers to");
+  const search = z.object({
+    supporting: z.string().describe("What you searched for in favor of the claim, and what you found"),
+    opposing: z.string().describe("What you searched for against the claim, and what you found"),
+  }).strict();
+  return z.object({
+    proposals: z.array(z.object({
+      claimId,
+      url: z.string().describe("The exact URL of the page, as your search found it"),
+      quote: z.string().describe("A passage of 20 to 4000 characters copied verbatim from that page, in the page's own language; mark omitted text with …"),
+      stance: stance.describe("supports: in favor; opposes: against; context: context that neither confirms nor refutes"),
+      commentary: z.string().describe("At most one short sentence on what the passage shows, or an empty string; no assessment of the source or of the claim"),
+    }).strict()).describe("One proposal per quoted passage, at most 60"),
+    searches: z.object(Object.fromEntries(claimIds.map((id) => [id, search]))).strict().describe("For each claim, what you searched for in both directions"),
+  }).strict();
+}
+
+export type InstructionFilingOutput = {
+  proposals: Array<{ claimId: string; url: string; quote: string; stance: string; commentary: string }>;
+  searches: Record<string, { supporting: string; opposing: string }>;
+};
+export type DroppedProposal = { proposal: InstructionFilingOutput["proposals"][number]; reason: string };
+
+const MAX_PROPOSALS = 60;
+const proposalInput = CourtActionSchemas.file_instruction.shape.proposals.element;
+
+// The file_instruction input of a typed filing. A proposal file_instruction
+// would reject is dropped on its own, with its reason: one invalid proposal
+// does not lose the others.
+export function instructionFiling(output: InstructionFilingOutput): { input: z.input<typeof CourtActionSchemas.file_instruction>; dropped: DroppedProposal[] } {
+  const proposals: z.infer<typeof proposalInput>[] = [], dropped: DroppedProposal[] = [];
+  for (const proposal of output.proposals) {
+    const { commentary, ...rest } = proposal;
+    const parsed = proposalInput.safeParse(commentary.trim() ? { ...rest, commentary: commentary.trim() } : rest);
+    if (!parsed.success) dropped.push({ proposal, reason: parsed.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join("; ") });
+    else if (proposals.length >= MAX_PROPOSALS) dropped.push({ proposal, reason: `more than ${MAX_PROPOSALS} proposals` });
+    else proposals.push(parsed.data);
+  }
+  return { input: { proposals, searches: Object.entries(output.searches).map(([claimId, search]) => ({ claimId, ...search })) }, dropped };
+}
+
 const prose = new Set(["text", "quote", "reason", "grounds", "rationale", "reasoning", "supporting", "opposing", "commentary"]);
 
-export async function normalizeCourtInput(value: unknown, reader: SourceService, key?: string): Promise<unknown> {
-  if (typeof value === "string") return key && prose.has(key) ? (await reader.normalize("", value)).body : value;
-  if (Array.isArray(value)) { const result = []; for (const child of value) result.push(await normalizeCourtInput(child, reader, key)); return result; }
+// lenient: the prose of instruction and criticism keeps its own language when
+// its translation fails, instead of failing the case.
+export async function normalizeCourtInput(value: unknown, reader: SourceService, key?: string, lenient = false): Promise<unknown> {
+  if (typeof value === "string") return key && prose.has(key) ? (lenient ? await normalizeOrKeep(reader, "", value) : await reader.normalize("", value)).body : value;
+  if (Array.isArray(value)) { const result = []; for (const child of value) result.push(await normalizeCourtInput(child, reader, key, lenient)); return result; }
   if (value && typeof value === "object") {
     const result: Record<string, unknown> = {};
-    for (const [name, child] of Object.entries(value)) result[name] = await normalizeCourtInput(child, reader, name);
+    for (const [name, child] of Object.entries(value)) result[name] = await normalizeCourtInput(child, reader, name, lenient);
     return result;
   }
   return value;
@@ -85,8 +134,8 @@ export function validateCourtText(corpus: SettledCorpus, value: unknown): void {
 // only the analyst's own prose is normalized into the case language.
 async function normalizeFiling(input: z.infer<typeof CourtActionSchemas.file_instruction>, reader: SourceService) {
   const proposals = [];
-  for (const proposal of input.proposals) proposals.push(proposal.commentary ? { ...proposal, commentary: (await reader.normalize("", proposal.commentary)).body } : proposal);
-  return { proposals, searches: await normalizeCourtInput(input.searches, reader) };
+  for (const proposal of input.proposals) proposals.push(proposal.commentary ? { ...proposal, commentary: (await normalizeOrKeep(reader, "", proposal.commentary)).body } : proposal);
+  return { proposals, searches: await normalizeCourtInput(input.searches, reader, undefined, true) };
 }
 
 export function modelFacingEvents(events: readonly CourtEvent[]): CourtEvent[] {
@@ -101,7 +150,7 @@ export function createCourtActions(docket: Docket, spec: TurnSpec, record: reado
     if (!phaseActions(phase, seatOf(spec), native).includes(name) || !plan.tools[name]) return { error: "action_not_allowed_this_turn" };
     try {
       const input = CourtActionSchemas[name].parse(raw);
-      let prepared = name === "file_instruction" ? await normalizeFiling(CourtActionSchemas.file_instruction.parse(input), reader) : await normalizeCourtInput(input, reader);
+      let prepared = name === "file_instruction" ? await normalizeFiling(CourtActionSchemas.file_instruction.parse(input), reader) : await normalizeCourtInput(input, reader, undefined, name === "review_sources");
       let reference: Pick<Evidence, "sourceId" | "blockIds" | "commentary"> | undefined;
       let citations: string[] | undefined;
       if (name === "file_evidence") {

@@ -157,6 +157,19 @@ class StageUnavailable extends Error {
   }
 }
 
+// Prose an analyst writes during instruction or criticism: a translation that
+// failed, or whose outcome is uncertain, keeps the text in its own language
+// instead of failing the case. The operation stays failed in the case log, and
+// a retried step reads the same status, so it keeps the same text. A
+// translation another owner still runs is still worth a retry.
+export async function normalizeOrKeep(reader: Pick<SourceService, "normalize">, title: string, body: string): Promise<{ title: string; body: string; untranslated?: true }> {
+  try { return await reader.normalize(title, body); }
+  catch (error) {
+    if (error instanceof StageUnavailable && error.status !== "pending") return { title, body, untranslated: true };
+    throw error;
+  }
+}
+
 // A failed or uncertain operation stays so until an explicit, reviewed recovery:
 // a retried workflow step would only read the same stored status again. Only an
 // operation another owner still runs is worth a retry.

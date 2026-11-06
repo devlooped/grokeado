@@ -50,12 +50,20 @@ pipeline 1 cases keep their original tools, artifact formats, and download URLs;
   Model/command timeouts respect the remaining turn time. The turn spans many
   workflow steps, never one: each preparation call starts detached in the VM,
   and steps of at most a minute wait for it until it ends; each decision
-  generation is a step of its own, of at most 150 seconds. It still fails closed
+  generation is a step of its own, of at most 150 seconds. In pipeline 3 an
+  analyst files its instruction as the typed answer of a decision generation of
+  at most 240 seconds, without tools, and the host files that answer in the next
+  step; an answer that does not parse, or that the host rejects, gets the reason
+  and another generation while the turn has time. It still fails closed
   if the budget expires without a nonempty final response; a partial draft cannot advance the decision
   channel. Exhaustion and incomplete final responses are non-retryable workflow
   failures: replaying an already spent checkpoint cannot replenish its budget.
   So are failed or uncertain source operations (translation, acquisition,
-  extraction): a retried step would only read the stored status again. The case
+  extraction): a retried step would only read the stored status again. The
+  exception is the translation of a seat's preparation report, in every phase,
+  of the commentary and search notes of a pipeline 3 filing, and of source
+  review reasons: that prose keeps its own language, and the failed operation
+  stays in the case log. The case
   error names the operation key, stage, status and stored reason. A failed seat
   lets the other seats of its round finish before the case fails and its
   sandboxes are deleted.

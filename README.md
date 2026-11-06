@@ -216,7 +216,8 @@ sources, source review coverage and cost, from intake to source review, with
 A running workflow can outlast a single HTTP request, but each step is bounded
 by the hosting plan's function duration (300 seconds on Vercel Hobby). Shared
 turns therefore run as many short steps: each decision generation (at most 150
-seconds) is a step of its own, and each preparation call runs detached in its
+seconds, or 240 for a pipeline 3 instruction filing, which the host files in
+the next step) is a step of its own, and each preparation call runs detached in its
 sandbox while steps of at most a minute wait for it. Retries stay in the
 workflow: the court retries unfinished turns once, each attempt in steps of its
 own, and the Workflow runtime retries failed steps. Legacy (pipeline 1) seat

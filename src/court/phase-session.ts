@@ -10,7 +10,7 @@ import { languageRule } from "../domain/language.ts";
 import type { CourtModel } from "./models.ts";
 import type { SeatId, TurnOutcome } from "./turns.ts";
 
-export type PhaseTurn = { id: string; startedAt: string; expiresAt: string; start: number; steps: number; inFlightStep?: string; preparationToolChoice?: "auto" | "none"; preparationCommand?: { id: string; resultPath: string }; preparationBound?: boolean; timedOut?: boolean; events: TurnOutcome["events"]; done: boolean; complete: boolean; draft?: string; results: Record<string, { input: string; output: unknown }> };
+export type PhaseTurn = { id: string; startedAt: string; expiresAt: string; start: number; steps: number; inFlightStep?: string; preparationToolChoice?: "auto" | "none"; preparationCommand?: { id: string; resultPath: string }; preparationBound?: boolean; timedOut?: boolean; filing?: { step: number; output?: unknown; error?: string }; events: TurnOutcome["events"]; done: boolean; complete: boolean; draft?: string; results: Record<string, { input: string; output: unknown }> };
 export type PhaseState = {
   id: string; createdAt: string; phase: InstructionPhase; seat: SeatId; channel: "preparation" | "decision";
   model: CourtModel; system: string; tools: string; messages: ModelMessage[]; cursor: number;
@@ -49,7 +49,9 @@ export function phaseSystem(phase: InstructionPhase, seat: SeatId, language: str
       ? phase === "instruction"
         ? "Research with your search tools and report to the decision agent, for each claim, the sources you found: exact URL, verbatim passage and stance, nothing more. Do not assess the sources or the merits of the claims, do not take court actions and do not give a verdict."
         : "Research with your search tools and write a report for the decision agent; do not take court actions or give a final verdict."
-      : "Record decisions only through the court tools authorized for the current task. The tools of the phase are stable; the host rejects actions outside the turn.",
+      : phase === "instruction"
+        ? "Answer only with your filing, in the requested format: the host files it as your instruction. Copy the URLs and quotes of the preparation report exactly; do not assess the sources or the merits of the claims."
+        : "Record decisions only through the court tools authorized for the current task. The tools of the phase are stable; the host rejects actions outside the turn.",
   ].join("\n");
   return [
     languageRule(language),

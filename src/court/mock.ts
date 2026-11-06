@@ -23,6 +23,8 @@ export interface MockTurn {
 
 type Call = { name: string; input: unknown };
 const call = (name: string, input: unknown): Call => ({ name, input });
+// A typed answer in place of a tool call: the pipeline 3 instruction filing.
+const OUTPUT = "(typed output)";
 const prefix = "SIMULACIÓN LOCAL: ";
 const sourceUrl = (claimId: string, side: string) => "https://sources.example.test/" + claimId + "/" + side;
 
@@ -44,16 +46,15 @@ function responses({ spec, record, submission, native }: MockTurn): Call[][] {
     case "instruction": {
       const sides = ["support", "opposition", "unreliable"] as const;
       // The quote is in every fictitious page the mock downloader returns.
-      if (native) return [[call("file_instruction", {
+      if (native) return [[call(OUTPUT, {
         proposals: view.claims.flatMap((c) => sides.map((side) => ({
           claimId: c.id, url: sourceUrl(c.id, side), quote: "Documento ficticio con datos 42, sin valor probatorio.",
-          stance: side === "support" ? "supports" : side === "opposition" ? "opposes" : "context",
+          stance: side === "support" ? "supports" : side === "opposition" ? "opposes" : "context", commentary: "",
         }))),
-        searches: view.claims.map((c) => ({
-          claimId: c.id,
+        searches: Object.fromEntries(view.claims.map((c) => [c.id, {
           supporting: prefix + "Busqué respaldo a favor y encontré el documento ficticio correspondiente.",
           opposing: prefix + "Busqué evidencia contraria y encontré el documento ficticio correspondiente.",
-        })),
+        }])),
       })]];
       return [
         view.claims.flatMap((c) => [call("web_search", { query: c.id + " pruebas a favor" }), call("web_search", { query: c.id + " pruebas en contra" })]),
@@ -129,6 +130,12 @@ export function createMockSeat(turn: MockTurn, search: boolean) {
     doGenerate: async () => {
       const index = generation++;
       const calls = script[index] ?? [];
+      if (calls[0]?.name === OUTPUT) return {
+        content: [{ type: "text" as const, text: JSON.stringify(calls[0].input) }],
+        finishReason: { unified: "stop" as const, raw: undefined },
+        usage: { inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 }, outputTokens: { total: 0, text: 0, reasoning: 0 } },
+        warnings: [],
+      };
       return {
         content: calls.length
           ? calls.map((c, i) => ({ type: "tool-call" as const, toolCallId: `mock-${index}-${i}`, toolName: c.name, input: JSON.stringify(c.input) }))

@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { MemoryArtifactStore } from "../evidence/artifacts.ts";
 import { MemoryOperationRepository } from "./source-store.ts";
-import { boundBlocks, extractSource, fatalSourceFailure, markdownBlocks, normalizeSourceUrl, SourceService, SourceTranslationUnavailable, type SourceDependencies } from "./sources.ts";
+import { boundBlocks, extractSource, fatalSourceFailure, markdownBlocks, normalizeOrKeep, normalizeSourceUrl, SourceService, SourceTranslationUnavailable, type SourceDependencies } from "./sources.ts";
 
 function fixture() {
   const operations = new MemoryOperationRepository();
@@ -92,6 +92,17 @@ test("same-language checks and translation model/language versions are durable k
   assert.equal(counts.translate, 2);
   await new SourceService("fixture", "es", { ...deps, translatorFingerprint: "fixture-translator-v2" }).normalize("Título", "Texto 42");
   assert.equal(counts.translate, 3);
+});
+
+test("analyst prose keeps its own language when its translation fails or is uncertain, the same on a retry", async () => {
+  const { deps, counts, service } = fixture();
+  deps.verifyLanguage = async () => ({ matches: false });
+  assert.deepEqual(await normalizeOrKeep(service(), "", "Report in English 42"), { title: "", body: "Report in English 42", untranslated: true });
+  assert.deepEqual(await normalizeOrKeep(service(), "", "Report in English 42"), { title: "", body: "Report in English 42", untranslated: true });
+  assert.equal(counts.translate, 1, "the failed operation is read back, not repeated");
+  deps.translate = async () => { throw new Error("Gateway timeout"); };
+  assert.deepEqual(await normalizeOrKeep(service(), "", "Another report"), { title: "", body: "Another report", untranslated: true });
+  await assert.rejects(service().normalize("", "Report in English 42"), /failed/, "plain normalization still fails");
 });
 
 test("failed translation is shared and never returns originals; explicit recovery reuses completed stages", async () => {

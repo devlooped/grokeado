@@ -130,7 +130,7 @@ test("pipeline 3: analysts file URL and quote proposals, the host collects them 
     download: async (url) => { downloads++; return { ok: true, finalUrl: url, redirects: 0, contentType: "text/plain", bytes: new TextEncoder().encode("SIMULACIÓN LOCAL: Documento ficticio con datos 42, sin valor probatorio. " + url) }; },
   });
   const events: RecordedEvent[] = [], audit: unknown[] = [], played: string[] = [];
-  const requests: Array<{ kind: string; prompt: string; tools: string[] }> = [];
+  const requests: Array<{ kind: string; prompt: string; tools: string[]; format?: string }> = [];
   await holdSession({ submission, models: { judge: "fixture", counsel: Object.fromEntries(COUNSEL.map((seat) => [seat, "fixture"])) as Record<typeof COUNSEL[number], string> },
     commit: async (batch) => { events.push(...batch); },
     settle: (record) => settleEvidence("fixture", "es", record, reader(), artifacts),
@@ -144,7 +144,7 @@ test("pipeline 3: analysts file URL and quote proposals, the host collects them 
       played.push(spec.kind);
       const mock = createMockSeat({ spec, record, submission, shared: true, native: true }, false).model;
       const model = new MockLanguageModelV4({ doGenerate: async (options) => {
-        requests.push({ kind: spec.kind, prompt: JSON.stringify(options.prompt), tools: (options.tools ?? []).map((tool) => tool.name) });
+        requests.push({ kind: spec.kind, prompt: JSON.stringify(options.prompt), tools: (options.tools ?? []).map((tool) => tool.name), format: options.responseFormat?.type });
         return mock.doGenerate(options);
       } });
       return playSharedTurn("fixture", { submission, today: "fixture", language: "es", models: DEFAULT_MODELS, simulated: true }, spec, record, attempt, {
@@ -162,10 +162,50 @@ test("pipeline 3: analysts file URL and quote proposals, the host collects them 
   assert.equal(downloads, 3, "each proposed URL is fetched once");
   assert.equal(project(events).sources.size, 3);
   assert.equal((await loadSettledCorpus("fixture", events, artifacts)).documents.size, 2, "three vetoes exclude the unreliable fixture");
-  for (const request of requests.filter((request) => request.kind === "instruction")) assert.deepEqual(request.tools, ["file_instruction"]);
+  const instruction = requests.filter((request) => request.kind === "instruction");
+  assert.equal(instruction.length, 4, "each analyst files with one typed answer");
+  for (const request of instruction) assert.deepEqual([request.tools, request.format], [[], "json"]);
   const reviews = requests.filter((request) => request.kind === "source_review");
   assert.ok(reviews.length && reviews.every((request) => request.tools.join() === "review_sources" && /E1 · [^]*E2 · [^]*E3 · /.test(request.prompt)));
   const preparation = repository.states.get("fixture:instruction:grok:preparation")?.body;
   assert.match(String(preparation?.tools), /"type":"provider"/, "pipeline 3 preparation holds the provider's tools");
   assert.ok(parseCaseLog(buildCaseLog(events, audit, [])).length > events.length);
 });
+test("pipeline 3: a typed filing that does not parse, or that the host rejects, is corrected after feedback in a step of its own", async () => {
+  const artifacts = new MemoryArtifactStore(), operations = new MemoryOperationRepository(), repository = new MemoryPhaseRepository();
+  const submission = { kind: "text" as const, text: "SIMULACIÓN LOCAL: afirmación para verificar.", resolvedLanguage: "es" };
+  const stored: CaseRecord = { id: "fixture", createdAt: "2026-11-05T00:00:00.000Z", status: "in_session", pipelineVersion: 3, submission, models: modelSnapshot(DEFAULT_MODELS) };
+  const reader = new SourceService("fixture", "es", { operations, artifacts, extract: extractSource, translatorModelId: "fixture/translator", translatorFingerprint: "fixture-typed-v1", translate: async (input) => ({ ...input, changed: false }), verifyLanguage: async () => ({ matches: true }), download: async () => { throw new Error("No source acquisition is expected"); } });
+  const record = [{ type: "claims_entered", claims: [{ id: "A1", quote: "", text: "SIMULACIÓN LOCAL: afirmación." }], seq: 1, at: "2026-11-05T00:00:00.000Z" }] as RecordedEvent[];
+  const proposal = { claimId: "A1", url: "https://example.org/report", quote: "The report states the figure verbatim.", stance: "supports", commentary: "" };
+  const answers = [
+    "Here is my filing: sources below.",
+    JSON.stringify({ proposals: [proposal], searches: { A1: { supporting: "Busqué a favor.", opposing: "corta" } } }),
+    JSON.stringify({ proposals: [proposal, { ...proposal, quote: "short" }], searches: { A1: { supporting: "Busqué a favor en fuentes oficiales.", opposing: "Busqué en contra en medios establecidos." } } }),
+  ];
+  const prompts: string[] = [];
+  const model = new MockLanguageModelV4({ doGenerate: async (options) => {
+    assert.equal(options.responseFormat?.type, "json");
+    assert.equal(options.tools, undefined);
+    prompts.push(JSON.stringify(options.prompt));
+    return { content: [{ type: "text" as const, text: answers[prompts.length - 1]! }], finishReason: { unified: "stop" as const, raw: undefined },
+      usage: { inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 }, outputTokens: { total: 0, text: 0, reasoning: 0 } }, warnings: [] };
+  } });
+  const audit: Array<{ kind: string; data: { toolCalls?: Array<{ toolName: string }> } }> = [];
+  const deps = { record: stored, reader, artifacts, repository, model, prepare: async () => "Informe de investigación.", activity: async () => {}, audit: async (_caseId: string, _key: string, body: unknown) => { audit.push(body as typeof audit[number]); } };
+  const docket = { submission, today: "2026-11-05", language: "es", models: DEFAULT_MODELS, simulated: true };
+  const spec = { kind: "instruction" as const, counsel: "grok" as const };
+  let units = 0, outcome;
+  while (!(outcome = await advanceSharedTurn("fixture", docket, spec, record, 0, deps))) units++;
+  assert.equal(prompts.length, 3);
+  assert.ok(units >= 5, "every generation and every filing runs in a unit of its own");
+  assert.match(prompts[1]!, /did not match the filing format/);
+  assert.match(prompts[2]!, /could not file your answer: searches\.0\.opposing: /);
+  assert.equal(outcome.done, true);
+  assert.deepEqual(outcome.events.map((event) => event.type), ["evidence_proposed", "instruction_completed"]);
+  assert.deepEqual(audit.filter((body) => body.kind === "model_step").map((body) => body.data.toolCalls?.map((call) => call.toolName)), [[], ["file_instruction"], ["file_instruction"]]);
+  const bytes = [...(await artifacts.read("fixture")).entries()].find(([path]) => path.endsWith("decision-2/filing.json"))![1];
+  const filing = JSON.parse(typeof bytes === "string" ? bytes : new TextDecoder().decode(bytes));
+  assert.deepEqual(filing.dropped.map((entry: { reason: string }) => entry.reason.split(":")[0]), ["quote"]);
+});
+
