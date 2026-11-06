@@ -6,7 +6,7 @@ import { imageDescriber } from "../evidence/describe.ts";
 import type { Recognize } from "../evidence/extract.ts";
 import { sha256 } from "../evidence/validate.ts";
 import { getImage, saveCaseLanguage } from "../store.ts";
-import { SourceService, type SourceDependencies } from "./sources.ts";
+import { boundBlocks, SourceService, type SourceDependencies } from "./sources.ts";
 
 type IntakeDependencies = {
   sources: SourceDependencies;
@@ -48,9 +48,13 @@ export async function collectInstruction(caseId: string, original: Submission, m
     const note = original.note ? (await reader.normalize("", original.note)).body : undefined;
     submission = { ...original, resolvedLanguage: language, ...(note ? { note } : {}) };
     if (original.kind === "link") {
-      const read = await reader.read({ url: original.url, maxChars: 16_000 });
+      const read = await reader.read({ url: original.url, maxChars: 1 });
       if (read.status !== "ready") throw new Error(`Submitted source ${read.status}; instruction cannot start`);
-      context = { title: read.title, finalUrl: context?.finalUrl, tool: "shared-source", excerpt: read.blocks.map((block) => block.text).join("\n\n") };
+      // Sources are read in their original language during instruction, but the
+      // submission is what every seat examines: translate it now, wholesale.
+      const translated = await reader.translated(read.sourceId);
+      const { blocks } = boundBlocks(await reader.blocks(translated.document), 16_000);
+      context = { title: translated.document.title, finalUrl: context?.finalUrl, tool: "shared-source", excerpt: blocks.map((block) => block.text).join("\n\n") };
     } else if (context) {
       const normalized = await reader.normalize(context.title, context.excerpt);
       context = { ...context, title: normalized.title, excerpt: normalized.body };

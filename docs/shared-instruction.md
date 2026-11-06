@@ -14,9 +14,15 @@ pipeline 1 cases keep their original tools, artifact formats, and download URLs;
   becomes uncertain, never an automatic paid retry.
 - Instruction and source criticism can discover sources. Criticism research must
   reference a unified `reviewSourceId`; its artifacts are `review_context`, not
-  new claim filings. Participants receive only canonical case-language prose.
+  new claim filings. Intake translates the submission and its linked page, and
+  court prompts and actions stay in the case language, but sources and discovery
+  results are read in their original language until evidence closes: translating
+  sources that may never be admitted spent the turns' time. Filed excerpts quote
+  the original; seats translate what they quote in their own prose into the case
+  language.
 - Three or four vetoes exclude a source; zero through two admit it. Missing
-  reviews are not vetoes. Closing instruction freezes admitted `E1.md` documents,
+  reviews are not vetoes. Closing instruction translates each admitted source
+  wholesale into the case language, keeping its block IDs, then freezes admitted `E1.md` documents,
   their section mappings, `question.json`, `index.md` and a hash-verified manifest.
   Missing, partial or changed settled artifacts block debate.
 - Debate starts clean once for each seat/channel, then appends committed events

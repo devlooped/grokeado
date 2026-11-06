@@ -65,6 +65,14 @@ test("shared phase instructions require canonical case-language quotations, not 
   }
 });
 
+test("instruction phases have seats quote original-language sources in the case language", () => {
+  for (const phase of ["instruction", "criticism"] as const) {
+    const system = phaseSystem(phase, "grok", "es", "decision");
+    assert.match(system, /traducí la cita fielmente al idioma del caso, nunca la conserves en el idioma de la fuente/);
+    assert.doesNotMatch(system, /No traduzcas|ni las traduzcas por tu cuenta/);
+  }
+});
+
 test("provider cache hints are stable, phase/channel scoped, and never rewrite the conversation prefix", async () => {
   const repository = new MemoryPhaseRepository();
   const initial = { ...config, model: { id: "openai/fixture", providerOptions: { openai: { reasoningEffort: "high" } } } };

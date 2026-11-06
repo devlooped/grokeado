@@ -42,8 +42,7 @@ export async function discover(input: { kind: "web_search" | "x_search"; query: 
   const bytes = (await artifacts.read(reader.caseId)).get(record.path);
   if (!bytes || sha256(bytes) !== record.hash) throw new Error("Research artifact unavailable");
   const raw = JSON.parse(new TextDecoder().decode(bytes)) as { result: { text: string; sources: Array<{ sourceType: string; url?: string; title?: string }> } };
-  const normalized = await reader.normalize("", raw.result.text);
-  const sources = [];
-  for (const source of raw.result.sources) if (source.sourceType === "url" && source.url) sources.push({ url: normalizeSourceUrl(source.url), title: source.title ? (await reader.normalize(source.title, "")).title : source.url });
-  return { text: normalized.body, sources, provenance: input.reviewSourceId ? "review_context" : "discovery", ...(input.reviewSourceId ? { reviewSourceId: input.reviewSourceId } : {}) };
+  // Discovery is never translated: only admitted evidence is, once evidence closes.
+  const sources = raw.result.sources.flatMap((source) => source.sourceType === "url" && source.url ? [{ url: normalizeSourceUrl(source.url), title: source.title || source.url }] : []);
+  return { text: raw.result.text, sources, provenance: input.reviewSourceId ? "review_context" : "discovery", ...(input.reviewSourceId ? { reviewSourceId: input.reviewSourceId } : {}) };
 }

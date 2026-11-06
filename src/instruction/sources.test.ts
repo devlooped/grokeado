@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { MemoryArtifactStore } from "../evidence/artifacts.ts";
 import { MemoryOperationRepository } from "./source-store.ts";
-import { boundBlocks, extractSource, markdownBlocks, normalizeSourceUrl, SourceService, type SourceDependencies } from "./sources.ts";
+import { boundBlocks, extractSource, markdownBlocks, normalizeSourceUrl, SourceService, SourceTranslationUnavailable, type SourceDependencies } from "./sources.ts";
 
 function fixture() {
   const operations = new MemoryOperationRepository();
@@ -17,10 +17,10 @@ function fixture() {
     translatorModelId: "fixture/translator", translatorFingerprint: "fixture-translator-v1",
     verifyLanguage: async () => ({ matches: true }),
   };
-  return { deps, counts, service: () => new SourceService("fixture", "es", deps) };
+  return { deps, counts, operations, service: () => new SourceService("fixture", "es", deps) };
 }
 
-test("four independent service instances share one acquisition/extraction and checkpoint each translation chunk", async () => {
+test("four independent service instances share one acquisition/extraction and read the original without translating it", async () => {
   const { service, counts } = fixture();
   const services = Array.from({ length: 4 }, service);
   const inputs = { url: "https://example.test/report.txt#p3" };
@@ -30,14 +30,28 @@ test("four independent service instances share one acquisition/extraction and ch
   for (const reader of services) {
     const read = await reader.read(inputs);
     assert.equal(read.status, "ready");
-    assert.doesNotMatch(JSON.stringify(read), /ForeignTitle|ForeignSentinel|ForeignColumn|\boriginal\b/);
+    assert.match(JSON.stringify(read), /ForeignSentinel/);
     if (read.status === "ready") {
       assert.equal(read.reused, true);
-      assert.equal(read.language, "es");
       assert.deepEqual(read.blocks.map((block) => block.id), ["p1:b1", "p1:b2", "p1:b3"]);
     }
   }
+  assert.deepEqual(counts, { download: 1, extract: 1, translate: 0 });
+});
+
+test("an admitted source is translated wholesale once, with its original block IDs, for every reader", async () => {
+  const { service, counts } = fixture();
+  const read = await service().read({ url: "https://example.test/report.txt" });
+  assert.equal(read.status, "ready");
+  const translated = [];
+  for (let index = 0; index < 4; index++) translated.push(await service().translated(read.sourceId));
   assert.deepEqual(counts, { download: 1, extract: 1, translate: 3 });
+  for (const result of translated) assert.deepEqual(result, translated[0]);
+  assert.equal(translated[0]!.language, "es");
+  assert.deepEqual(translated[0]!.translation, { version: "canonical-markdown-verified-v2", modelId: "fixture/translator", fingerprint: "fixture-translator-v1" });
+  assert.deepEqual(translated[0]!.document.blocks.map((block) => block.id), ["p1:b1", "p1:b2", "p1:b3"]);
+  assert.equal(translated[0]!.document.title, "https://example.test/report.txt", "an untitled source keeps its URL as title");
+  assert.notEqual(translated[0]!.document.path, (await service().source(read.sourceId)).document.path, "the original stays beside its translation");
 });
 
 test("URL normalization ignores fragments but preserves query and path case; verified redirect aliases reuse acquisition", async () => {
@@ -80,17 +94,25 @@ test("same-language checks and translation model/language versions are durable k
 });
 
 test("failed translation is shared and never returns originals; explicit recovery reuses completed stages", async () => {
-  const { deps, counts, service } = fixture();
+  const { deps, counts, operations, service } = fixture();
   const translate = deps.translate;
   deps.translate = async () => { counts.translate++; throw new Error("ForeignSentinel translator unavailable"); };
-  const first = await service().read({ url: "https://example.test/a.txt" });
+  const read = await service().read({ url: "https://example.test/a.txt" });
+  const failure = async () => {
+    try { await service().translated(read.sourceId); } catch (error) { if (error instanceof SourceTranslationUnavailable) return error; throw error; }
+    throw new Error("Translation must fail");
+  };
+  const first = await failure();
   assert.equal(first.status, "uncertain");
-  assert.doesNotMatch(JSON.stringify(first), /ForeignSentinel/);
-  assert.deepEqual(await service().read({ url: "https://example.test/a.txt" }), first);
-  assert.deepEqual(counts, { download: 1, extract: 1, translate: 1 });
-  await deps.operations.recover("fixture", first.operation, "Fixture operator authorizes retry");
+  assert.doesNotMatch(first.message, /ForeignSentinel/);
+  assert.equal((await failure()).status, "uncertain");
+  assert.deepEqual(counts, { download: 1, extract: 1, translate: 3 }, "the three blocks are translated in parallel, and never again");
+  const uncertain = (await operations.list("fixture")).filter((operation) => operation.status === "uncertain");
+  assert.ok(uncertain.some((operation) => operation.key === first.operation));
+  for (const operation of uncertain) await deps.operations.recover("fixture", operation.key, "Fixture operator authorizes retry");
   deps.translate = translate;
-  assert.equal((await service().read({ url: "https://example.test/a.txt" })).status, "ready");
+  const { document } = await service().translated(read.sourceId);
+  assert.match(new TextDecoder().decode((await deps.artifacts.read("fixture")).get(document.path)), /Texto canónico 42/);
   assert.equal(counts.download, 1);
   assert.equal(counts.extract, 1);
 });
@@ -105,7 +127,7 @@ test("failure after external work and before artifact checkpoint is uncertain, n
   assert.equal(counts.extract, 0);
 });
 
-test("canonical Markdown keeps headings, tables, links, numbers, and stable block/page anchors", async () => {
+test("original and translated Markdown keep headings, tables, links, numbers, and stable block/page anchors", async () => {
   const { deps, service } = fixture();
   const read = await service().read({ url: "https://example.test/a.txt", maxChars: 10 });
   assert.equal(read.status, "ready");
@@ -115,7 +137,11 @@ test("canonical Markdown keeps headings, tables, links, numbers, and stable bloc
   const continuation = await service().read({ url: "https://example.test/a.txt", cursor: read.next });
   assert.equal(continuation.status, "ready");
   const source = await service().source(read.sourceId);
-  const markdown = new TextDecoder().decode((await deps.artifacts.read("fixture")).get(source.document.path));
+  const original = new TextDecoder().decode((await deps.artifacts.read("fixture")).get(source.document.path));
+  assert.match(original, /\[p\.1\]\n\n\[p1:b1\]\n\n# ForeignTitle/);
+  assert.match(original, /ForeignSentinel 42/);
+  const translated = await service().translated(read.sourceId);
+  const markdown = new TextDecoder().decode((await deps.artifacts.read("fixture")).get(translated.document.path));
   assert.match(markdown, /\[p\.1\]\n\n\[p1:b1\]/);
   assert.match(markdown, /# Título/);
   assert.match(markdown, /Texto canónico 42/);
@@ -138,24 +164,23 @@ for (const changed of [false, true]) test(`unconfirmed output language fails clo
   deps.verifyLanguage = async (input, language) => {
     verifications++;
     assert.equal(language, "es");
-    assert.match(input.body, /ForeignTitle/);
+    assert.match(input.body, /Foreign/);
     return { matches: false };
   };
-  const result = await service().read({ url: "https://example.test/untranslated.txt" });
-  assert.equal(result.status, "failed");
-  assert.doesNotMatch(JSON.stringify(result), /ForeignTitle|ForeignSentinel/);
-  assert.deepEqual(await service().read({ url: "https://example.test/untranslated.txt" }), result);
-  assert.equal(verifications, 1);
-  assert.equal(counts.translate, 1);
+  const read = await service().read({ url: "https://example.test/untranslated.txt" });
+  for (let attempt = 0; attempt < 2; attempt++) await assert.rejects(service().translated(read.sourceId), (error) => error instanceof SourceTranslationUnavailable && error.status === "failed" && !/ForeignTitle|ForeignSentinel/.test(error.message));
+  assert.equal(verifications, 3);
+  assert.equal(counts.translate, 3);
   const files = await deps.artifacts.read("fixture");
-  assert.ok(![...files.keys()].some((path) => path.endsWith("/source.json") || path.endsWith("/translation.json")));
+  assert.ok(![...files.keys()].some((path) => path.includes("/translations/") || path.endsWith("/translation.json")));
 });
 
 test("successful language verification is checkpointed once for all readers", async () => {
   const { deps, service } = fixture();
   let verifications = 0;
   deps.verifyLanguage = async () => { verifications++; return { matches: true }; };
-  for (let index = 0; index < 4; index++) assert.equal((await service().read({ url: "https://example.test/verified.txt" })).status, "ready");
+  const read = await service().read({ url: "https://example.test/verified.txt" });
+  for (let index = 0; index < 4; index++) await service().translated(read.sourceId);
   assert.equal(verifications, 3);
 });
 
@@ -195,5 +220,5 @@ test("sanitized AT-185-GA replay uses at most 30 acquisitions for 63 manifest-sh
   assert.equal(requests, 63);
   assert.equal(counts.download, 30);
   assert.equal(counts.extract, 1);
-  assert.equal(counts.translate, 3);
+  assert.equal(counts.translate, 0);
 });

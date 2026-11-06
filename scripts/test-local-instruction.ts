@@ -73,7 +73,10 @@ try {
   assert.equal(firstReads.filter((read) => read.status === "ready").length, 1);
   for (const service of services) assert.equal((await service.read(sourceInput)).status, "ready");
   assert.equal(downloads, 1);
-  assert.equal(translations, 1);
+  assert.equal(translations, 0, "instruction reads are not translated");
+  const sourceId = firstReads.find((read) => read.status === "ready")!.sourceId;
+  for (const service of services) await service.translated(sourceId);
+  assert.equal(translations, 1, "settlement translates an admitted source once");
   assert.equal(await savePhaseCheckpoint(id, "debate:grok:decision", -1, { messages: [], cursor: 0 }), 0);
   await assert.rejects(savePhaseCheckpoint(id, "debate:grok:decision", -1, {}), /Concurrent/);
   assert.equal(await savePhaseCheckpoint(id, "debate:grok:decision", 0, { messages: ["fixture"], cursor: 1 }), 1);

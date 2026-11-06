@@ -1,7 +1,7 @@
 import MarkdownIt from "markdown-it";
 import { stringify } from "yaml";
 import { COUNSEL, project, type RecordedEvent } from "../domain/court.ts";
-import { boundBlocks, type SourceService } from "../instruction/sources.ts";
+import { boundBlocks, mapLimit, type SourceService } from "../instruction/sources.ts";
 import type { ArtifactStore } from "./artifacts.ts";
 import { parseYamlFrontmatter } from "./okf.ts";
 import { SettledEvidenceSchema, SettledManifestSchema, type SettledEvidence, type SettledManifest } from "./schema.ts";
@@ -43,19 +43,24 @@ function validateDependencies(manifest: SettledManifest, documents: SettledCorpu
   }
 }
 
-// Host-only promotion: no downloader, extractor, or translator is reachable here.
-export async function settleEvidence(caseId: string, language: string, events: readonly RecordedEvent[], sources: Pick<SourceService, "source">, artifacts: ArtifactStore): Promise<{ type: "evidence_settled"; schemaVersion: 2; manifestHash: string }> {
+// Host-only promotion: no downloader or extractor is reachable here. Admitted
+// sources, read in their original language until now, are translated here.
+export async function settleEvidence(caseId: string, language: string, events: readonly RecordedEvent[], sources: Pick<SourceService, "translated">, artifacts: ArtifactStore): Promise<{ type: "evidence_settled"; schemaVersion: 2; manifestHash: string }> {
   const view = project(events);
-  const stored = await artifacts.read(caseId);
   const files = new Map<string, string>();
   const documents: SettledManifest["documents"] = [];
   const parsed = new Map<string, { metadata: SettledEvidence; body: string }>();
   const index: string[] = [];
-  for (const source of [...view.sources.values()].sort((a, b) => Number(a.id.slice(1)) - Number(b.id.slice(1)))) {
+  const admitted = [...view.sources.values()].sort((a, b) => Number(a.id.slice(1)) - Number(b.id.slice(1))).filter((source) => {
     if (source.excluded === undefined) throw new Error("Source admission has not been decided");
-    if (source.excluded) continue;
+    if (source.excluded) return false;
     if (!source.sourceId) throw new Error("Admitted source has no canonical identity");
-    const canonical = await sources.source(source.sourceId);
+    return true;
+  });
+  const translations = await mapLimit(admitted, 3, (source) => sources.translated(source.sourceId!));
+  const stored = await artifacts.read(caseId);
+  for (const [position, source] of admitted.entries()) {
+    const canonical = translations[position]!;
     if (canonical.language !== language) throw new Error("Admitted source is not in the case language");
     const bytes = stored.get(canonical.document.path);
     if (!bytes || sha256(bytes) !== canonical.document.hash) throw new Error("Admitted source artifact missing or changed");

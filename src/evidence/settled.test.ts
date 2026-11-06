@@ -20,6 +20,7 @@ async function fixture(vetoes = 0, body = "# Informe\n\nContenido canónico 42")
   });
   const result = await reader.read({ url: "https://example.test/report.txt" });
   assert.equal(result.status, "ready");
+  assert.equal(counts.translate, 0, "instruction reads are not translated");
   const contribution = { id: "P1", by: "grok" as const, claimId: "A1", title: "Informe", url: "https://example.test/report.txt", excerpt: "Contenido canónico 42", sourceId: result.sourceId, blockIds: ["p1:b2"] };
   const events = stamp([
     { type: "claims_entered", claims: [{ id: "A1", text: "Afirmación en español", quote: "Cita en español" }] },
@@ -35,11 +36,14 @@ for (const vetoes of [0, 1, 2, 3, 4]) test(`${vetoes} vetoes preserve the three-
   const { artifacts, reader, events, counts } = await fixture(vetoes);
   const before = { ...counts };
   const event = await settleEvidence("fixture", "es", events, reader, artifacts);
-  assert.deepEqual(counts, before, "settlement does no source processing");
+  assert.equal(counts.download, before.download, "settlement never acquires sources");
+  assert.equal(counts.translate > before.translate, vetoes < 3, "only admitted sources are translated, once evidence closes");
+  const translated = counts.translate;
   const committed = [...events, { ...event, seq: events.length + 1, at: events[0]!.at }];
   const corpus = await loadSettledCorpus("fixture", committed, artifacts);
   assert.equal(corpus.documents.size, vetoes < 3 ? 1 : 0);
   assert.deepEqual(await settleEvidence("fixture", "es", events, reader, artifacts), event);
+  assert.equal(counts.translate, translated, "a repeated settlement reuses its translations");
   if (vetoes < 3) {
     assert.match(corpus.index, /^- \[E1 — /);
     assert.doesNotMatch(corpus.index, /Contenido/);

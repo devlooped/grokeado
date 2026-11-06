@@ -15,18 +15,31 @@ export const TRANSLATION_VERSION = "canonical-markdown-verified-v2";
 // A completed, rejected result is different from an interrupted external call.
 export class SourceProcessingFailure extends Error {}
 
+// An admitted source could not be translated when evidence closed.
+export class SourceTranslationUnavailable extends Error {
+  constructor(readonly operation: string, readonly status: "pending" | "failed" | "uncertain") {
+    super(`Admitted source translation ${status} (${operation}); explicit recovery required`);
+  }
+}
+
 export type SourceBlock = { id: string; page: number; text: string };
 export type ExtractedSource = { title: string; blocks: SourceBlock[]; tool: string; confidence: number };
 type BlockLocation = { id: string; page: number; offset: number; length: number };
 type StoredDocument = { title: string; path: string; hash: string; blocks: BlockLocation[]; tool: string; confidence: number };
 type Acquisition = { sourceId: string; url: string; finalUrl: string; at: string; originalPath: string; rawHash: string; contentType: string; extension: string };
 
+// Instruction and criticism read sources in their original language. Only the
+// sources admitted when evidence closes are translated, wholesale, once.
 export type CanonicalSource = {
-  schemaVersion: 2;
+  schemaVersion: 3;
   sourceId: string;
-  language: string;
   acquisition: Acquisition;
   extraction: { version: string; path: string; hash: string; tool: string; confidence: number };
+  document: StoredDocument;
+};
+
+export type TranslatedSource = Omit<CanonicalSource, "document"> & {
+  language: string;
   translation: { version: string; modelId: string; fingerprint: string };
   document: StoredDocument;
 };
@@ -39,7 +52,7 @@ export const SourceReadSchema = z.object({
   cursor: z.object({ block: z.number().int().nonnegative(), offset: z.number().int().nonnegative() }).strict().optional(),
 }).strict();
 export type SourceReadResult = {
-  sourceId: string; status: "ready"; reused: boolean; language: string; title: string;
+  sourceId: string; status: "ready"; reused: boolean; title: string;
   blocks: SourceBlock[]; truncated: boolean; next?: { block: number; offset: number };
 } | { sourceId: string; status: Exclude<OperationStatus, "ready" | "running">; operation: string; errorCode?: string };
 
@@ -55,6 +68,24 @@ function sourceRoot(id: string) {
   if (!/^src_[a-f0-9]{24}$/.test(id)) throw new Error("Invalid source ID");
   return `instruction/sources/${id}`;
 }
+
+// Run at most `limit` calls at once, keeping the order of the results.
+export async function mapLimit<T, R>(items: readonly T[], limit: number, run: (item: T, index: number) => Promise<R>): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0, failed = false;
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (!failed && next < items.length) {
+      const index = next++;
+      try { results[index] = await run(items[index]!, index); }
+      catch (error) { failed = true; throw error; }
+    }
+  }));
+  return results;
+}
+
+// Settlement translates blocks in parallel: a block identical to another one
+// waits for its translation, for as long as its owner's lease, not two seconds.
+const SETTLEMENT_TRANSLATION_WAIT_MS = 300_000;
 
 // Chunk at Markdown block/line boundaries, never silently truncate extraction.
 export function markdownBlocks(pages: Array<{ page: number; text: string }>): SourceBlock[] {
@@ -142,14 +173,14 @@ export class SourceService {
     return (await this.stage(key, stage, run)).value;
   }
 
-  private async translationStage<T>(key: string, run: () => Promise<T>): Promise<{ value: T; reused: boolean }> {
-    const deadline = Date.now() + 2000;
+  private async translationStage<T>(key: string, run: () => Promise<T>, wait = 2000): Promise<{ value: T; reused: boolean }> {
+    const deadline = Date.now() + wait;
     for (;;) {
       try { return await this.stage(key, "translation", run); }
       catch (error) {
         if (!(error instanceof StageUnavailable) || error.status !== "pending" || Date.now() >= deadline) throw error;
         // Briefly await another owner's publication, never take over its job.
-        await new Promise((resolve) => setTimeout(resolve, 40));
+        await new Promise((resolve) => setTimeout(resolve, wait > 2000 ? 500 : 40));
       }
     }
   }
@@ -190,14 +221,14 @@ export class SourceService {
     return rendered.document;
   }
 
-  private async blocks(document: StoredDocument): Promise<SourceBlock[]> {
+  async blocks(document: StoredDocument): Promise<SourceBlock[]> {
     const markdown = await this.file(document.path, document.hash);
     return document.blocks.map(({ id, page, offset, length }) => ({ id, page, text: markdown.slice(offset, offset + length) }));
   }
 
   // Used for snippets, submission descriptions, court prose, and source titles.
   // Each chunk's language decision is checkpointed along with its translation.
-  async normalize(title: string, body: string): Promise<{ title: string; body: string }> {
+  async normalize(title: string, body: string, wait?: number): Promise<{ title: string; body: string }> {
     const chunks = markdownBlocks([{ page: 1, text: body }]);
     if (!chunks.length) chunks.push({ id: "p1:b1", page: 1, text: "" });
     const output: string[] = [];
@@ -216,7 +247,7 @@ export class SourceService {
         const path = `instruction/operations/${sha256(key)}/translation.json`;
         await this.deps.artifacts.write(this.caseId, new Map([[path, content]]));
         return { path, hash: sha256(content), modelId: this.deps.translatorModelId, effort: this.deps.translatorEffort ?? null, usage: translated.usage ?? null, verificationUsage: verification.usage ?? null };
-      });
+      }, wait);
       const translated = JSON.parse(await this.file(result.value.path, result.value.hash)) as { title: string; body: string };
       if (index === 0) translatedTitle = translated.title;
       output.push(translated.body);
@@ -228,9 +259,37 @@ export class SourceService {
     const file = (await this.deps.artifacts.read(this.caseId)).get(`${sourceRoot(sourceId)}/source.json`);
     if (!file) throw new Error("Canonical source unavailable");
     const source = JSON.parse(new TextDecoder().decode(file)) as CanonicalSource;
-    if (source.sourceId !== sourceId || source.language !== this.language || source.schemaVersion !== 2) throw new Error("Canonical source mismatch");
+    if (source.sourceId !== sourceId || source.schemaVersion !== 3) throw new Error("Canonical source mismatch");
     await this.file(source.document.path, source.document.hash);
     return source;
+  }
+
+  // Host-only, once evidence closes: translate a whole admitted source into the
+  // case language. Blocks keep their original IDs, so citations carry over.
+  async translated(sourceId: string): Promise<TranslatedSource> {
+    const source = await this.source(sourceId);
+    const root = sourceRoot(sourceId);
+    const key = `translated:${sha256(JSON.stringify([sourceId, source.document.hash, source.document.title, this.language, this.deps.translatorFingerprint, TRANSLATION_VERSION]))}`;
+    try {
+      const stored = await this.stage<{ path: string; hash: string }>(key, "canonical", async () => {
+        const blocks = await this.blocks(source.document);
+        const title = source.document.title === source.acquisition.finalUrl ? "" : source.document.title;
+        const translated = await mapLimit(blocks, 4, (block, index) => this.normalize(index === 0 ? title : "", block.text, SETTLEMENT_TRANSLATION_WAIT_MS));
+        const path = `${root}/translations/${this.language}/${this.deps.translatorFingerprint}`;
+        const document = await this.writeDocument({ title: translated[0]?.title || source.acquisition.finalUrl, tool: source.document.tool, confidence: source.document.confidence,
+          blocks: blocks.map((block, index) => ({ ...block, text: translated[index]!.body })) }, `${path}.md`);
+        const result: TranslatedSource = { ...source, language: this.language, translation: { version: TRANSLATION_VERSION, modelId: this.deps.translatorModelId, fingerprint: this.deps.translatorFingerprint }, document };
+        const content = JSON.stringify(result);
+        await this.deps.artifacts.write(this.caseId, new Map([[`${path}.json`, content]]));
+        return { path: `${path}.json`, hash: sha256(content) };
+      });
+      const result = JSON.parse(await this.file(stored.value.path, stored.value.hash)) as TranslatedSource;
+      await this.file(result.document.path, result.document.hash);
+      return result;
+    } catch (error) {
+      if (error instanceof StageUnavailable) throw new SourceTranslationUnavailable(error.operation, error.status);
+      throw error;
+    }
   }
 
   async passages(sourceId: string, ids: readonly string[]): Promise<{ source: CanonicalSource; blocks: SourceBlock[] }> {
@@ -273,26 +332,22 @@ export class SourceService {
     const previous = (await this.deps.artifacts.read(this.caseId)).get(`${sourceRoot(fallbackId)}/source.json`);
     if (previous) {
       const source = JSON.parse(new TextDecoder().decode(previous)) as CanonicalSource;
-      if (source.language !== this.language || source.translation.fingerprint !== this.deps.translatorFingerprint || source.extraction.version !== (this.deps.extractionVersion ?? EXTRACTION_VERSION)) throw new Error("Source processing snapshot changed; a reviewed revision is required");
+      if (source.schemaVersion !== 3 || source.extraction.version !== (this.deps.extractionVersion ?? EXTRACTION_VERSION)) throw new Error("Source processing snapshot changed; a reviewed revision is required");
     }
     try {
-      const { sourceId, acquisition, document: extracted, blocks: originalBlocks } = await this.inspect(input.url);
-      const sourceKey = `canonical:${sha256(JSON.stringify([sourceId, extracted.hash, extracted.title, this.language, this.deps.translatorFingerprint]))}`;
+      const { sourceId, acquisition, document: extracted } = await this.inspect(input.url);
+      // Not translated: that would spend the turn's time on sources that may never be admitted.
+      const sourceKey = `canonical:${sha256(JSON.stringify([sourceId, extracted.hash, extracted.title, "original"]))}`;
       const canonical = await this.stage<{ path: string; hash: string }>(sourceKey, "canonical", async () => {
-        const blocks: SourceBlock[] = [];
-        let title = extracted.title;
-        for (const [index, block] of originalBlocks.entries()) {
-          const translated = await this.normalize(index === 0 ? title : "", block.text);
-          if (index === 0) title = translated.title;
-          blocks.push({ ...block, text: translated.body });
-        }
-        const document = await this.writeDocument({ ...extracted, title: title || acquisition.finalUrl, blocks }, `${sourceRoot(sourceId)}/translations/${this.language}/${this.deps.translatorFingerprint}.md`);
-        const source: CanonicalSource = { schemaVersion: 2, sourceId, language: this.language, acquisition,
+        const markdown = await this.file(extracted.path, extracted.hash);
+        const documentPath = `${sourceRoot(sourceId)}/extracted.md`;
+        await this.deps.artifacts.write(this.caseId, new Map([[documentPath, markdown]]));
+        const source: CanonicalSource = { schemaVersion: 3, sourceId, acquisition,
           extraction: { version: this.deps.extractionVersion ?? EXTRACTION_VERSION, path: extracted.path, hash: extracted.hash, tool: extracted.tool, confidence: extracted.confidence },
-          translation: { version: TRANSLATION_VERSION, modelId: this.deps.translatorModelId, fingerprint: this.deps.translatorFingerprint }, document };
+          document: { ...extracted, title: extracted.title || acquisition.finalUrl, path: documentPath } };
         const content = JSON.stringify(source);
         const path = `${sourceRoot(sourceId)}/source.json`;
-        await this.deps.artifacts.write(this.caseId, new Map([[`${sourceRoot(sourceId)}/extracted.md`, await this.file(extracted.path, extracted.hash)], [path, content]]));
+        await this.deps.artifacts.write(this.caseId, new Map([[path, content]]));
         return { path, hash: sha256(content) };
       });
       const source = JSON.parse(await this.file(canonical.value.path, canonical.value.hash)) as CanonicalSource;
@@ -306,7 +361,7 @@ export class SourceService {
         blocks = blocks.filter((block) => input.blockIds!.includes(block.id));
       }
       const result = boundBlocks(blocks, input.maxChars, input.cursor);
-      return { sourceId, status: "ready", reused: canonical.reused, language: this.language, title: source.document.title, ...result };
+      return { sourceId, status: "ready", reused: canonical.reused, title: source.document.title, ...result };
     } catch (error) {
       if (error instanceof StageUnavailable) return { sourceId: fallbackId, status: error.status, operation: error.operation, errorCode: `source_${error.status}` };
       throw error;

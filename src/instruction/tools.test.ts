@@ -10,7 +10,7 @@ import { MemoryOperationRepository } from "./source-store.ts";
 import { extractSource, SourceService } from "./sources.ts";
 import { executeSourceTool } from "./tools.ts";
 
-for (const language of ["es", "en"]) test(`${language} criticism shares gathering reads and normalizes discovery/review text without promoting review material`, async () => {
+for (const language of ["es", "en"]) test(`${language} criticism shares gathering reads and returns untranslated discovery/review text without promoting review material`, async () => {
   const artifacts = new MemoryArtifactStore(), operations = new MemoryOperationRepository();
   let downloads = 0, searches = 0;
   const reader = new SourceService("fixture", language, {
@@ -35,7 +35,7 @@ for (const language of ["es", "en"]) test(`${language} criticism shares gatherin
     assert.ok("provenance" in result);
     assert.equal(result.provenance, "review_context");
     assert.equal(result.reviewSourceId, "E1");
-    assert.doesNotMatch(JSON.stringify(result), /FOREIGN_SENTINEL/);
+    assert.match(JSON.stringify(result), /FOREIGN_SENTINEL/, "only admitted evidence is translated, once evidence closes");
     assert.deepEqual(await executeSourceTool(call, criticism), result);
     await assert.rejects(executeSourceTool({ ...call, input: { query: "author corrections" } }, criticism), /review_source_required/);
     await assert.rejects(executeSourceTool({ ...call, input: { query: "author corrections", reviewSourceId: "E2" } }, criticism), /review_source_required/);

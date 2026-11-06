@@ -68,7 +68,7 @@ test("new archives contain instruction/evidence/discussion and one complete root
     ["instruction/runs/grok/fixture/transcript.jsonl", "legacy duplicate should not export"],
     ["discussion/grok/fixture/draft.md", "Analysis, not proof"],
   ]));
-  const event = await settleEvidence("fixture", "en", [], { source: async () => { throw new Error("No sources"); } }, artifacts);
+  const event = await settleEvidence("fixture", "en", [], { translated: async () => { throw new Error("No sources"); } }, artifacts);
   const events: RecordedEvent[] = [{ ...event, seq: 1, at: "2026-11-05T00:00:00.000Z" }, { type: "instruction_closed", seq: 2, at: "2026-11-05T00:00:01.000Z" }, { type: "session_closed", seq: 3, at: "2026-11-05T00:00:02.000Z" }];
   const audit = [
     { schemaVersion: 2, id: "decision:1", kind: "model_step", at: events[0]!.at, seat: "grok", modelId: "openai/test", effort: "high", data: { usage: { inputTokens: 100, outputTokens: 20 } } },
