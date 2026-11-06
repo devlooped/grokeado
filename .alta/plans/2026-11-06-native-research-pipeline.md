@@ -120,6 +120,7 @@ The broker already saves each generation's request and response under `instructi
 - [x] 9. Criticism for pipeline 3: the E index builder (passage cap, full X post text from the canonical blocks), the batch prompt, native tools, and no `reviewSourceId` host rule. Tests: the index holds every E id, and an X source carries its full text.
 - [x] 10. Audit: add `data.sources` and the search count to pipeline 3 `model_step` records; `case-log` tests.
 - [ ] 11. The local eval (see below), then one paid run, with its report committed under `evals/research/results-<date>.md`.
+  - Harness done (`scripts/eval-research.ts`, `evals/research/`, `npm run eval:research`); the paid run waits for the user's confirmation. Deviation: intake prepares in one call without tools (no host tools in process), and the run stops after source review.
 - [ ] 12. Make pipeline 3 the default for new cases once the eval meets its thresholds. Update `docs/shared-instruction.md` (native tools, host collection, batch criticism, network stance) and the mock seat (`createMockSeat`) so that simulated cases run pipeline 3.
 
 ## The local eval
@@ -149,9 +150,9 @@ For each case, each of the four seats runs gather → decision, then host collec
 
 ## How it is verified
 
-- [ ] `npm test` and `npm run typecheck` pass, with the new tests of steps 3–10.
-- [ ] A simulated case (`COURT_AI_MODE=mock`) runs pipeline 3 from intake to debate, without a unification turn, and `case.jsonl` validates.
-- [ ] `node --import tsx scripts/test-local-instruction.ts` still passes against the local database (pipeline 2 and 3 selection).
+- [x] `npm test` and `npm run typecheck` pass, with the new tests of steps 3–10.
+- [x] A simulated case (`COURT_AI_MODE=mock`) runs pipeline 3 from intake to debate, without a unification turn, and `case.jsonl` validates (`src/court/settled-play.test.ts`, with the mock seat).
+- [x] `node --import tsx scripts/test-local-instruction.ts` still passes against the local database (pipeline 2 and 3 selection).
 - [ ] `node --import tsx scripts/eval-research.ts --max-usd 8` writes a report that meets the thresholds above.
 - [ ] Before the default changes: one staging case in a real sandbox shows a native tool request accepted by the broker, and a forbidden one rejected.
 

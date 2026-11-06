@@ -209,6 +209,10 @@ bounded follow-up research and all four evaluators. It separates task complexity
 from evidence sufficiency, with English identifiers and Spanish reports.
 Use `npm run test:evals` for offline checks and `npm run eval:tiers`
 for the paid experiment. It does not change production court behavior.
+`npm run eval:research` measures pipeline 3 native research in process (no
+sandbox, no database writes): research latency, quotes matched to the fetched
+sources, source review coverage and cost, from intake to source review, with
+`--case`, `--out`, `--resume` and `--max-usd` (default 8). It is paid as well.
 A running workflow can outlast a single HTTP request, but each step is bounded
 by the hosting plan's function duration (300 seconds on Vercel Hobby). Shared
 turns therefore run as many short steps: each decision generation (at most 150

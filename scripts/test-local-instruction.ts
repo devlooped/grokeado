@@ -33,6 +33,16 @@ try {
     await finishCase(legacyId, "failed");
     assert.equal(await deleteCase(legacyId, async () => {}), "deleted");
   }
+  const nativeId = `${id}-native`;
+  await createCase(nativeId, { kind: "text", text: "Sanitized local-only native research fixture." });
+  try {
+    assert.equal((await openSession(nativeId, () => 3)).pipelineVersion, 3);
+    assert.equal((await openSession(nativeId, noReselection)).pipelineVersion, 3);
+    assert.equal((await openSession(nativeId, 2)).pipelineVersion, 3, "rollback cannot move a pipeline 3 case back to pipeline 2");
+  } finally {
+    await finishCase(nativeId, "failed");
+    assert.equal(await deleteCase(nativeId, async () => {}), "deleted");
+  }
   const now = new Date().toISOString();
   await recordEvents(id, [{ type: "instruction_opened", seq: 1, at: now }]);
   const sessionKey = "instruction:grok:preparation";
