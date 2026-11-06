@@ -12,6 +12,8 @@ import type { ToolActivity } from "../domain/tool-activity.ts";
 import { preparationDefinitions } from "./preparation.ts";
 import { MemoryOperationRepository } from "./source-store.ts";
 import { extractSource, SourceService } from "./sources.ts";
+import { nativeResearchTools, NATIVE_GENERATION_MS } from "./native-research.ts";
+import { toolSet } from "../../sandbox/harness/instruction-agent.ts";
 
 const binding: SandboxBinding = { phase: "debate", seat: "grok", sessionKey: "debate:grok:preparation", phaseSessionId: "phase", expiresAt: "2026-11-06T00:00:00.000Z", revoked: false, model: { id: "fixture/model" }, gatewayTools: [], activeTurn: { id: "turn", expiresAt: "2026-11-05T23:00:00.000Z", remainingRequests: 10 } };
 const context = { phase: "debate" as const, pipelineVersion: 2, status: "in_session", phaseSessionId: "phase", activeTurnId: "turn", now: Date.parse("2026-11-05T00:00:00.000Z") };
@@ -167,4 +169,79 @@ test("sandbox source calls publish caller-attributed activity through the authen
   assert.equal(activities[0].modelId, "anthropic/caller");
   assert.equal(activities[0].seat, "claude");
   assert.deepEqual(activities[0].data, { tool: "read_source", url: "https://example.test/report" });
+});
+
+
+test("pipeline 3 bindings accept exactly the seat's native research tools and their output budget", async () => {
+  const models: SandboxBinding["model"][] = [
+    { id: "spacexai/fixture", providerOptions: { xai: { reasoningEffort: "high" } } },
+    { id: "openai/fixture", providerOptions: { openai: { reasoningEffort: "high" } } },
+    { id: "anthropic/fixture", providerOptions: { anthropic: { effort: "high" } } },
+    { id: "google/fixture", providerOptions: { google: { thinkingConfig: { thinkingLevel: "high" } } } },
+    { id: "other/fixture" },
+  ];
+  for (const phase of ["instruction", "criticism"] as const) for (const model of models) {
+    const native = nativeResearchTools(model.id, phase);
+    const snapshot: SandboxBinding = { ...binding, phase, model, gatewayTools: native, maxOutputTokens: 8192 };
+    let calls = 0;
+    const gateway = createGateway({ baseURL: "https://ai-gateway.vercel.sh/v4/ai", apiKey: "placeholder", fetch: async (url, init) => {
+      calls++;
+      const request = new Request(url, init);
+      const body = JSON.parse(String(init?.body));
+      assert.equal(request.headers.get("ai-language-model-id"), model.id, "native tools keep the model routing header");
+      validateGatewayGeneration(request, body, snapshot);
+      const [first] = body.tools as Array<Record<string, unknown>>;
+      const other = nativeResearchTools(model.id.startsWith("openai/") ? "google/x" : "openai/x", phase)[0];
+      for (const tools of [[{ ...first, id: "xai.code_execution" }], [{ ...first, args: { ...first!.args as object, maxUses: 99 } }], [other]]) {
+        assert.throws(() => validateGatewayGeneration(request, { ...body, tools }, snapshot), /generation_snapshot_mismatch/, "the request must equal the snapshot");
+        assert.throws(() => validateGatewayGeneration(request, { ...body, tools }, { ...snapshot, gatewayTools: tools }), /native_tools_forbidden/, "a snapshot holds only the model's own tools");
+      }
+      assert.throws(() => validateGatewayGeneration(request, body, { ...snapshot, phase: "debate" }), /native_tools_forbidden/, "debate has no native research");
+      assert.throws(() => validateGatewayGeneration(request, { ...body, maxOutputTokens: 16_384 }, snapshot), /generation_snapshot_mismatch/);
+      const { maxOutputTokens: _, ...pipeline2 } = snapshot;
+      assert.throws(() => validateGatewayGeneration(request, body, pipeline2), /generation_snapshot_mismatch/, "a pipeline 2 binding keeps 4096 output tokens");
+      return Response.json({ content: [{ type: "text", text: "Report" }], finishReason: { unified: "stop", raw: "stop" }, usage: { inputTokens: { total: 1 }, outputTokens: { total: 1 } } });
+    } });
+    const task = { caseId: "fixture", callId: "turn:0", model, system: "Research", messages: [], tools: native, resultPath: "/workspace/result.json" };
+    const result = await generateText({ model: gateway(model.id), providerOptions: model.providerOptions, system: "Research", prompt: "Claims",
+      tools: toolSet(task, undefined, new AbortController().signal), maxOutputTokens: 8192, stopWhen: stepCountIs(1), maxRetries: 0 });
+    assert.equal(result.text, "Report");
+    assert.equal(calls, 1);
+  }
+});
+
+test("the broker gives native research its longer call and audits what the provider cited", async () => {
+  const artifacts = new MemoryArtifactStore(), operations = new MemoryOperationRepository();
+  const reader = new SourceService("fixture", "es", {
+    artifacts, operations, extract: extractSource, translatorModelId: "fixture/translator", translatorFingerprint: "fixture-native",
+    translate: async (input) => ({ ...input, changed: false }), verifyLanguage: async () => ({ matches: true }),
+    download: async () => { throw new Error("generation must not acquire sources"); },
+  });
+  const record: CaseRecord = { id: "fixture", createdAt: "2026-11-06T00:00:00.000Z", status: "in_session", pipelineVersion: 3, submission: { kind: "text", text: "Fixture", resolvedLanguage: "es" } };
+  const model = { id: "openai/fixture" };
+  const native = nativeResearchTools(model.id, "instruction");
+  const nativeBinding: SandboxBinding = { ...binding, phase: "instruction", seat: "chatgpt", model, gatewayTools: native, maxOutputTokens: 8192 };
+  const body = { prompt: [{ role: "user", content: [{ type: "text", text: "Claims" }] }], tools: native, maxOutputTokens: 8192 };
+  const timeouts: Array<number | undefined> = [];
+  const audit: Array<{ data: Record<string, unknown> }> = [];
+  const dispatch = createTurnProxy({ origin: "https://staging.example.test", teamId: "team", projectId: "project" }, {
+    consume: async () => ({ caseId: "fixture", binding: nativeBinding }),
+    getCase: async () => ({ ...record, revision: 0 }), getEvents: async () => [], reader: () => reader, artifacts, activity: async () => {},
+    audit: async (_caseId, _key, value) => { audit.push(value as { data: Record<string, unknown> }); },
+    generate: async (_request, _body, timeoutMs) => {
+      timeouts.push(timeoutMs);
+      return JSON.stringify({ content: [
+        { type: "tool-call", toolCallId: "s1", toolName: "web_search", input: "{}", providerExecuted: true },
+        { type: "tool-result", toolCallId: "s1", toolName: "web_search", result: {} },
+        { type: "source", sourceType: "url", id: "1", url: "https://example.test/report", title: "Report" },
+        { type: "text", text: "Report" },
+      ], usage: {} });
+    },
+  });
+  const response = await dispatch(new Request("https://ai-gateway.vercel.sh/v4/ai/language-model", { method: "POST", headers: { "content-type": "application/json", "ai-language-model-id": model.id, "ai-language-model-specification-version": "4", "ai-language-model-streaming": "false", "x-court-call-id": "turn:0" }, body: JSON.stringify(body) }),
+    { host: "ai-gateway.vercel.sh", teamId: "team", projectId: "project", sandboxName: "persistent-fixture", sandboxId: "vm" });
+  assert.equal(response.status, 200);
+  assert.deepEqual(timeouts, [NATIVE_GENERATION_MS]);
+  assert.deepEqual(audit[0]!.data.sources, [{ url: "https://example.test/report", title: "Report" }]);
+  assert.equal(audit[0]!.data.searches, 1);
 });

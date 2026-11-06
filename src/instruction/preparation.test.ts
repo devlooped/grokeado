@@ -3,7 +3,7 @@ import test from "node:test";
 import { Sandbox } from "@vercel/sandbox";
 import { FatalError } from "workflow";
 import { MemoryPhaseRepository, PhaseSession } from "../court/phase-session.ts";
-import { advancePreparation, deleteCaseSandboxes, PREPARATION_SYNTHESIS_MS, prepareInSandbox, sweepCaseSandboxes, withSandboxCleanup } from "./preparation.ts";
+import { advancePreparation, deleteCaseSandboxes, NATIVE_CALL_MARGIN_MS, NATIVE_OUTPUT_TOKENS, nativePreparationDefinitions, PREPARATION_SYNTHESIS_MS, prepareInSandbox, sweepCaseSandboxes, withSandboxCleanup } from "./preparation.ts";
 
 test("preparation requires a final response, preserves checkpoints on exhaustion, and resumes the same sandbox", async () => {
   const keys = ["INSTRUCTION_TOOL_ORIGIN", "INSTRUCTION_SANDBOX_SNAPSHOT_ID", "INSTRUCTION_SANDBOX_TEAM_ID", "INSTRUCTION_SANDBOX_PROJECT_ID"] as const;
@@ -308,4 +308,64 @@ test("the sweep deletes only stopped preparation sandboxes of ended or missing c
   const swept = await sweepCaseSandboxes({ sandbox, caseStatus: async (caseId) => statuses[caseId] });
   assert.deepEqual(swept.sort(), ["deleted-case", "failed", "resolved"]);
   assert.deepEqual(deleted.sort(), ["deleted-case", "failed", "resolved"]);
+});
+
+
+test("pipeline 3 prepares with one native research call and files nothing when it times out", async () => {
+  const keys = ["INSTRUCTION_TOOL_ORIGIN", "INSTRUCTION_SANDBOX_SNAPSHOT_ID", "INSTRUCTION_SANDBOX_TEAM_ID", "INSTRUCTION_SANDBOX_PROJECT_ID"] as const;
+  const previous = keys.map((key) => process.env[key]);
+  Object.assign(process.env, { INSTRUCTION_TOOL_ORIGIN: "https://staging.example.test", INSTRUCTION_SANDBOX_SNAPSHOT_ID: "fixture-snapshot", INSTRUCTION_SANDBOX_TEAM_ID: "fixture-team", INSTRUCTION_SANDBOX_PROJECT_ID: "fixture-project" });
+  try {
+    let runs = 0;
+    let response: unknown = { messages: [{ role: "assistant", content: "Report" }], text: "Report with quotes", finishReason: "stop", sources: [{ url: "https://example.test/a" }], searches: 3 };
+    const tasks: Array<{ tools: unknown[]; maxOutputTokens?: number; timeoutMs: number; toolChoice: string }> = [];
+    const bindings: Array<{ gatewayTools: unknown[]; maxOutputTokens?: number }> = [];
+    const sandbox = {
+      name: "native-fixture",
+      writeFiles: async (files: { path: string; content: string }[]) => { const task = files.find((file) => file.path === "/workspace/task.json"); if (task) tasks.push(JSON.parse(task.content)); },
+      runCommand: async (command: { cmd: string }) => { if (command.cmd !== "node") return { exitCode: 0 }; runs++; return { cmdId: `call-${runs}`, wait: async () => ({ exitCode: 0 }) }; },
+      getCommand: async () => { throw new Error("Command not found"); },
+      readFileToBuffer: async () => Buffer.from(JSON.stringify(response)),
+      stop: async () => {},
+    };
+    const deps = {
+      sandbox: { create: async () => sandbox, get: async () => sandbox } as unknown as typeof Sandbox,
+      bind: async (_caseId: string, _name: string, binding: { gatewayTools: unknown[]; maxOutputTokens?: number }) => { bindings.push(binding); },
+    };
+    const repository = new MemoryPhaseRepository();
+    const model = { id: "openai/fixture" };
+    const native = nativePreparationDefinitions("instruction", model.id);
+    const initial = { phase: "instruction" as const, seat: "chatgpt" as const, channel: "preparation" as const, model, system: "fixture", tools: JSON.stringify(native), initial: "Claims" };
+    const session = await PhaseSession.open("fixture-native", initial, repository);
+    await session.begin("turn", [], "Research");
+    assert.equal(await prepareInSandbox(session, deps), "Report with quotes");
+    assert.equal(runs, 1, "native research is one call, without a step loop");
+    assert.deepEqual(tasks[0]!.tools, native);
+    assert.equal(tasks[0]!.maxOutputTokens, NATIVE_OUTPUT_TOKENS);
+    assert.equal(tasks[0]!.toolChoice, "auto");
+    assert.ok(tasks[0]!.timeoutMs > 250_000 && tasks[0]!.timeoutMs <= 300_000 - NATIVE_CALL_MARGIN_MS, "the call may use the turn, less its margin");
+    assert.deepEqual(bindings[0], { ...bindings[0], gatewayTools: native, maxOutputTokens: NATIVE_OUTPUT_TOKENS });
+    assert.equal(session.state.turns.turn!.complete, true);
+    assert.equal(session.state.turns.turn!.timedOut, undefined);
+
+    response = { messages: [], text: "", finishReason: "timeout" };
+    const slow = await PhaseSession.open("fixture-native-timeout", initial, repository);
+    await slow.begin("turn", [], "Research");
+    assert.equal(await prepareInSandbox(slow, deps), "", "a timed-out call files nothing instead of failing the case");
+    assert.equal(slow.state.turns.turn!.timedOut, true);
+    assert.equal(slow.state.turns.turn!.complete, true);
+
+    const late = await PhaseSession.open("fixture-native-late", initial, repository);
+    const lateTurn = await late.begin("turn", [], "Research");
+    lateTurn.expiresAt = new Date(Date.now() + NATIVE_CALL_MARGIN_MS).toISOString();
+    const before = runs;
+    assert.equal(await prepareInSandbox(late, deps), "");
+    assert.equal(runs, before, "no call starts without time for it");
+    assert.equal(late.state.turns.turn!.timedOut, true);
+
+    // Intake keeps the pipeline 2 host tools.
+    assert.ok(nativePreparationDefinitions("intake", model.id).every((definition) => definition.type === "function"));
+  } finally {
+    keys.forEach((key, index) => { if (previous[index] === undefined) delete process.env[key]; else process.env[key] = previous[index]; });
+  }
 });

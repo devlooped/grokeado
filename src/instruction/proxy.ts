@@ -8,6 +8,7 @@ import { sha256 } from "../evidence/validate.ts";
 import { consumeSandboxBinding, getCase, getEvents, recordCaseToolActivity, saveCaseAuditRecord } from "../store.ts";
 import { type SandboxBinding } from "./authorization.ts";
 import { validateGatewayGeneration } from "./gateway-validation.ts";
+import { hasNativeTools, nativeCitations, NATIVE_GENERATION_MS } from "./native-research.ts";
 import { sourceDownloader } from "./research.ts";
 import { liveSourceDependencies, SourceService } from "./sources.ts";
 import { executeSourceTool } from "./tools.ts";
@@ -39,10 +40,10 @@ async function boundedJson(request: Request): Promise<unknown> {
   return JSON.parse(Buffer.concat(chunks).toString("utf8"));
 }
 
-export async function forwardGatewayGeneration(request: Request, body: unknown): Promise<string> {
+export async function forwardGatewayGeneration(request: Request, body: unknown, timeoutMs = 150_000): Promise<string> {
   const key = process.env.AI_GATEWAY_API_KEY?.trim();
   if (!key || key === "placeholder") throw new Error("gateway_key_unavailable");
-  const response = await fetch("https://ai-gateway.vercel.sh/v4/ai/language-model", { method: "POST", redirect: "error", signal: AbortSignal.timeout(150_000), body: JSON.stringify(body), headers: {
+  const response = await fetch("https://ai-gateway.vercel.sh/v4/ai/language-model", { method: "POST", redirect: "error", signal: AbortSignal.timeout(timeoutMs), body: JSON.stringify(body), headers: {
     "content-type": "application/json", authorization: `Bearer ${key}`,
     // Match the installed Gateway SDK wire protocol, using host-owned auth.
     "ai-gateway-protocol-version": "0.0.1", "ai-gateway-auth-method": "api-key",
@@ -69,8 +70,10 @@ async function generation(request: Request, body: unknown, caseId: string, bindi
   const requestText = JSON.stringify(body);
   const requestHash = sha256(requestText);
   const key = `sandbox-generation:${binding.phaseSessionId}:${sha256(callId)}`;
+  // Pipeline 3 research runs the provider's searches within this one call.
+  const native = hasNativeTools(binding.gatewayTools);
   const result = await reader.hostStage(key, "sandbox-generation", async () => {
-    const text = await deps.generate(request, body);
+    const text = await deps.generate(request, body, native ? NATIVE_GENERATION_MS : undefined);
     const parsed = JSON.parse(text) as { usage?: unknown };
     const root = `${binding.phase === "debate" ? "discussion" : "instruction/runs"}/${binding.seat}/${binding.activeTurn!.id}/${sha256(callId)}`;
     const requestPath = `${root}/request.json`;
@@ -82,8 +85,11 @@ async function generation(request: Request, body: unknown, caseId: string, bindi
   const bytes = (await deps.artifacts.read(caseId)).get(result.resultPath);
   if (!bytes || sha256(bytes) !== result.resultHash) throw new Error("generation_result_unavailable");
   const id = `step:${binding.phaseSessionId}:${sha256(callId)}`;
-  await deps.audit(caseId, id, { schemaVersion: 2, id, kind: "model_step", at: result.at, seat: binding.seat, phase: binding.phase, modelId: binding.model.id, effort: modelEffort(binding.model), data: { sessionId: binding.phaseSessionId, turnId: binding.activeTurn!.id, callId, channel: "preparation", sequence: (body.prompt as unknown[]).length, usage: result.usage, request: result.requestPath, result: result.resultPath } });
-  return new Response(new TextDecoder().decode(bytes), { headers: { "content-type": "application/json" } });
+  const text = new TextDecoder().decode(bytes);
+  // What the provider cited, and its billable searches, go to case.jsonl.
+  const cited = native ? nativeCitations(JSON.parse(text)) : undefined;
+  await deps.audit(caseId, id, { schemaVersion: 2, id, kind: "model_step", at: result.at, seat: binding.seat, phase: binding.phase, modelId: binding.model.id, effort: modelEffort(binding.model), data: { sessionId: binding.phaseSessionId, turnId: binding.activeTurn!.id, callId, channel: "preparation", sequence: (body.prompt as unknown[]).length, usage: result.usage, request: result.requestPath, result: result.resultPath, ...cited } });
+  return new Response(text, { headers: { "content-type": "application/json" } });
 }
 
 export function createTurnProxy(config: { origin: string; teamId: string; projectId: string }, deps: TurnProxyDependencies = live): ProxyHandler {

@@ -10,12 +10,31 @@ import { caseSandboxNames, findCaseAlias, getCase, saveSandboxBinding } from "..
 import { SourceToolSchemas, sourceToolsFor } from "./tools.ts";
 import { ComputeSchema } from "../../sandbox/harness/compute.ts";
 import { instructionBridgeConfig } from "./config.ts";
+import { nativeResearchTools, type ProviderToolDefinition } from "./native-research.ts";
 
 export function preparationDefinitions(phase: PhaseSession["state"]["phase"]) {
   return [
     ...sourceToolsFor(phase).map((name) => ({ type: "function" as const, name, description: name, inputSchema: z.toJSONSchema(SourceToolSchemas[name], { target: "draft-7" }) })),
     { type: "function" as const, name: "compute", description: "compute", inputSchema: z.toJSONSchema(ComputeSchema, { target: "draft-7" }) },
   ];
+}
+
+// Pipeline 3 instruction and criticism research with the provider's own tools,
+// in one call; intake and debate prepare as in pipeline 2.
+export function nativePreparationDefinitions(phase: PhaseSession["state"]["phase"], modelId: string) {
+  return phase === "instruction" || phase === "criticism" ? nativeResearchTools(modelId, phase) : preparationDefinitions(phase);
+}
+
+// A native research call writes one report with every quote.
+export const NATIVE_OUTPUT_TOKENS = 8192;
+// A native research call ends this long before its turn, so its result is read
+// and the decision still starts within the turn.
+export const NATIVE_CALL_MARGIN_MS = 15_000;
+
+// The tools the session was opened with; pipeline 3 sessions hold provider tools.
+function nativeDefinitions(session: PhaseSession): ProviderToolDefinition[] | undefined {
+  const definitions = JSON.parse(session.state.tools) as Array<{ type: string }>;
+  return definitions.length && definitions.every((definition) => definition.type === "provider") ? definitions as ProviderToolDefinition[] : undefined;
 }
 
 // A persistent VM snapshots its filesystem on every stop so the next turn of
@@ -87,6 +106,7 @@ export async function advancePreparation(session: PhaseSession, deps: Preparatio
     await stopSandbox(session, deps, opened);
     return turn.draft!;
   };
+  const native = nativeDefinitions(session);
   try {
     if (turn.done && !turn.preparationCommand) return await complete();
     let command: Awaited<ReturnType<Sandbox["getCommand"]>>;
@@ -95,13 +115,16 @@ export async function advancePreparation(session: PhaseSession, deps: Preparatio
       try { command = await sandbox.getCommand(turn.preparationCommand.id); }
       catch (error) { return await restart(error); }
     } else {
+      // A native call that has no time left files nothing; the case goes on.
+      if (native && Date.parse(turn.expiresAt) - Date.now() <= NATIVE_CALL_MARGIN_MS + 5000) return await timedOut();
       // A replay cannot replenish a spent checkpoint.
       if (turn.steps >= 8 || Date.now() >= Date.parse(turn.expiresAt)) throw exhausted(session, turn);
       const sandbox = await openSandbox(session, deps, opened);
       if (!turn.preparationBound) {
         await deps.bind(session.caseId, sandbox.name, {
           phase: session.state.phase, seat: session.state.seat, sessionKey: session.key, phaseSessionId: session.state.id,
-          expiresAt: new Date(Date.now() + 24 * 60 * 60_000).toISOString(), revoked: false, model: session.state.model, gatewayTools: preparationDefinitions(session.state.phase),
+          expiresAt: new Date(Date.now() + 24 * 60 * 60_000).toISOString(), revoked: false, model: session.state.model, gatewayTools: native ?? preparationDefinitions(session.state.phase),
+          ...(native ? { maxOutputTokens: NATIVE_OUTPUT_TOKENS } : {}),
           activeTurn: { id: turn.id, expiresAt: turn.expiresAt, remainingRequests: 60 },
         });
         turn.preparationBound = true;
@@ -112,14 +135,16 @@ export async function advancePreparation(session: PhaseSession, deps: Preparatio
       const resultPath = `/workspace/result-${callId.replaceAll(":", "-")}.json`;
       const remainingMs = Math.max(1, Date.parse(turn.expiresAt) - Date.now());
       // Reserve the last step, and the synthesis time, for a real final response.
-      const toolChoice = turn.preparationToolChoice ?? (turn.steps === 7 || remainingMs <= PREPARATION_SYNTHESIS_MS + PREPARATION_TOOL_STEP_MS ? "none" : "auto");
+      const toolChoice = native ? "auto" : turn.preparationToolChoice ?? (turn.steps === 7 || remainingMs <= PREPARATION_SYNTHESIS_MS + PREPARATION_TOOL_STEP_MS ? "none" : "auto");
       // The broker deduplicates by call ID and request hash. A replay must not
       // change that request just because less time remains after interruption.
       turn.preparationToolChoice = toolChoice;
       await session.save();
-      const commandTimeoutMs = Math.max(1, Math.min(165_000, toolChoice === "auto" ? remainingMs - PREPARATION_SYNTHESIS_MS : remainingMs));
-      const timeoutMs = Math.max(1, Math.min(150_000, commandTimeoutMs - 5000));
-      await sandbox.writeFiles([{ path: "/workspace/task.json", content: JSON.stringify({ caseId: session.caseId, callId, model: session.state.model, system: session.state.system, messages: session.state.messages, tools: preparationDefinitions(session.state.phase), toolChoice, timeoutMs, resultPath }) }]);
+      // A native call has no synthesis after it: it may use the turn's time.
+      const commandTimeoutMs = native ? Math.max(1, remainingMs - NATIVE_CALL_MARGIN_MS + 5000)
+        : Math.max(1, Math.min(165_000, toolChoice === "auto" ? remainingMs - PREPARATION_SYNTHESIS_MS : remainingMs));
+      const timeoutMs = native ? Math.max(1, remainingMs - NATIVE_CALL_MARGIN_MS) : Math.max(1, Math.min(150_000, commandTimeoutMs - 5000));
+      await sandbox.writeFiles([{ path: "/workspace/task.json", content: JSON.stringify({ caseId: session.caseId, callId, model: session.state.model, system: session.state.system, messages: session.state.messages, tools: native ?? preparationDefinitions(session.state.phase), toolChoice, timeoutMs, ...(native ? { maxOutputTokens: NATIVE_OUTPUT_TOKENS } : {}), resultPath }) }]);
       command = await sandbox.runCommand({ cmd: "node", args: ["--import", "/opt/evidence-harness/node_modules/tsx/dist/loader.mjs", "/opt/evidence-harness/instruction-agent.ts", "/workspace/task.json"], cwd: "/workspace", timeoutMs: commandTimeoutMs, detached: true });
       turn.preparationCommand = { id: command.cmdId, resultPath };
       await session.save();
@@ -136,6 +161,17 @@ export async function advancePreparation(session: PhaseSession, deps: Preparatio
     if (!bytes || bytes.byteLength > 2_000_000) throw new Error("Preparation checkpoint unavailable");
     const result = JSON.parse(bytes.toString("utf8")) as { messages: ModelMessage[]; text: string; finishReason: string };
     if (!Array.isArray(result.messages) || result.messages.some((message) => message.role !== "assistant" && message.role !== "tool")) throw new Error("Invalid preparation messages");
+    // One native call is the whole preparation: its report, possibly empty,
+    // goes to the decision. A timeout files nothing instead of failing the case.
+    if (native) {
+      delete turn.preparationToolChoice;
+      delete turn.preparationCommand;
+      if (result.finishReason === "timeout") return await timedOut();
+      turn.draft = result.text;
+      turn.done = true;
+      await session.append(result.messages);
+      return await complete();
+    }
     // A call that requested tools and ran out of time spends its step without
     // output; the synthesis still follows. A synthesis that runs out cannot.
     const continues = result.finishReason === "tool-calls" || (result.finishReason === "timeout" && turn.preparationToolChoice === "auto");
@@ -154,6 +190,14 @@ export async function advancePreparation(session: PhaseSession, deps: Preparatio
     if (session.state.activeTurn) { delete session.state.activeTurn; await session.save(); }
     await stopSandbox(session, deps, opened);
     throw error;
+  }
+
+  async function timedOut(): Promise<string> {
+    turn.draft = "";
+    turn.timedOut = true;
+    turn.done = true;
+    await session.save();
+    return await complete();
   }
 
   // The VM stopped or lost the call in flight: start the same call again. Its

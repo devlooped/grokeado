@@ -4,6 +4,8 @@ import { createGateway, generateText, jsonSchema, stepCountIs } from "ai";
 import { validateGatewayGeneration } from "./gateway-validation.ts";
 import { preparationDefinitions } from "./preparation.ts";
 import { forwardGatewayGeneration } from "./proxy.ts";
+import { nativeResearchTools, NATIVE_GENERATION_MS } from "./native-research.ts";
+import { toolSet } from "../../sandbox/harness/instruction-agent.ts";
 
 test("gateway forwarding uses AI_GATEWAY_API_KEY and rejects a missing or placeholder key", async (t) => {
   const keys = ["AI_GATEWAY_API_KEY", "EVIDENCE_AI_GATEWAY_API_KEY"] as const;
@@ -75,4 +77,29 @@ test("upstream rejection logs only the HTTP status, not its body or credentials"
   const request = new Request("https://ai-gateway.vercel.sh/v4/ai/language-model", { headers: { "ai-language-model-id": "fixture/model" } });
   await assert.rejects(forwardGatewayGeneration(request, {}), /gateway_generation_failed/);
   assert.deepEqual(diagnostics, [["Gateway generation rejected:", 400]]);
+});
+
+
+test("SDK native research requests reach the Gateway with their provider tools unchanged", async (t) => {
+  const previous = process.env.AI_GATEWAY_API_KEY;
+  process.env.AI_GATEWAY_API_KEY = "host-fixture";
+  t.after(() => { if (previous === undefined) delete process.env.AI_GATEWAY_API_KEY; else process.env.AI_GATEWAY_API_KEY = previous; });
+  const native = nativeResearchTools("spacexai/fixture", "instruction");
+  let upstream: Record<string, unknown> | undefined;
+  t.mock.method(globalThis, "fetch", (async (_url, init) => {
+    upstream = JSON.parse(String(init?.body));
+    return Response.json({ content: [{ type: "text", text: "Report" }], finishReason: { unified: "stop", raw: "stop" }, usage: { inputTokens: { total: 1 }, outputTokens: { total: 1 } } });
+  }) as typeof fetch);
+  const binding = { phase: "instruction" as const, seat: "grok" as const, sessionKey: "instruction:grok:preparation", phaseSessionId: "fixture-phase", expiresAt: "2026-11-06T00:00:00.000Z", revoked: false, model: { id: "spacexai/fixture" }, gatewayTools: native, maxOutputTokens: 8192 };
+  const gateway = createGateway({ baseURL: "https://ai-gateway.vercel.sh/v4/ai", apiKey: "placeholder", fetch: async (url, init) => {
+    const request = new Request(url, init);
+    const body = JSON.parse(String(init?.body));
+    validateGatewayGeneration(request, body, binding);
+    return new Response(await forwardGatewayGeneration(request, body, NATIVE_GENERATION_MS), { headers: { "content-type": "application/json" } });
+  } });
+  const task = { caseId: "fixture", callId: "turn:0", model: binding.model, system: "Research", messages: [], tools: native, resultPath: "/workspace/result.json" };
+  const result = await generateText({ model: gateway("spacexai/fixture"), system: "Research", prompt: "Claims",
+    tools: toolSet(task, undefined, new AbortController().signal), maxOutputTokens: 8192, stopWhen: stepCountIs(1), maxRetries: 0 });
+  assert.equal(result.text, "Report");
+  assert.deepEqual(upstream?.tools, native.map(({ type, name, id, args }) => ({ type, name, id, args })));
 });

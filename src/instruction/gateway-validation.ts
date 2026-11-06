@@ -1,4 +1,5 @@
 import type { SandboxBinding } from "./authorization.ts";
+import { nativeResearchTools } from "./native-research.ts";
 
 export function stableJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
@@ -34,13 +35,16 @@ export function validateGatewayGeneration(request: Request, body: unknown, bindi
         !/^ai\/\d+\.\d+\.\d+(?:[-+][a-zA-Z0-9.-]+)?$/.test(headers["user-agent"])) throw new Error("generation_headers_forbidden");
   }
   const keys = new Set(["prompt", "tools", "toolChoice", "providerOptions", "maxOutputTokens", "headers"]);
-  if (Object.keys(record).some((key) => !keys.has(key)) || !Array.isArray(record.prompt) || record.maxOutputTokens !== 4096 ||
+  if (Object.keys(record).some((key) => !keys.has(key)) || !Array.isArray(record.prompt) || record.maxOutputTokens !== (binding.maxOutputTokens ?? 4096) ||
       request.headers.get("ai-language-model-id") !== binding.model.id || request.headers.get("ai-language-model-specification-version") !== "4" ||
       request.headers.get("ai-language-model-streaming") !== "false" ||
       stableJson(record.providerOptions ?? {}) !== stableJson(binding.model.providerOptions ?? {}) ||
       stableJson(record.tools ?? []) !== stableJson(binding.gatewayTools)) throw new Error("generation_snapshot_mismatch");
   const tools = record.tools as Array<Record<string, unknown>> | undefined;
-  if (tools?.some((tool) => tool.type !== "function")) throw new Error("native_tools_forbidden");
+  // Native research tools run on the provider's side. Only those of the
+  // binding's model and phase are accepted, with their exact arguments.
+  const native = binding.phase === "instruction" || binding.phase === "criticism" ? nativeResearchTools(binding.model.id, binding.phase).map(stableJson) : [];
+  if (tools?.some((tool) => tool.type !== "function" && !(tool.type === "provider" && native.includes(stableJson(tool))))) throw new Error("native_tools_forbidden");
   if (record.toolChoice !== undefined) {
     const choice = record.toolChoice as Record<string, unknown>;
     if (!choice || typeof choice !== "object" || Object.keys(choice).some((key) => !["type", "toolName"].includes(key)) ||
