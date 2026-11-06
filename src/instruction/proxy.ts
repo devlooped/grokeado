@@ -100,7 +100,17 @@ export function createTurnProxy(config: { origin: string; teamId: string; projec
       if (!record || record.pipelineVersion !== 2) throw new Error("case_unavailable");
       const events = await deps.getEvents(caseId);
       return Response.json(await executeSourceTool(call, { record, events, phase: binding.phase, seat: binding.seat, turnId: binding.activeTurn!.id, reader: deps.reader(record), artifacts: deps.artifacts }));
-    } catch { return Response.json({ error: "tool_request_unavailable" }, { status: 403 }); }
+    } catch (error) {
+      // Keep public responses generic and log only known codes, never request
+      // bodies, credentials, source text or arbitrary upstream error messages.
+      const reason = error instanceof Error && [
+        "invalid_generation", "generation_headers_forbidden", "generation_snapshot_mismatch", "native_tools_forbidden", "tool_choice_forbidden",
+        "external_model_content_forbidden", "message_options_forbidden", "missing_generation_call_id", "generation_call_id_reused",
+        "generation_result_unavailable", "gateway_key_unavailable", "gateway_generation_failed", "gateway_result_too_large", "sandbox_forbidden",
+      ].includes(error.message) ? error.message : "tool_request_unavailable";
+      console.warn("Sandbox request rejected:", reason);
+      return Response.json({ error: "tool_request_unavailable" }, { status: 403 });
+    }
   };
 }
 

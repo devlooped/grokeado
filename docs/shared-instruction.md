@@ -107,6 +107,10 @@ generation paths are forwarded. Generation is constrained to the snapshotted
 model/options and harness function tools; native search, URL/file inputs and
 unmatched routes fail closed. No database, Blob or gateway credential enters the
 VM. Deployed OIDC, deployment protection and egress must still be smoke-tested.
+The SDK also serializes its user-agent into the generation body; the broker
+accepts only that metadata, not arbitrary header overrides. Rejections log known
+reason codes on the host while public errors remain generic. Preparation errors
+include the command exit code, never raw sandbox output.
 
 OpenAI requests use case/phase/seat/channel-scoped cache keys. Anthropic requests
 mark the immutable initial message with an ephemeral cache breakpoint; other

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { createGateway, generateText, jsonSchema, stepCountIs } from "ai";
 import { defineSandboxProxy } from "@vercel/sandbox/proxy";
 import type { CaseRecord } from "../domain/court.ts";
 import { MemoryArtifactStore } from "../evidence/artifacts.ts";
@@ -7,6 +8,7 @@ import { instructionSandboxLaunch } from "../evidence/broker.ts";
 import { assertToolCapability, authorizeSandboxBinding, committedPhase, type SandboxBinding } from "./authorization.ts";
 import { validateGatewayGeneration } from "./gateway-validation.ts";
 import { createTurnProxy } from "./proxy.ts";
+import { preparationDefinitions } from "./preparation.ts";
 import { MemoryOperationRepository } from "./source-store.ts";
 import { extractSource, SourceService } from "./sources.ts";
 
@@ -47,7 +49,40 @@ test("gateway validation permits only snapshotted ordinary generation and preser
   const before = JSON.stringify(body);
   validateGatewayGeneration(request, body, binding);
   assert.equal(JSON.stringify(body), before);
+  for (const headers of [null, [], {}, "ai/7.0.157", { authorization: "Bearer fixture" }, { "user-agent": "ai/7.0.157", "ai-language-model-id": "other/model" }, { "user-agent": "untrusted" }, { "user-agent": "ai/7.0.157\r\nAuthorization: fixture" }, { "user-agent": "ai/7.0.157\n" }, { "user-agent": `ai/7.0.157-${"x".repeat(80)}` }]) assert.throws(() => validateGatewayGeneration(request, { ...body, headers }, binding), /generation_headers_forbidden/);
   for (const changed of [{ tools: [{ type: "provider-defined", id: "web_search" }] }, { providerOptions: { google: { useSearchGrounding: true } } }, { maxOutputTokens: 999_999 }, { responseFormat: { type: "url-reader" } }, { prompt: [{ role: "user", content: [{ type: "file", data: "https://foreign.test/source.pdf" }] }] }, { prompt: [{ role: "user", content: "x", providerOptions: { google: { retrieval: true } } }] }]) assert.throws(() => validateGatewayGeneration(request, { ...body, ...changed }, binding));
+});
+
+test("broker accepts actual SDK preparation requests in every phase without relaxing the snapshot", async () => {
+  const models: SandboxBinding["model"][] = [
+    { id: "fixture/model" },
+    { id: "openai/fixture", providerOptions: { openai: { reasoningEffort: "high", promptCacheKey: "fixture-cache" } } },
+    { id: "anthropic/fixture", providerOptions: { anthropic: { effort: "high" } } },
+    { id: "google/fixture", providerOptions: { google: { thinkingConfig: { thinkingLevel: "high" } } } },
+    { id: "spacexai/fixture", providerOptions: { xai: { reasoningEffort: "high" } } },
+  ];
+  for (const phase of ["intake", "instruction", "criticism", "debate"] as const) for (const model of models) {
+    const definitions = preparationDefinitions(phase);
+    let calls = 0;
+    const gateway = createGateway({ baseURL: "https://ai-gateway.vercel.sh/v4/ai", apiKey: "placeholder", fetch: async (url, init) => {
+      calls++;
+      const request = new Request(url, init);
+      const body = JSON.parse(String(init?.body));
+      assert.match(body.headers["user-agent"], /^ai\//, "capture SDK metadata rather than a hand-built request");
+      const snapshot = { ...binding, phase, model, gatewayTools: definitions };
+      validateGatewayGeneration(request, body, snapshot);
+      assert.throws(() => validateGatewayGeneration(request, { ...body, maxOutputTokens: 8192 }, snapshot));
+      assert.throws(() => validateGatewayGeneration(request, { ...body, providerOptions: { gateway: { models: ["other/model"] } } }, snapshot));
+      return Response.json({ content: [{ type: "text", text: "Fixture analysis" }], finishReason: { unified: "stop", raw: "stop" }, usage: { inputTokens: { total: 1 }, outputTokens: { total: 1 } } });
+    } });
+    const result = await generateText({ model: gateway(model.id), providerOptions: model.providerOptions,
+      system: "Canonical material only", messages: [{ role: "user", content: "Prepare", ...(model.id.startsWith("anthropic/") ? { providerOptions: { anthropic: { cacheControl: { type: "ephemeral" } } } } : {}) }],
+      tools: Object.fromEntries(definitions.map((definition) => [definition.name, { description: definition.description, inputSchema: jsonSchema(definition.inputSchema), execute: async () => ({}) }])),
+      maxOutputTokens: 4096, stopWhen: stepCountIs(1), maxRetries: 0,
+    });
+    assert.equal(result.text, "Fixture analysis");
+    assert.equal(calls, 1);
+  }
 });
 
 test("SDK proxy rejects missing/invalid OIDC, and dispatch rejects wrong identity/method/origin before case access", async () => {
@@ -62,7 +97,9 @@ test("SDK proxy rejects missing/invalid OIDC, and dispatch rejects wrong identit
   assert.equal(calls, 0);
 });
 
-test("persistent sandbox proxy binds the verified name across VM resumes and reuses generation checkpoints", async () => {
+test("persistent sandbox proxy binds the verified name across VM resumes and reuses generation checkpoints", async (t) => {
+  const diagnostics: unknown[][] = [];
+  t.mock.method(console, "warn", (...args: unknown[]) => { diagnostics.push(args); });
   const artifacts = new MemoryArtifactStore(), operations = new MemoryOperationRepository();
   const reader = new SourceService("fixture", "es", {
     artifacts, operations, extract: extractSource, translatorModelId: "fixture/translator", translatorFingerprint: "fixture-v1",
@@ -71,12 +108,12 @@ test("persistent sandbox proxy binds the verified name across VM resumes and reu
   });
   const record: CaseRecord = { id: "fixture", createdAt: "2026-11-05T00:00:00.000Z", status: "in_session", pipelineVersion: 2, submission: { kind: "text", text: "Fixture", resolvedLanguage: "es" } };
   const body = { prompt: [{ role: "user", content: [{ type: "text", text: "Canonical only" }], providerOptions: { anthropic: { cacheControl: { type: "ephemeral" } } } }], tools: [], maxOutputTokens: 4096 };
-  let generations = 0;
+  let generations = 0, auditError: string | undefined;
   const audit = new Map<string, unknown>();
   const dispatch = createTurnProxy({ origin: "https://staging.example.test", teamId: "team", projectId: "project" }, {
     consume: async (name) => { assert.equal(name, "persistent-fixture"); return { caseId: "fixture", binding }; },
     getCase: async () => ({ ...record, revision: 0 }), getEvents: async () => [], reader: () => reader, artifacts,
-    audit: async (_caseId, key, value) => { if (audit.has(key)) assert.deepEqual(value, audit.get(key)); audit.set(key, value); },
+    audit: async (_caseId, key, value) => { if (auditError) throw new Error(auditError); if (audit.has(key)) assert.deepEqual(value, audit.get(key)); audit.set(key, value); },
     generate: async (_request, actual) => { generations++; assert.deepEqual(actual, body); return JSON.stringify({ content: [], usage: { inputTokens: { cacheRead: 42, cacheWrite: 10 } } }); },
   });
   const meta = { host: "ai-gateway.vercel.sh", teamId: "team", projectId: "project", sandboxName: "persistent-fixture", sandboxId: "vm-first" };
@@ -91,5 +128,13 @@ test("persistent sandbox proxy binds the verified name across VM resumes and reu
   assert.match(JSON.stringify([...audit.values()]), /cacheRead/);
   const changed = await dispatch(request({ ...body, prompt: [{ ...body.prompt[0], content: [{ type: "text", text: "Changed request" }] }] }), meta);
   assert.equal(changed.status, 403, "the same call ID cannot replay a different prompt");
+  assert.equal(generations, 1);
+  assert.deepEqual(diagnostics, [["Sandbox request rejected:", "generation_call_id_reused"]]);
+  assert.deepEqual(await changed.json(), { error: "tool_request_unavailable" }, "public errors stay generic");
+  auditError = "private upstream response with credentials";
+  const failedAudit = await dispatch(request(), meta);
+  assert.equal(failedAudit.status, 403);
+  assert.deepEqual(diagnostics.at(-1), ["Sandbox request rejected:", "tool_request_unavailable"], "unknown error messages are never logged");
+  assert.deepEqual(await failedAudit.json(), { error: "tool_request_unavailable" });
   assert.equal(generations, 1);
 });

@@ -9,7 +9,7 @@ test("preparation requires a final response, preserves checkpoints on exhaustion
   const previous = keys.map((key) => process.env[key]);
   Object.assign(process.env, { INSTRUCTION_TOOL_ORIGIN: "https://staging.example.test", INSTRUCTION_SANDBOX_SNAPSHOT_ID: "fixture-snapshot", INSTRUCTION_SANDBOX_TEAM_ID: "fixture-team", INSTRUCTION_SANDBOX_PROJECT_ID: "fixture-project" });
   try {
-    let runs = 0, stops = 0, creates = 0, resumes = 0, harnessUploads = 0;
+    let runs = 0, stops = 0, creates = 0, resumes = 0, harnessUploads = 0, exitCode = 0;
     let response = { messages: [{ role: "assistant", content: "Still working" }], text: "unfinished draft", finishReason: "tool-calls" };
     const sandbox = {
       name: "persistent-fixture", writeFiles: async (files: { path: string; content: string }[]) => {
@@ -19,7 +19,7 @@ test("preparation requires a final response, preserves checkpoints on exhaustion
           assert.ok(files.find((file) => file.path === "/opt/evidence-harness/compute.ts")?.content.includes("export"));
         }
       },
-      runCommand: async (command: { cmd: string }) => { if (command.cmd === "node") runs++; return { exitCode: 0 }; },
+      runCommand: async (command: { cmd: string }) => { if (command.cmd === "node") { runs++; return { exitCode }; } return { exitCode: 0 }; },
       readFileToBuffer: async () => Buffer.from(JSON.stringify(response)),
       stop: async () => { stops++; },
     };
@@ -63,6 +63,12 @@ test("preparation requires a final response, preserves checkpoints on exhaustion
       }
       assert.equal(next.state.activeTurn, undefined);
     }
+    const failed = await PhaseSession.open("fixture-command-failure", initial, repository);
+    await failed.begin("turn", [], "Prepare");
+    exitCode = 1;
+    await assert.rejects(prepareInSandbox(failed, deps), /Brokered preparation failed \(exit 1\); refusing independent processing fallback/);
+    assert.equal(failed.state.turns.turn.complete, false);
+    assert.equal(failed.state.activeTurn, undefined);
   } finally {
     keys.forEach((key, index) => { if (previous[index] === undefined) delete process.env[key]; else process.env[key] = previous[index]; });
   }

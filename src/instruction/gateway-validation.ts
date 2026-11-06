@@ -25,7 +25,15 @@ function inspectPrompt(value: unknown): void {
 export function validateGatewayGeneration(request: Request, body: unknown, binding: SandboxBinding): asserts body is Record<string, unknown> {
   if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("invalid_generation");
   const record = body as Record<string, unknown>;
-  const keys = new Set(["prompt", "tools", "toolChoice", "providerOptions", "maxOutputTokens"]);
+  // AI SDK 7 serializes its user-agent into call options as well as HTTP
+  // headers. Accept that metadata, never credential/model/routing overrides.
+  if (record.headers !== undefined) {
+    const headers = record.headers as Record<string, unknown> | null;
+    if (!headers || typeof headers !== "object" || Array.isArray(headers) || Object.keys(headers).some((key) => key !== "user-agent") ||
+        typeof headers["user-agent"] !== "string" || headers["user-agent"].length > 80 || headers["user-agent"].trim() !== headers["user-agent"] ||
+        !/^ai\/\d+\.\d+\.\d+(?:[-+][a-zA-Z0-9.-]+)?$/.test(headers["user-agent"])) throw new Error("generation_headers_forbidden");
+  }
+  const keys = new Set(["prompt", "tools", "toolChoice", "providerOptions", "maxOutputTokens", "headers"]);
   if (Object.keys(record).some((key) => !keys.has(key)) || !Array.isArray(record.prompt) || record.maxOutputTokens !== 4096 ||
       request.headers.get("ai-language-model-id") !== binding.model.id || request.headers.get("ai-language-model-specification-version") !== "4" ||
       request.headers.get("ai-language-model-streaming") !== "false" ||

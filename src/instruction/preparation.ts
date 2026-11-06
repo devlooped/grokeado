@@ -47,7 +47,7 @@ export async function prepareInSandbox(session: PhaseSession, deps = { sandbox: 
       const resultPath = `/workspace/result-${callId.replaceAll(":", "-")}.json`;
       await sandbox.writeFiles([{ path: "/workspace/task.json", content: JSON.stringify({ caseId: session.caseId, callId, model: session.state.model, system: session.state.system, messages: session.state.messages, tools: definitions, resultPath }) }]);
       const command = await sandbox.runCommand({ cmd: "node", args: ["--import", "/opt/evidence-harness/node_modules/tsx/dist/loader.mjs", "/opt/evidence-harness/instruction-agent.ts", "/workspace/task.json"], cwd: "/workspace", timeoutMs: 165_000, signal: AbortSignal.timeout(170_000) });
-      if (command.exitCode !== 0) throw new Error("Brokered preparation failed; refusing independent processing fallback");
+      if (command.exitCode !== 0) throw new Error(`Brokered preparation failed (exit ${command.exitCode}); refusing independent processing fallback`);
       const bytes = await sandbox.readFileToBuffer({ path: resultPath });
       if (!bytes || bytes.byteLength > 2_000_000) throw new Error("Preparation checkpoint unavailable");
       const result = JSON.parse(bytes.toString("utf8")) as { messages: ModelMessage[]; text: string; finishReason: string };
