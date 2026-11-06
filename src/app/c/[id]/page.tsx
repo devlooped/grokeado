@@ -15,7 +15,7 @@ import { SessionProgress } from "@/components/session-progress.tsx";
 import { caseShareMetadata, submissionExcerpt } from "@/domain/case.ts";
 import { caseCardImageUrl } from "@/domain/case-card.ts";
 import { COUNSEL_NAMES, seatModels, type CaseRecord, type RecordedEvent } from "@/domain/court.ts";
-import { project } from "@/domain/court.ts";
+import { project, sharedPipeline } from "@/domain/court.ts";
 import type { ToolActivity } from "@/domain/tool-activity.ts";
 import { displayHistoricalCitations } from "@/domain/historical-citations.ts";
 import { blobConfigured, caseStorageExists, findEvidenceArchive, hasEvidenceBase } from "@/evidence/blob.ts";
@@ -141,7 +141,7 @@ async function ResolvedCase({ c, id, revision }: { c: CaseRecord; id: string; re
         </div>
       </section>
 
-      {hasEvidence && <EvidencePanel caseId={id} settled={c.pipelineVersion === 2} />}
+      {hasEvidence && <EvidencePanel caseId={id} settled={sharedPipeline(c.pipelineVersion)} />}
     </div>
   );
 }

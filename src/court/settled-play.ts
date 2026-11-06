@@ -1,6 +1,6 @@
 import { gateway, generateText, stepCountIs, type LanguageModel, type ModelMessage, type ToolSet } from "ai";
 import { z } from "zod";
-import type { CaseRecord, CourtEvent, RecordedEvent } from "../domain/court.ts";
+import { sharedPipeline, type CaseRecord, type CourtEvent, type RecordedEvent } from "../domain/court.ts";
 import type { ArtifactStore } from "../evidence/artifacts.ts";
 import { caseArtifactStore } from "../evidence/blob.ts";
 import { loadSettledCorpus } from "../evidence/settled.ts";
@@ -44,7 +44,7 @@ export async function playSharedTurn(caseId: string, docket: Docket, spec: TurnS
 // under way. Every unit is checkpointed, so each runs in a workflow step of its own.
 export async function advanceSharedTurn(caseId: string, docket: Docket, spec: TurnSpec, record: readonly CourtEvent[], attempt: number, injected?: SharedTurnDependencies): Promise<TurnOutcome | undefined> {
   const stored = injected?.record ?? await getCase(caseId);
-  if (!stored || stored.pipelineVersion !== 2 || !docket.models || !docket.language) throw new Error("Shared pipeline requires its durable processing snapshot");
+  if (!stored || !sharedPipeline(stored.pipelineVersion) || !docket.models || !docket.language) throw new Error("Shared pipeline requires its durable processing snapshot");
   const artifacts = injected?.artifacts ?? caseArtifactStore;
   const reader = injected?.reader ?? caseSourceService(stored);
   const audit = injected?.audit ?? saveCaseAuditRecord;

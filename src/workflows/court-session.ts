@@ -5,7 +5,7 @@ import { playTurn } from "../court/play.ts";
 import { resolveCaseLanguage } from "../court/language.ts";
 import { holdSession } from "../court/procedure.ts";
 import type { Docket, TurnOutcome, TurnSpec } from "../court/turns.ts";
-import type { CourtEvent, RecordedEvent, Submission, SubmissionContext } from "../domain/court.ts";
+import { sharedPipeline, type CourtEvent, type RecordedEvent, type Submission, type SubmissionContext } from "../domain/court.ts";
 import { languageRule } from "../domain/language.ts";
 import { collectEvidenceBase } from "../evidence/collect.ts";
 import { imageDescriber } from "../evidence/describe.ts";
@@ -212,7 +212,7 @@ export async function courtSession(caseId: string): Promise<void> {
   let shared = false;
   try {
     const { submission, today, simulated, pipelineVersion } = await openCase(caseId);
-    shared = pipelineVersion === 2;
+    shared = sharedPipeline(pipelineVersion);
     const models = await configuredModels(caseId, shared);
     const counsel = counselModels(models);
     const collected = shared ? await collectShared(caseId, submission, simulated, models) : undefined;

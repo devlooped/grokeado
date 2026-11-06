@@ -10,6 +10,7 @@ import { normalizeArtifactBytes, type ArtifactStore } from "./artifacts.ts";
 import { buildCaseLog } from "./case-log.ts";
 import { loadSettledCorpus } from "./settled.ts";
 import { caseUsageArtifact } from "../domain/usage.ts";
+import { sharedPipeline } from "../domain/court.ts";
 
 const compress = promisify(deflateRaw);
 const MAX_ZIP_VALUE = 0xffffffff;
@@ -117,7 +118,7 @@ export function casePromptLocalization(record: StoredCaseRecord): PromptLocaliza
 
 export async function archiveEvidence(caseId: string, store: ArchiveStore = { readEvidenceTree, getEvents, writeEvidenceTree, writeCaseTranscript, writeEvidenceArchive, getCase, getCaseAuditRecords, getSourceOperations, artifacts: caseArtifactStore, prompts: casePromptLocalization }): Promise<EvidenceArchive> {
   const stored = await store.getCase?.(caseId);
-  if (stored?.pipelineVersion === 2) {
+  if (sharedPipeline(stored?.pipelineVersion)) {
     if (!store.artifacts || !store.getCaseAuditRecords || !store.getSourceOperations) throw new Error("Durable new-format archive storage unavailable");
     const events = await store.getEvents(caseId);
     if (!events.some((event) => event.type === "dismissed")) await loadSettledCorpus(caseId, events, store.artifacts);

@@ -1,5 +1,5 @@
 import type { CourtModel } from "../court/models.ts";
-import type { CourtEvent } from "../domain/court.ts";
+import { sharedPipeline, type CourtEvent } from "../domain/court.ts";
 import type { SeatId } from "../court/turns.ts";
 
 export type InstructionPhase = "intake" | "instruction" | "criticism" | "debate";
@@ -25,7 +25,7 @@ export function committedPhase(events: readonly CourtEvent[]): InstructionPhase 
 
 export function authorizeSandboxBinding(binding: SandboxBinding, context: { phase: InstructionPhase | "settling"; status: string; pipelineVersion: number; phaseSessionId?: string; activeTurnId?: string; now?: number }): void {
   const now = context.now ?? Date.now();
-  if (context.pipelineVersion !== 2 || context.status !== "in_session" || binding.revoked ||
+  if (!sharedPipeline(context.pipelineVersion) || context.status !== "in_session" || binding.revoked ||
       !Number.isFinite(Date.parse(binding.expiresAt)) || Date.parse(binding.expiresAt) <= now ||
       binding.phase !== context.phase || !binding.activeTurn ||
       Date.parse(binding.activeTurn.expiresAt) <= now || !Number.isFinite(Date.parse(binding.activeTurn.expiresAt)) ||

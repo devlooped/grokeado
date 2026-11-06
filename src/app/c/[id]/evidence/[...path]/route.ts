@@ -1,6 +1,7 @@
 import { blobConfigured, caseArtifactStore, readEvidenceTree } from "@/evidence/blob.ts";
 import { renderEvidenceHtml } from "@/evidence/okf.ts";
 import { getCase, getEvents } from "@/store.ts";
+import { sharedPipeline } from "@/domain/court.ts";
 import { artifactResponse } from "@/evidence/artifact-response.ts";
 
 const TYPES: Record<string, string> = {
@@ -18,7 +19,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
   const { id, path } = await context.params;
   const record = await getCase(id);
   if (!record || !blobConfigured()) return new Response("No encontrada", { status: 404 });
-  if (record.pipelineVersion === 2) return artifactResponse(id, "evidence", path, await getEvents(id), caseArtifactStore);
+  if (sharedPipeline(record.pipelineVersion)) return artifactResponse(id, "evidence", path, await getEvents(id), caseArtifactStore);
   if (!path.length || path.some((part) => !part || part === "." || part === ".." || part.includes("\\") || part.includes("\0"))) {
     return new Response("No encontrada", { status: 404 });
   }

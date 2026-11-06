@@ -166,8 +166,18 @@ export type CaseRecord = {
   error?: string;
   // Absent until the session opens, and on cases recorded before snapshots existed.
   models?: ModelSnapshot;
-  pipelineVersion?: 1 | 2;
+  pipelineVersion?: PipelineVersion;
 };
+
+// 1: legacy instruction. 2: shared instruction with a host tool loop. 3: shared
+// instruction with native provider research and host collection.
+export type PipelineVersion = 1 | 2 | 3;
+
+// Pipelines 2 and 3 share the durable instruction model (phase sessions,
+// sandboxes, settled corpus); they differ only in how sources are researched.
+export function sharedPipeline(version: number | null | undefined): version is 2 | 3 {
+  return version === 2 || version === 3;
+}
 
 export function majority(verdicts: Verdict[]): Verdict | undefined {
   return VERDICTS.find((v) => verdicts.filter((x) => x === v).length >= 3);

@@ -9,6 +9,8 @@ test("new cases default to shared instruction in production and retain explicit 
     Object.assign(process.env, values);
     assert.equal(await requestedPipeline("fixture", false), 2);
     assert.equal(await requestedPipeline("different-case", false), 2);
+    process.env.COURT_PIPELINE_VERSION = "3";
+    assert.equal(await requestedPipeline("fixture", false), 3, "native research is an explicit opt-in");
     delete process.env.COURT_PIPELINE_VERSION;
     assert.equal(await requestedPipeline("different-case", false), 2);
     process.env.VERCEL_ENV = "preview";
@@ -23,7 +25,7 @@ test("new cases default to shared instruction in production and retain explicit 
     process.env.AI_GATEWAY_API_KEY = " ";
     await assert.rejects(requestedPipeline("fixture", false), /required/);
     process.env.COURT_PIPELINE_VERSION = "invalid";
-    await assert.rejects(requestedPipeline("fixture", false), /must be 1 or 2/);
+    await assert.rejects(requestedPipeline("fixture", false), /must be 1, 2 or 3/);
     process.env.COURT_PIPELINE_VERSION = "1";
     assert.equal(await requestedPipeline("fixture", false), 1);
     delete process.env.COURT_PIPELINE_VERSION;

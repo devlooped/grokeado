@@ -1,7 +1,7 @@
 import { attachDatabasePool } from "@vercel/functions";
 import { Pool } from "pg";
 import type { ModelSetting } from "./court/models.ts";
-import type { CaseRecord, CaseStatus, CourtEvent, ModelSnapshot, RecordedEvent, Submission } from "./domain/court.ts";
+import { sharedPipeline, type CaseRecord, type CaseStatus, type CourtEvent, type ModelSnapshot, type PipelineVersion, type RecordedEvent, type Submission } from "./domain/court.ts";
 import { newCaseId } from "./lib/case-id.ts";
 import type { Operation, OperationClaim, OperationRepository } from "./instruction/source-store.ts";
 import { randomUUID } from "node:crypto";
@@ -160,7 +160,7 @@ async function db(): Promise<Pool> {
   return p;
 }
 
-type CaseRow = { id: string; created_at: string; status: CaseStatus; submission: Submission; owner_id: string | null; error: string | null; revision: number; models: ModelSnapshot | null; pipeline_version: 1 | 2 | null };
+type CaseRow = { id: string; created_at: string; status: CaseStatus; submission: Submission; owner_id: string | null; error: string | null; revision: number; models: ModelSnapshot | null; pipeline_version: PipelineVersion | null };
 
 export type StoredCaseRecord = CaseRecord & { revision: number };
 
@@ -450,19 +450,19 @@ export async function recordEvents(caseId: string, events: readonly RecordedEven
 }
 
 // Select a pipeline only on first opening; shared retries retain their record.
-export async function openSession(id: string, requestedPipeline: 1 | 2 | (() => 1 | 2 | Promise<1 | 2>) = 1): Promise<CaseRecord> {
+export async function openSession(id: string, requestedPipeline: PipelineVersion | (() => PipelineVersion | Promise<PipelineVersion>) = 1): Promise<CaseRecord> {
   const client = await (await db()).connect();
   try {
     await client.query("BEGIN");
-    let selected: 1 | 2 = 1;
+    let selected: PipelineVersion = 1;
     if (typeof requestedPipeline === "function") {
       const { rows } = await client.query("SELECT id FROM cases WHERE id = $1 AND pipeline_version IS NULL AND models IS NULL AND status = 'queued' AND NOT EXISTS (SELECT 1 FROM events WHERE case_id = $1) FOR UPDATE", [id]);
       if (rows.length) selected = await requestedPipeline();
     } else selected = requestedPipeline;
-    if (selected === 2) await client.query("UPDATE cases SET pipeline_version = 2 WHERE id = $1 AND pipeline_version IS NULL AND models IS NULL AND status = 'queued' AND NOT EXISTS (SELECT 1 FROM events WHERE case_id = $1)", [id]);
+    if (sharedPipeline(selected)) await client.query("UPDATE cases SET pipeline_version = " + selected + " WHERE id = $1 AND pipeline_version IS NULL AND models IS NULL AND status = 'queued' AND NOT EXISTS (SELECT 1 FROM events WHERE case_id = $1)", [id]);
     const { rows } = await client.query<CaseRow>("UPDATE cases SET status = 'in_session', error = NULL, pipeline_version = COALESCE(pipeline_version, 1) WHERE id = $1 RETURNING *", [id]);
     if (!rows[0]) throw new Error("case " + id + " does not exist");
-    if (rows[0].pipeline_version !== 2) await client.query("DELETE FROM events WHERE case_id = $1", [id]);
+    if (!sharedPipeline(rows[0].pipeline_version)) await client.query("DELETE FROM events WHERE case_id = $1", [id]);
     await client.query("COMMIT");
     return toRecord(rows[0]);
   } catch (err) {

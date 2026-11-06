@@ -1,7 +1,7 @@
 import type { ProxyHandler } from "@vercel/sandbox/proxy";
 import { z } from "zod";
 import { courtModel, modelEffort } from "../court/models.ts";
-import type { CaseRecord } from "../domain/court.ts";
+import { sharedPipeline, type CaseRecord } from "../domain/court.ts";
 import { caseArtifactStore } from "../evidence/blob.ts";
 import { trustedInstructionOrigin } from "../evidence/broker.ts";
 import { sha256 } from "../evidence/validate.ts";
@@ -102,7 +102,7 @@ export function createTurnProxy(config: { origin: string; teamId: string; projec
       if (isGeneration) return await generation(request, body, caseId, binding, deps);
       const call = ToolRequest.parse(body);
       const record = await deps.getCase(caseId);
-      if (!record || record.pipelineVersion !== 2) throw new Error("case_unavailable");
+      if (!record || !sharedPipeline(record.pipelineVersion)) throw new Error("case_unavailable");
       const events = await deps.getEvents(caseId);
       return Response.json(await executeSourceTool(call, { record, events, phase: binding.phase, seat: binding.seat, turnId: binding.activeTurn!.id, reader: deps.reader(record), artifacts: deps.artifacts, activity: deps.activity }));
     } catch (error) {
