@@ -19,7 +19,7 @@ function render(events: CourtEvent[], models?: SeatModels) {
   return parseHTML(renderToStaticMarkup(createElement(SessionDialogue, { events: recorded, caseId: "fixture", models }))).document;
 }
 
-test("the live dialogue shows complete moderator and analyst messages in recorded order, without stage folds", () => {
+test("the live dialogue prepends the newest complete moderator and analyst messages, without stage folds", () => {
   const statements: CourtEvent[] = COUNSEL.map((by, i) => ({ type: "statement", id: "I" + (i + 1), by, stage: "opening", text: "Intervención completa de " + by + ".\nSegunda línea con el fundamento público sobre A1.", evidenceIds: [] }));
   const document = render([
     opened, claims, { type: "instruction_opened" }, ...statements,
@@ -37,20 +37,20 @@ test("the live dialogue shows complete moderator and analyst messages in recorde
   assert.equal(log.getAttribute("aria-relevant"), "additions");
   const entries = [...log.querySelector("ol")!.children];
   assert.equal(entries.length, 13);
-  assert.match(entries[0].textContent, /Moderador · Claude.*La afirmación a examinar/s);
-  for (const [i, by] of COUNSEL.entries()) {
-    assert.ok(entries[i + 1].textContent.includes("Intervención completa de " + by + ".\nSegunda línea con el fundamento público sobre A1."));
-    assert.ok(entries[i + 1].querySelector("svg"), "every analyst has their icon");
+  assert.ok(entries[0].textContent.includes("Resumen final completo del moderador."), "the latest update starts at the top");
+  assert.match(entries.at(-1)!.textContent, /Moderador · Claude.*La afirmación a examinar/s);
+  for (const [i, by] of [...COUNSEL].reverse().entries()) {
+    assert.ok(entries[i + 8].textContent.includes("Intervención completa de " + by + ".\nSegunda línea con el fundamento público sobre A1."));
+    assert.ok(entries[i + 8].querySelector("svg"), "every analyst has their icon");
   }
-  assert.ok(entries[0].querySelector("svg line"), "the moderator carries the recorded Claude icon");
-  assert.ok(entries[5].textContent.includes("La fuente no respalda esa cifra."));
+  assert.ok(entries.at(-1)!.querySelector("svg line"), "the moderator carries the recorded Claude icon");
+  assert.ok(entries[5].textContent.includes("El documento sí contiene los datos."));
   assert.ok(entries[6].textContent.includes("Respondo con los datos del documento."));
-  assert.ok(entries[7].textContent.includes("El documento sí contiene los datos."));
-  assert.ok(entries[8].textContent.includes("La comparación contradice la afirmación."));
-  assert.ok(entries[9].textContent.includes("La evidencia del registro resuelve la diferencia."));
-  assert.ok(entries[10].textContent.includes("Son afirmaciones independientes."));
-  assert.ok(entries[11].textContent.includes("El contenido reproduce la misma afirmación."));
-  assert.ok(entries[12].textContent.includes("Resumen final completo del moderador."));
+  assert.ok(entries[7].textContent.includes("La fuente no respalda esa cifra."));
+  assert.ok(entries[4].textContent.includes("La comparación contradice la afirmación."));
+  assert.ok(entries[3].textContent.includes("La evidencia del registro resuelve la diferencia."));
+  assert.ok(entries[2].textContent.includes("Son afirmaciones independientes."));
+  assert.ok(entries[1].textContent.includes("El contenido reproduce la misma afirmación."));
   assert.equal(log.querySelectorAll("details").length, 0, "messages are visible without expanding a stage");
   const times = [...log.querySelectorAll("time")];
   assert.equal(times.length, entries.length);
@@ -73,7 +73,7 @@ test("the live dialogue retains evidence and reliability votes instead of hiding
   assert.equal(entries.length, 5);
   assert.ok(document.getElementById("P1")?.textContent.includes(evidence.excerpt));
   assert.ok(document.getElementById("E1"));
-  assert.match(entries.at(-1)!.textContent, /Gemini.*La metodología está publicada/s);
+  assert.match(entries[0].textContent, /Gemini.*La metodología está publicada/s);
 });
 
 test("refreshing the recorded events adds complete messages and never exposes internal traces or system events", () => {
@@ -100,10 +100,10 @@ test("live speaker icons honor the case snapshot, with fallbacks for older event
   assert.ok(overridden.querySelector('[title="gpt-6.1-sol high"] svg'));
   const fallback = render([claims, { type: "statement", id: "I1", by: "gemini", stage: "opening", text: "Intervención completa.", evidenceIds: [] }]);
   const entries = [...fallback.querySelector('[role="log"] > ol')!.children];
-  assert.match(entries[0].textContent, /Moderador/);
-  assert.ok(entries[0].querySelector("svg"), "an unknown moderator gets the gavel");
-  assert.match(entries[1].textContent, /Gemini/);
-  assert.ok(entries[1].querySelector("svg linearGradient"), "older analyst events keep their family icon");
+  assert.match(entries.at(-1)!.textContent, /Moderador/);
+  assert.ok(entries.at(-1)!.querySelector("svg"), "an unknown moderator gets the gavel");
+  assert.match(entries[0].textContent, /Gemini/);
+  assert.ok(entries[0].querySelector("svg linearGradient"), "older analyst events keep their family icon");
 });
 
 test("a dismissal appears as a complete moderator message", () => {
@@ -130,9 +130,9 @@ test("the timeline merges four tool icons and complete public targets with dialo
   const { document } = parseHTML(html);
   const entries = [...document.querySelector('[role="log"] > ol')!.children];
   assert.equal(entries.length, 6);
-  assert.ok(entries[0].textContent.includes("La afirmación a examinar."));
-  assert.ok(entries[4].textContent.includes("Complete public statement."));
-  assert.deepEqual(entries.flatMap((entry) => entry.querySelector("[data-tool]")?.getAttribute("data-tool") ?? []), ["read_source", "read_evidence", "web_search", "x_search"]);
+  assert.ok(entries.at(-1)!.textContent.includes("La afirmación a examinar."));
+  assert.ok(entries[1].textContent.includes("Complete public statement."));
+  assert.deepEqual(entries.flatMap((entry) => entry.querySelector("[data-tool]")?.getAttribute("data-tool") ?? []), ["x_search", "web_search", "read_evidence", "read_source"]);
   const toolEntries = entries.filter((entry) => entry.querySelector("[data-tool]"));
   for (const entry of toolEntries) {
     assert.match(entry.textContent, /Claude · anthropic/);
@@ -166,5 +166,5 @@ test("activity can appear before the first court message and preserves court seq
     { type: "statement", id: "I2", by: "gemini", stage: "opening", text: "Second authoritative message.", evidenceIds: [], seq: 2, at: "2026-11-06T00:00:00.000Z" },
   ];
   const merged = parseHTML(renderToStaticMarkup(createElement(SessionDialogue, { events, caseId: "fixture", activities: [activity] }))).document;
-  assert.deepEqual([...merged.querySelectorAll('[id^="I"]')].map((element) => element.id), ["I1", "I2"]);
+  assert.deepEqual([...merged.querySelectorAll('[id^="I"]')].map((element) => element.id), ["I2", "I1"]);
 });

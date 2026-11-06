@@ -551,7 +551,7 @@ export function SessionDialogue({ events, caseId, models = seatModels({}, events
       <div className="rule-double pt-4">&nbsp;</div>
       <div role="log" aria-labelledby="session-dialogue-title" aria-live="polite" aria-relevant="additions" className="mt-6">
         <ol className="space-y-6">
-          {entries.map(({ key, at, speaker, model, tool, content }) => {
+          {[...entries].reverse().map(({ key, at, speaker, model, tool, content }) => {
             const mark = model ? modelMark(model.id) : speaker === "judge" ? undefined : speaker;
             const name = speaker === "judge" ? "Moderador" + (model ? " · " + modelName(model.id) : "") : model ? modelName(model.id) : MODEL_NAME[speaker];
             return (
