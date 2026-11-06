@@ -3,7 +3,7 @@ import test from "node:test";
 import { Sandbox } from "@vercel/sandbox";
 import { FatalError } from "workflow";
 import { MemoryPhaseRepository, PhaseSession } from "../court/phase-session.ts";
-import { advancePreparation, deleteCaseSandboxes, prepareInSandbox } from "./preparation.ts";
+import { advancePreparation, deleteCaseSandboxes, prepareInSandbox, sweepCaseSandboxes, withSandboxCleanup } from "./preparation.ts";
 
 test("preparation requires a final response, preserves checkpoints on exhaustion, and resumes the same sandbox", async () => {
   const keys = ["INSTRUCTION_TOOL_ORIGIN", "INSTRUCTION_SANDBOX_SNAPSHOT_ID", "INSTRUCTION_SANDBOX_TEAM_ID", "INSTRUCTION_SANDBOX_PROJECT_ID"] as const;
@@ -182,21 +182,74 @@ test("a call that outlasts one wait continues in a later unit, keeping its grant
   }
 });
 
+type Listed = { name: string; status: string; tags?: Record<string, string> };
+
+function sandboxes(listed: Listed[], deleted: string[]) {
+  const missing = Object.assign(new Error("Named sandbox not found"), { response: { status: 404 } });
+  return {
+    list: async ({ tags }: { tags?: Record<string, string> } = {}) => {
+      const items = listed.filter((item) => !tags || Object.entries(tags).every(([key, value]) => item.tags?.[key] === value));
+      return { toArray: async () => items };
+    },
+    get: async ({ name }: { name: string }) => {
+      if (name === "gone" || deleted.includes(name)) throw missing;
+      return {
+        delete: async (options: { deleteOrphanSnapshots: boolean }) => {
+          assert.equal(options.deleteOrphanSnapshots, true);
+          if (name === "broken") throw new Error("gone");
+          deleted.push(name);
+        },
+      };
+    },
+  } as unknown as typeof Sandbox;
+}
+
 test("a finished case deletes each of its sandboxes with their orphan snapshots, and reports failures after trying them all", async () => {
   const deleted: string[] = [];
-  const sandbox = {
-    get: async ({ name }: { name: string }) => ({
-      delete: async (options: { deleteOrphanSnapshots: boolean }) => {
-        assert.equal(options.deleteOrphanSnapshots, true);
-        if (name === "broken") throw new Error("gone");
-        deleted.push(name);
-      },
-    }),
-  } as unknown as typeof Sandbox;
+  const sandbox = sandboxes([], deleted);
   await deleteCaseSandboxes("fixture", { sandbox, names: async (caseId) => { assert.equal(caseId, "fixture"); return ["a", "b"]; } });
   assert.deepEqual(deleted.sort(), ["a", "b"]);
   deleted.length = 0;
-  await assert.rejects(deleteCaseSandboxes("fixture", { sandbox, names: async () => ["broken", "c"] }), /Could not delete 1 sandbox/);
+  await assert.rejects(deleteCaseSandboxes("fixture", { sandbox, names: async () => ["broken", "c"] }), /1 failure/);
   assert.deepEqual(deleted, ["c"]);
   await deleteCaseSandboxes("fixture", { sandbox, names: async () => [] });
+  await deleteCaseSandboxes("fixture", { sandbox, names: async () => ["gone", "c"] });
+  assert.deepEqual(deleted, ["c"], "a sandbox an earlier cleanup deleted is not a failure");
+});
+
+test("a rerun deletes the case's sandboxes by tag after their bindings are gone, without blocking on a failure", async () => {
+  const deleted: string[] = [];
+  const sandbox = sandboxes([
+    { name: "prep-old-name", status: "stopped", tags: { case: "AA-123-BB", phase: "instruction", seat: "grok" } },
+    { name: "prep-renamed", status: "stopped", tags: { case: "old_id", phase: "intake", seat: "judge" } },
+    { name: "other-case", status: "stopped", tags: { case: "CC-456-DD", phase: "instruction", seat: "grok" } },
+    { name: "harness-build", status: "stopped" },
+  ], deleted);
+  const blobs: string[][] = [];
+  const cleanup = withSandboxCleanup(async (ids) => { blobs.push(ids); }, (caseId) => deleteCaseSandboxes(caseId, { sandbox, names: async () => [] }));
+  await cleanup(["AA-123-BB", "old_id"]);
+  assert.deepEqual(blobs, [["AA-123-BB", "old_id"]]);
+  assert.deepEqual(deleted.sort(), ["prep-old-name", "prep-renamed"]);
+
+  const warn = console.warn;
+  console.warn = () => {};
+  try { await withSandboxCleanup(async () => {}, async () => { throw new Error("Sandbox API unavailable"); })(["AA-123-BB"]); }
+  finally { console.warn = warn; }
+  await assert.rejects(withSandboxCleanup(async () => { throw new Error("blob failure"); })(["AA-123-BB"]), /blob failure/);
+});
+
+test("the sweep deletes only stopped preparation sandboxes of ended or missing cases", async () => {
+  const deleted: string[] = [];
+  const prep = (name: string, caseId: string, status = "stopped") => ({ name, status, tags: { case: caseId, phase: "instruction", seat: "grok" } });
+  const sandbox = sandboxes([
+    prep("resolved", "AA-111-AA"), prep("failed", "AA-222-AA", "failed"), prep("deleted-case", "AA-333-AA"),
+    prep("in-session", "AA-444-AA"), prep("queued", "AA-555-AA"), prep("running", "AA-111-AA", "running"),
+    prep("truncated-id", "x".repeat(32)),
+    { name: "evidence-step", status: "stopped", tags: { case: "AA-111-AA", seat: "grok", stage: "exposicion" } },
+    { name: "harness-build", status: "stopped" }, { name: "smoke", status: "stopped", tags: { purpose: "smoke" } },
+  ], deleted);
+  const statuses: Record<string, string> = { "AA-111-AA": "resolved", "AA-222-AA": "failed", "AA-444-AA": "in_session", "AA-555-AA": "queued" };
+  const swept = await sweepCaseSandboxes({ sandbox, caseStatus: async (caseId) => statuses[caseId] });
+  assert.deepEqual(swept.sort(), ["deleted-case", "failed", "resolved"]);
+  assert.deepEqual(deleted.sort(), ["deleted-case", "failed", "resolved"]);
 });

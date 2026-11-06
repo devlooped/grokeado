@@ -18,7 +18,7 @@ import type { EvidenceSeat, EvidenceStage } from "../evidence/schema.ts";
 import { closeCase, openCase, saveEvents } from "./steps.ts";
 import { getCase, getImage, recordCaseToolActivity, revokeSandboxBindings, saveCaseLanguage, saveCaseModels } from "../store.ts";
 import { collectInstruction } from "../instruction/intake.ts";
-import { liveSourceDependencies, SourceService } from "../instruction/sources.ts";
+import { fatalSourceFailure, liveSourceDependencies, SourceService } from "../instruction/sources.ts";
 import { sourceDownloader } from "../instruction/research.ts";
 import { mockInstructionArtifacts, mockInstructionSources, mockResearchWorker } from "../instruction/mock.ts";
 import { createMockSeat } from "../court/mock.ts";
@@ -43,10 +43,12 @@ async function collectShared(caseId: string, submission: Submission, simulated: 
   "use step";
   const sources = simulated ? mockInstructionSources : liveSourceDependencies(models.translator, caseId);
   if (!simulated) sources.download = sourceDownloader(models["research.x"], caseId);
-  return collectInstruction(caseId, submission, models, simulated, {
-    sources, artifacts: simulated ? mockInstructionArtifacts : caseArtifactStore, getImage, saveLanguage: saveCaseLanguage, detect: resolveCaseLanguage,
-    ...(simulated ? { describe: async () => ({ text: "SIMULACIÓN LOCAL: Imagen ficticia para el procedimiento.", tool: "fixture", confidence: 1 }) } : {}),
-  });
+  try {
+    return await collectInstruction(caseId, submission, models, simulated, {
+      sources, artifacts: simulated ? mockInstructionArtifacts : caseArtifactStore, getImage, saveLanguage: saveCaseLanguage, detect: resolveCaseLanguage,
+      ...(simulated ? { describe: async () => ({ text: "SIMULACIÓN LOCAL: Imagen ficticia para el procedimiento.", tool: "fixture", confidence: 1 }) } : {}),
+    });
+  } catch (error) { throw fatalSourceFailure(error); }
 }
 
 // One unit of a shared turn: a preparation call or a decision generation. The
@@ -55,12 +57,15 @@ async function advanceShared(caseId: string, docket: Docket, spec: TurnSpec, rec
   "use step";
   const stored = await getCase(caseId);
   if (!stored) throw new Error("Shared case unavailable");
-  const outcome = await advanceSharedTurn(caseId, docket, spec, record, attempt, docket.simulated ? {
-    record: stored, reader: new SourceService(caseId, docket.language!, mockInstructionSources), artifacts: mockInstructionArtifacts,
-    model: createMockSeat({ spec, record, submission: docket.submission, shared: true }, false).model,
-    prepare: async () => "SIMULACIÓN LOCAL: Análisis preparatorio ficticio; no agrega pruebas.", worker: mockResearchWorker,
-    audit: async () => {}, activity: recordCaseToolActivity,
-  } : undefined);
+  let outcome: TurnOutcome | undefined;
+  try {
+    outcome = await advanceSharedTurn(caseId, docket, spec, record, attempt, docket.simulated ? {
+      record: stored, reader: new SourceService(caseId, docket.language!, mockInstructionSources), artifacts: mockInstructionArtifacts,
+      model: createMockSeat({ spec, record, submission: docket.submission, shared: true }, false).model,
+      prepare: async () => "SIMULACIÓN LOCAL: Análisis preparatorio ficticio; no agrega pruebas.", worker: mockResearchWorker,
+      audit: async () => {}, activity: recordCaseToolActivity,
+    } : undefined);
+  } catch (error) { throw fatalSourceFailure(error); }
   return outcome ? linkEvidenceRun(outcome, undefined, docket.simulated, docket.models) : null;
 }
 
@@ -81,7 +86,9 @@ async function settleShared(caseId: string, language: string, events: readonly R
   await revokeSandboxBindings(caseId);
   const stored = await getCase(caseId);
   if (!stored) throw new Error("Shared case unavailable");
-  return settleEvidence(caseId, language, events, simulated ? new SourceService(caseId, language, mockInstructionSources) : caseSourceService(stored), simulated ? mockInstructionArtifacts : caseArtifactStore);
+  try {
+    return await settleEvidence(caseId, language, events, simulated ? new SourceService(caseId, language, mockInstructionSources) : caseSourceService(stored), simulated ? mockInstructionArtifacts : caseArtifactStore);
+  } catch (error) { throw fatalSourceFailure(error); }
 }
 
 async function revokeShared(caseId: string) {

@@ -6,7 +6,7 @@ import type { ModelMessage } from "ai";
 import { FatalError } from "workflow";
 import type { PhaseSession } from "../court/phase-session.ts";
 import { instructionSandboxLaunch } from "../evidence/broker.ts";
-import { caseSandboxNames, saveSandboxBinding } from "../store.ts";
+import { caseSandboxNames, findCaseAlias, getCase, saveSandboxBinding } from "../store.ts";
 import { SourceToolSchemas, sourceToolsFor } from "./tools.ts";
 import { ComputeSchema } from "../../sandbox/harness/compute.ts";
 import { instructionBridgeConfig } from "./config.ts";
@@ -164,13 +164,74 @@ export async function prepareInSandbox(session: PhaseSession, deps: PreparationD
   }
 }
 
-// Delete every preparation VM of a finished case, with the snapshots only it
-// uses. The configured harness snapshot is shared, so it is never deleted.
-export async function deleteCaseSandboxes(caseId: string, deps = { sandbox: Sandbox, names: caseSandboxNames }): Promise<void> {
-  const results = await Promise.allSettled((await deps.names(caseId)).map(async (name) => {
-    const sandbox = await deps.sandbox.get({ name, signal: AbortSignal.timeout(10_000) });
-    await sandbox.delete({ deleteOrphanSnapshots: true, signal: AbortSignal.timeout(10_000) });
-  }));
+type CleanupDependencies = { sandbox: Pick<typeof Sandbox, "get" | "list">; names: (caseId: string) => Promise<string[]> };
+
+// A sandbox already deleted, by a cleanup before this one, is not a failure.
+const notFound = (error: unknown) => (error as { response?: { status?: unknown } } | null)?.response?.status === 404;
+
+async function deleteSandbox(sandbox: CleanupDependencies["sandbox"], name: string): Promise<void> {
+  try {
+    const found = await sandbox.get({ name, signal: AbortSignal.timeout(10_000) });
+    await found.delete({ deleteOrphanSnapshots: true, signal: AbortSignal.timeout(10_000) });
+  } catch (error) { if (!notFound(error)) throw error; }
+}
+
+// Sandboxes carry the (at most 32 characters of the) case ID as a tag, so they
+// are found after a rerun dropped their bindings. A longer ID is only a prefix,
+// which could name another case: those rely on their bindings.
+async function taggedSandboxes(caseId: string, sandbox: CleanupDependencies["sandbox"]): Promise<string[]> {
+  if (caseId.length > 32) return [];
+  const listed = await (await sandbox.list({ tags: { case: caseId }, signal: AbortSignal.timeout(10_000) })).toArray();
+  return listed.filter((item) => item.tags?.case === caseId).map((item) => item.name);
+}
+
+// Delete every sandbox of a finished or reset case, bound or tagged, with the
+// snapshots only it uses. The configured harness snapshot is shared, so it is
+// never deleted.
+export async function deleteCaseSandboxes(caseId: string, deps: CleanupDependencies = { sandbox: Sandbox, names: caseSandboxNames }): Promise<void> {
+  const found = await Promise.allSettled([deps.names(caseId), taggedSandboxes(caseId, deps.sandbox)]);
+  const names = new Set(found.flatMap((result) => result.status === "fulfilled" ? result.value : []));
+  const results = await Promise.allSettled([...names].map((name) => deleteSandbox(deps.sandbox, name)));
+  const failed = [...found, ...results].filter((result) => result.status === "rejected");
+  if (failed.length) throw new AggregateError(failed.map((result) => result.reason), `Could not delete the sandboxes of case ${caseId} (${failed.length} failure(s))`);
+}
+
+// A rerun or deletion drops the case's bindings and files. Its sandboxes go
+// too, found by tag; their cleanup never blocks the reset, and the periodic
+// sweep deletes what remains once the case ends again.
+export function withSandboxCleanup(deleteBlobs: (ids: string[]) => Promise<void>, remove: (caseId: string) => Promise<void> = deleteCaseSandboxes) {
+  return async (ids: string[]): Promise<void> => {
+    await deleteBlobs(ids);
+    for (const id of ids) {
+      try { await remove(id); }
+      catch (error) { console.warn("Could not delete case sandboxes:", error); }
+    }
+  };
+}
+
+type SweepDependencies = { sandbox: Pick<typeof Sandbox, "get" | "list">; caseStatus: (caseId: string) => Promise<string | undefined> };
+
+async function liveCaseStatus(caseId: string): Promise<string | undefined> {
+  const stored = await getCase(caseId);
+  if (stored) return stored.status;
+  const renamed = await findCaseAlias(caseId);
+  return renamed ? (await getCase(renamed))?.status : undefined;
+}
+
+// Delete the stopped preparation sandboxes of cases that ended, or no longer
+// exist, which the case's own cleanup missed. Snapshot builds, smoke runs and
+// sandboxes of a case in progress are kept. Returns the names it deleted.
+export async function sweepCaseSandboxes(deps: SweepDependencies = { sandbox: Sandbox, caseStatus: liveCaseStatus }): Promise<string[]> {
+  const listed = await (await deps.sandbox.list({ signal: AbortSignal.timeout(10_000) })).toArray();
+  const resting = listed.filter((item) => item.tags?.case && item.tags.phase && ["stopped", "failed", "aborted"].includes(item.status));
+  const statuses = new Map<string, string | undefined>();
+  for (const caseId of new Set(resting.map((item) => item.tags!.case!))) statuses.set(caseId, await deps.caseStatus(caseId));
+  const ended = resting.filter((item) => {
+    const caseId = item.tags!.case!, status = statuses.get(caseId);
+    return status === "resolved" || status === "failed" || (status === undefined && caseId.length < 32);
+  });
+  const results = await Promise.allSettled(ended.map((item) => deleteSandbox(deps.sandbox, item.name)));
   const failed = results.filter((result) => result.status === "rejected");
-  if (failed.length) throw new AggregateError(failed.map((result) => result.reason), `Could not delete ${failed.length} sandbox(es) of case ${caseId}`);
+  if (failed.length) console.warn(`Could not delete ${failed.length} ended case sandbox(es):`, failed.map((result) => result.reason));
+  return ended.filter((_, index) => results[index]!.status === "fulfilled").map((item) => item.name);
 }

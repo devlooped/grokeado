@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
+import { FatalError } from "workflow";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { MemoryArtifactStore } from "../evidence/artifacts.ts";
 import { MemoryOperationRepository } from "./source-store.ts";
-import { boundBlocks, extractSource, markdownBlocks, normalizeSourceUrl, SourceService, SourceTranslationUnavailable, type SourceDependencies } from "./sources.ts";
+import { boundBlocks, extractSource, fatalSourceFailure, markdownBlocks, normalizeSourceUrl, SourceService, SourceTranslationUnavailable, type SourceDependencies } from "./sources.ts";
 
 function fixture() {
   const operations = new MemoryOperationRepository();
@@ -173,6 +174,44 @@ for (const changed of [false, true]) test(`unconfirmed output language fails clo
   assert.equal(counts.translate, 3);
   const files = await deps.artifacts.read("fixture");
   assert.ok(![...files.keys()].some((path) => path.includes("/translations/") || path.endsWith("/translation.json")));
+});
+
+test("a failed or uncertain translation fails its workflow step at once, with its stored reason, and is never repeated", async () => {
+  const { deps, counts, service } = fixture();
+  let verified = false;
+  deps.verifyLanguage = async () => ({ matches: verified });
+  const failures: unknown[] = [];
+  // The first attempt fails the operation; a retried step only reads it again.
+  for (let attempt = 0; attempt < 2; attempt++) await assert.rejects(service().normalize("", "Texto 42"), (error) => { failures.push(error); return true; });
+  verified = true;
+  await assert.rejects(service().normalize("", "Texto 42"), (error) => { failures.push(error); return true; });
+  assert.equal(counts.translate, 1);
+  for (const failure of failures) {
+    const fatal = fatalSourceFailure(failure);
+    assert.ok(FatalError.is(fatal));
+    assert.match((fatal as Error).message, /^Source translation operation translation:[a-f0-9]{64} is failed: Translation language could not be confirmed$/);
+  }
+
+  deps.translate = async () => { counts.translate++; throw new Error("Provider connection reset"); };
+  for (let attempt = 0; attempt < 2; attempt++) await assert.rejects(service().normalize("", "Otro texto 7"), (error) => FatalError.is(fatalSourceFailure(error)) && /is uncertain: Provider connection reset$/.test((error as Error).message));
+  assert.equal(counts.translate, 2);
+});
+
+test("an operation another owner still runs stays retryable", async () => {
+  const { deps, service } = fixture();
+  let release!: () => void;
+  const blocked = new Promise<void>((resolve) => { release = resolve; });
+  const translate = deps.translate;
+  deps.translate = async (input, language) => { await blocked; return translate(input, language); };
+  const owner = service().normalize("", "Texto 42");
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const pending = await service().normalize("", "Texto 42", 0).then(() => undefined, (error: unknown) => error);
+  assert.match(String(pending), /is pending$/);
+  assert.equal(fatalSourceFailure(pending), pending);
+  const other = new Error("Unrelated");
+  assert.equal(fatalSourceFailure(other), other);
+  release();
+  await owner;
 });
 
 test("successful language verification is checkpointed once for all readers", async () => {

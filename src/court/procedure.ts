@@ -65,8 +65,13 @@ export async function holdSession(bench: Bench): Promise<void> {
     return { events, done };
   };
 
+  // A failed turn waits for the other seats of its round: cleanup after a
+  // failure would otherwise delete the sandboxes of turns still running.
   const round = async (specs: TurnSpec[]): Promise<boolean[]> => {
-    const outcomes = await Promise.all(specs.map(attempts));
+    const settled = await Promise.allSettled(specs.map(attempts));
+    const failure = settled.find((result) => result.status === "rejected");
+    if (failure) throw failure.reason;
+    const outcomes = settled.map((result) => (result as PromiseFulfilledResult<TurnOutcome>).value);
     absorb(outcomes);
     await flush();
     return outcomes.map((o) => o.done);

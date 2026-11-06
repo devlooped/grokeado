@@ -39,6 +39,11 @@ pipeline 1 cases keep their original tools, artifact formats, and download URLs;
   if the budget expires without a nonempty final response; a partial draft cannot advance the decision
   channel. Exhaustion and incomplete final responses are non-retryable workflow
   failures: replaying an already spent checkpoint cannot replenish its budget.
+  So are failed or uncertain source operations (translation, acquisition,
+  extraction): a retried step would only read the stored status again. The case
+  error names the operation key, stage, status and stored reason. A failed seat
+  lets the other seats of its round finish before the case fails and its
+  sandboxes are deleted.
 - Debate tools read only manifest-listed IDs/sections, never URLs, originals or
   instruction drafts. All source-bearing court actions validate corpus citations.
   Local sandbox computation accepts bounded numeric operations, not shell code.
@@ -64,7 +69,8 @@ receive a generic failure message with no retry control. The failed-case page's
 starting a new workflow. They preserve the public case ID,
 original submission/upload and access metadata, not generated processing state.
 Events, covers, source operations/aliases, audit records, phase checkpoints,
-sandbox bindings and Blob artifacts are removed; detected language and recorded
+sandbox bindings, Blob artifacts and the case's sandboxes (found by their `case`
+tag, so bindings are not needed) are removed; detected language and recorded
 model/pipeline selections are cleared. The fresh preparation VM uses the current
 configured snapshot rather than resuming any previous VM. Automatic retries of
 a step within the same execution still reuse that execution's checkpoints.
@@ -130,8 +136,12 @@ authorization. Plan completion records implementation, not a passed live smoke.
 Persistent sandboxes resume by name. Their OIDC-verified `sandboxName` selects
 the binding, not the VM `sandboxId`, which can change across resumes.
 Each stop snapshots the VM for the next turn; only the latest snapshot is kept
-(24 h expiry), and the case's sandboxes are deleted with their snapshots when
-the case resolves or fails. Evidence-step sandboxes are not persistent.
+(24 h expiry), and the case's sandboxes, bound or tagged `case:<id>`, are deleted
+with their snapshots when the case resolves or fails. A sweep that runs with the
+admin notification check deletes the stopped preparation sandboxes (tagged
+`case` and `phase`) of resolved, failed or deleted cases that this missed;
+untagged snapshot-build and `purpose:*` smoke sandboxes are never swept.
+Evidence-step sandboxes are not persistent.
 The SDK-authenticated proxy checks team/project, sandbox/case/session binding,
 committed phase, active turn, expiry and request budget. Only exact POST tool and
 generation paths are forwarded. Generation is constrained to the snapshotted

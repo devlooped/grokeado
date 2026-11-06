@@ -7,6 +7,7 @@ import type { Submission } from "@/domain/court.ts";
 import { auth0 } from "@/lib/auth0.ts";
 import { BETA_MESSAGE, canRequestCase, isAdmin } from "@/lib/case-access.ts";
 import { deleteCaseBlobs } from "@/evidence/blob.ts";
+import { withSandboxCleanup } from "@/instruction/preparation.ts";
 import { createNewCase, finishCase, requeueCase } from "@/store.ts";
 import { courtSession } from "@/workflows/court-session.ts";
 
@@ -79,7 +80,7 @@ export async function retryCase(id: string): Promise<void> {
   const session = await auth0.getSession();
   if (!isAdmin(session?.user)) throw new Error("No autorizado para reintentar el caso.");
 
-  if (await requeueCase(id, deleteCaseBlobs)) {
+  if (await requeueCase(id, withSandboxCleanup(deleteCaseBlobs))) {
     try {
       await start(courtSession, [id]);
     } catch (err) {

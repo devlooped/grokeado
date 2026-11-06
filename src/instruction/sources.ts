@@ -7,6 +7,7 @@ import { languageVerifierFor, translatorFor, type LanguageVerifier, type Transla
 import { sha256 } from "../evidence/validate.ts";
 import { sourceOperationRepository } from "../store.ts";
 import type { OperationRepository, OperationStatus } from "./source-store.ts";
+import { FatalError } from "workflow";
 import { z } from "zod";
 
 export const EXTRACTION_VERSION = "markdown-blocks-v1";
@@ -146,7 +147,17 @@ function renderDocument(source: ExtractedSource, path: string): { markdown: stri
 const protectedParts = (text: string) => [...text.matchAll(/https?:\/\/[^\s)<>]+|\]\([^)]*\)|\d+(?:[.,]\d+)*|^\s*#{1,6}\s|\|/gm)].map((match) => match[0]);
 
 class StageUnavailable extends Error {
-  constructor(readonly operation: string, readonly status: "pending" | "failed" | "uncertain") { super(status); }
+  constructor(readonly operation: string, readonly status: "pending" | "failed" | "uncertain", stage: string, reason?: string) {
+    super(`Source ${stage} operation ${operation} is ${status}${reason ? `: ${reason.slice(0, 200)}` : ""}`);
+  }
+}
+
+// A failed or uncertain operation stays so until an explicit, reviewed recovery:
+// a retried workflow step would only read the same stored status again. Only an
+// operation another owner still runs is worth a retry.
+export function fatalSourceFailure(error: unknown): unknown {
+  if ((error instanceof StageUnavailable || error instanceof SourceTranslationUnavailable) && error.status !== "pending") return new FatalError(error.message);
+  return error;
 }
 
 export type SourceDependencies = {
@@ -189,7 +200,8 @@ export class SourceService {
     const claim = await this.deps.operations.claim(this.caseId, key, stage, 300_000);
     if (!claim.owned) {
       if (claim.operation.status === "ready") return { value: claim.operation.result as T, reused: true };
-      throw new StageUnavailable(key, claim.operation.status === "running" ? "pending" : claim.operation.status);
+      const status = claim.operation.status === "running" ? "pending" : claim.operation.status;
+      throw new StageUnavailable(key, status, claim.operation.stage, status === "pending" ? undefined : claim.operation.error);
     }
     try {
       const value = await run();
@@ -204,8 +216,9 @@ export class SourceService {
       }
       // An interrupted external operation must never be silently repeated.
       const uncertain = !(error instanceof SourceProcessingFailure);
-      await this.deps.operations.fail(this.caseId, key, claim.owner, error instanceof Error ? error.message : "Source processing failed", uncertain).catch(() => {});
-      throw new StageUnavailable(key, uncertain ? "uncertain" : "failed");
+      const reason = error instanceof Error ? error.message : "Source processing failed";
+      await this.deps.operations.fail(this.caseId, key, claim.owner, reason, uncertain).catch(() => {});
+      throw new StageUnavailable(key, uncertain ? "uncertain" : "failed", stage, reason);
     }
   }
 

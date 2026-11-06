@@ -101,6 +101,22 @@ test("settlement failure blocks closure and every debate turn", async () => {
   assert.ok(!events.some((event) => event.type === "instruction_closed" || event.type === "floor_granted"));
 });
 
+test("a failed seat waits for the other seats of its round, whose sandboxes cleanup would delete", async () => {
+  const { bench, events } = makeBench({ judge: judgeScript, grok: counsel("grok", {}), gemini: counsel("gemini", {}), claude: counsel("claude", {}), chatgpt: counsel("chatgpt", {}) });
+  const play = bench.play;
+  const finished: string[] = [];
+  bench.play = async (spec, record, attempt) => {
+    if (spec.kind !== "instruction") return play(spec, record, attempt);
+    if (spec.counsel === "grok") throw new Error("Source translation operation is failed");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    finished.push(spec.counsel);
+    return { events: [], done: true };
+  };
+  await assert.rejects(holdSession(bench), /Source translation operation is failed/);
+  assert.deepEqual(finished.sort(), ["chatgpt", "claude", "gemini"], "the session fails only once every seat settled");
+  assert.ok(!events.some((event) => event.type === "absence"), "a failed round records none of its outcomes");
+});
+
 test("translated contributions reach unification and source review, including after an incomplete instruction attempt", async () => {
   let instructionAttempts = 0;
   const grok: Script = (prompt, tools) => {
