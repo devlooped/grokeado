@@ -9,6 +9,7 @@ import type { researchWorker } from "./research.ts";
 import { MemoryOperationRepository } from "./source-store.ts";
 import { extractSource, SourceService } from "./sources.ts";
 import { executeSourceTool } from "./tools.ts";
+import type { ToolActivity } from "../domain/tool-activity.ts";
 
 for (const language of ["es", "en"]) test(`${language} criticism shares gathering reads and returns untranslated discovery/review text without promoting review material`, async () => {
   const artifacts = new MemoryArtifactStore(), operations = new MemoryOperationRepository();
@@ -48,4 +49,50 @@ for (const language of ["es", "en"]) test(`${language} criticism shares gatherin
   const audit = [...files].filter(([path]) => path.startsWith("instruction/research/")).map(([, bytes]) => new TextDecoder().decode(bytes));
   assert.ok(audit.some((text) => text.includes("FOREIGN_SENTINEL")), "original discovery stays audit-only");
   assert.ok(audit.some((text) => text.includes('"provenance":"review_context"') && text.includes('"reviewSourceId":"E1"')));
+});
+
+test("tool activity is published before work, identifies the calling provider and excludes internal arguments and results", async () => {
+  const artifacts = new MemoryArtifactStore(), operations = new MemoryOperationRepository();
+  const activities = new Map<string, ToolActivity>();
+  const reader = new SourceService("fixture", "es", {
+    operations, artifacts, extract: extractSource, translatorModelId: "fixture/translator", translatorFingerprint: "fixture-v1",
+    translate: async (input) => ({ ...input, changed: false }), verifyLanguage: async () => ({ matches: true }),
+    download: async (url) => {
+      assert.ok([...activities.values()].some((activity) => activity.data.tool === "read_source"));
+      return { ok: true, finalUrl: url, redirects: 0, contentType: "text/plain", bytes: new TextEncoder().encode("PRIVATE SOURCE BODY") };
+    },
+  });
+  const record: CaseRecord = { id: "fixture", createdAt: "2026-11-06T00:00:00.000Z", status: "in_session", pipelineVersion: 2, submission: { kind: "text", text: "PRIVATE SUBMISSION", resolvedLanguage: "es" }, models: modelSnapshot(DEFAULT_MODELS) };
+  const worker: typeof researchWorker = async (...args) => {
+    assert.ok([...activities.values()].some((activity) => activity.data.tool === args[0]), "activity must be visible while the worker is running");
+    return { ...await mockResearchWorker(...args), text: "PRIVATE WORKER RESULT", modelId: "spacexai/internal-worker" };
+  };
+  const context = { record, events: [] as RecordedEvent[], phase: "instruction" as const, seat: "claude", turnId: "turn", reader, artifacts, worker,
+    activity: async (id: string, activity: ToolActivity) => { assert.equal(id, "fixture"); if (!activities.has(activity.id)) activities.set(activity.id, activity); },
+  };
+  await executeSourceTool({ tool: "read_source", input: { url: "https://example.test/report#p1" }, callId: "read" }, context);
+  for (const tool of ["web_search", "x_search"] as const) {
+    const call = { tool, input: { query: "original statement" }, callId: tool };
+    await executeSourceTool(call, context);
+    await executeSourceTool(call, context);
+  }
+  assert.equal(activities.size, 3, "replayed calls keep stable activity identities");
+  for (const activity of activities.values()) {
+    assert.equal(activity.seat, "claude");
+    assert.equal(activity.modelId, record.models!["counsel.claude"].id, "X activity belongs to Claude, not the X research worker");
+  }
+  assert.doesNotMatch(JSON.stringify([...activities.values()]), /PRIVATE|SUBMISSION|internal-worker|reviewSourceId/);
+  const count = activities.size;
+  await assert.rejects(executeSourceTool({ tool: "web_search", input: { query: "original statement" }, callId: "forbidden" }, { ...context, phase: "debate" }), /tool_not_available_in_phase/);
+  await assert.rejects(executeSourceTool({ tool: "read_source", input: { url: "javascript:alert(1)" }, callId: "unsafe" }, context), /Invalid source URL/);
+  await assert.rejects(executeSourceTool({ tool: "web_search", input: { query: "original statement", thinking: "PRIVATE TRACE" }, callId: "invalid" }, context));
+  assert.equal(activities.size, count, "rejected calls do not publish public activity");
+  const events: RecordedEvent[] = [
+    { type: "evidence_unified", sources: [{ id: "E1", title: "Report", url: "https://example.test/report", contributions: [] }], seq: 1, at: record.createdAt },
+    { type: "source_decided", sourceId: "E1", excluded: false, seq: 2, at: record.createdAt },
+  ];
+  await assert.rejects(executeSourceTool({ tool: "read_evidence", input: { id: "E1" }, callId: "evidence" }, { ...context, phase: "debate", events })); // This fixture has no archived corpus.
+  assert.deepEqual([...activities.values()].at(-1)?.data, { tool: "read_evidence", id: "E1", url: "https://example.test/report" });
+  await assert.rejects(executeSourceTool({ tool: "read_evidence", input: { id: "E2" }, callId: "unknown" }, { ...context, phase: "debate", events }), /not admitted/);
+  assert.equal(activities.size, 4);
 });

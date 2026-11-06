@@ -5,7 +5,7 @@ import type { CaseRecord } from "../domain/court.ts";
 import { caseArtifactStore } from "../evidence/blob.ts";
 import { trustedInstructionOrigin } from "../evidence/broker.ts";
 import { sha256 } from "../evidence/validate.ts";
-import { consumeSandboxBinding, getCase, getEvents, saveCaseAuditRecord } from "../store.ts";
+import { consumeSandboxBinding, getCase, getEvents, recordCaseToolActivity, saveCaseAuditRecord } from "../store.ts";
 import { type SandboxBinding } from "./authorization.ts";
 import { validateGatewayGeneration } from "./gateway-validation.ts";
 import { sourceDownloader } from "./research.ts";
@@ -58,7 +58,7 @@ export async function forwardGatewayGeneration(request: Request, body: unknown):
   return text;
 }
 
-const live = { consume: consumeSandboxBinding, getCase, getEvents, reader: caseSourceService, artifacts: caseArtifactStore, audit: saveCaseAuditRecord, generate: forwardGatewayGeneration };
+const live = { consume: consumeSandboxBinding, getCase, getEvents, reader: caseSourceService, artifacts: caseArtifactStore, audit: saveCaseAuditRecord, activity: recordCaseToolActivity, generate: forwardGatewayGeneration };
 export type TurnProxyDependencies = typeof live;
 
 async function generation(request: Request, body: unknown, caseId: string, binding: SandboxBinding, deps: TurnProxyDependencies) {
@@ -104,7 +104,7 @@ export function createTurnProxy(config: { origin: string; teamId: string; projec
       const record = await deps.getCase(caseId);
       if (!record || record.pipelineVersion !== 2) throw new Error("case_unavailable");
       const events = await deps.getEvents(caseId);
-      return Response.json(await executeSourceTool(call, { record, events, phase: binding.phase, seat: binding.seat, turnId: binding.activeTurn!.id, reader: deps.reader(record), artifacts: deps.artifacts }));
+      return Response.json(await executeSourceTool(call, { record, events, phase: binding.phase, seat: binding.seat, turnId: binding.activeTurn!.id, reader: deps.reader(record), artifacts: deps.artifacts, activity: deps.activity }));
     } catch (error) {
       // Keep public responses generic and log only known codes, never request
       // bodies, credentials, source text or arbitrary upstream error messages.

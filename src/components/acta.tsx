@@ -3,6 +3,8 @@ import { COUNSEL, MODEL_NAME, modelDetail, modelMark, modelName, project, seatMo
 import { FoldButtons, FoldNavigation } from "./acta-folding.tsx";
 import { CitationLink, Cited, citationHref, citationRefs, mentions, type Citations } from "./citations.tsx";
 import { GavelIcon, JudgeSeal, ModelMark, VERDICT_TEXT, VerdictGlyph, VoteChip } from "./marks.tsx";
+import type { ToolActivity } from "@/domain/tool-activity.ts";
+import { ToolActivityEntry } from "./tool-activity.tsx";
 
 const time = (at: string) =>
   new Date(at).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit", second: "2-digit", timeZone: "America/Argentina/Buenos_Aires" });
@@ -523,13 +525,26 @@ function dialogueSpeaker(e: RecordedEvent): Seat | undefined {
   }
 }
 
-export function SessionDialogue({ events, caseId, models = seatModels({}, events) }: { events: RecordedEvent[]; caseId: string; models?: SeatModels }) {
+export function SessionDialogue({ events, caseId, models = seatModels({}, events), activities = [] }: { events: RecordedEvent[]; caseId: string; models?: SeatModels; activities?: readonly ToolActivity[] }) {
   const view = project(events);
   const ctx: Context = { view, caseId, refs: citationRefs(events, view), sourceAliases: new Map(), models, live: true };
   const messages = events.flatMap((e) => {
     const speaker = dialogueSpeaker(e);
-    return speaker ? [{ e, speaker }] : [];
+    return speaker ? [{ key: "event:" + e.seq, at: e.at, speaker, model: models[speaker], tool: false, content: <Entry e={e} ctx={ctx} /> }] : [];
   });
+  const tools = [...activities].sort((a, b) => a.at.localeCompare(b.at) || a.id.localeCompare(b.id)).map((activity) => ({
+    key: activity.id, at: activity.at, speaker: activity.seat, tool: true,
+    model: activity.modelId ? { id: activity.modelId, effort: activity.effort ?? null } : models[activity.seat],
+    content: <ToolActivityEntry activity={activity} caseId={caseId} />,
+  }));
+  // Merge tool timestamps without changing the authoritative order of court messages.
+  const entries: typeof messages = [];
+  let next = 0;
+  for (const message of messages) {
+    while (next < tools.length && tools[next].at <= message.at) entries.push(tools[next++]);
+    entries.push(message);
+  }
+  entries.push(...tools.slice(next));
   return (
     <section aria-labelledby="session-dialogue-title" className="mt-12 text-left">
       <div className="rule-double pt-4">
@@ -537,23 +552,22 @@ export function SessionDialogue({ events, caseId, models = seatModels({}, events
         <p className="mt-1 text-sm text-ink-soft">Las intervenciones aparecen completas al registrarse. Sin trazas de razonamiento.</p>
       </div>
       <div role="log" aria-labelledby="session-dialogue-title" aria-live="polite" aria-relevant="additions" className="mt-6">
-        {!messages.length && <p className="text-sm text-ink-soft">Esperando la primera intervención del moderador.</p>}
+        {!entries.length && <p className="text-sm text-ink-soft">Esperando la primera intervención del moderador.</p>}
         <ol className="space-y-6">
-          {messages.map(({ e, speaker }) => {
-            const model = models[speaker];
+          {entries.map(({ key, at, speaker, model, tool, content }) => {
             const mark = model ? modelMark(model.id) : speaker === "judge" ? undefined : speaker;
             const name = speaker === "judge" ? "Moderador" + (model ? " · " + modelName(model.id) : "") : model ? modelName(model.id) : MODEL_NAME[speaker];
             return (
-              <li key={e.seq} className="flex gap-3">
+              <li key={key} className="flex gap-3">
                 <span title={model ? modelDetail(model) : name} className="grid size-9 shrink-0 place-items-center rounded-full border border-rule bg-paper">
                   {mark ? <ModelMark model={mark} className="size-5" /> : <GavelIcon className="size-5 text-seal" />}
                 </span>
                 <div className="min-w-0 flex-1 border-l border-rule pb-2 pl-4">
                   <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 text-xs text-ink-soft">
-                    <span className="font-semibold text-ink">{name}</span>
-                    <time dateTime={e.at}>{time(e.at)}</time>
+                    <span className="font-semibold text-ink">{name}{tool && model?.id.includes("/") && <span className="font-normal text-ink-soft"> · {model.id.split("/")[0]}</span>}</span>
+                    <time dateTime={at}>{time(at)}</time>
                   </div>
-                  <Entry e={e} ctx={ctx} />
+                  {content}
                 </div>
               </li>
             );

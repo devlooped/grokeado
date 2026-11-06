@@ -5,6 +5,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { COUNSEL, type CourtEvent, type RecordedEvent, type SeatModels } from "../domain/court.ts";
 import { SessionDialogue } from "./acta.tsx";
+import type { ToolActivity } from "../domain/tool-activity.ts";
 
 const opened: CourtEvent = {
   type: "session_opened",
@@ -109,4 +110,61 @@ test("a dismissal appears as a complete moderator message", () => {
   const document = render([opened, { type: "dismissed", reason: "El contenido no contiene afirmaciones verificables." }]);
   assert.equal(document.querySelector('[role="log"] > ol')!.children.length, 1);
   assert.match(document.querySelector("section")!.textContent, /Moderador · Claude.*El contenido no contiene afirmaciones verificables/s);
+});
+
+test("the timeline merges four tool icons and complete public targets with dialogue, attributed to the caller's provider", () => {
+  const at = (second: number) => `2026-11-06T00:00:0${second}.000Z`;
+  const events: RecordedEvent[] = [
+    { ...claims, seq: 1, at: at(0) },
+    { type: "statement", id: "I1", by: "grok", stage: "opening", text: "Complete public statement.", evidenceIds: [], seq: 2, at: at(4) },
+  ];
+  const base = { schemaVersion: 2 as const, kind: "tool_call" as const, seat: "claude" as const, modelId: "anthropic/calling-model", effort: "high" };
+  const activities: ToolActivity[] = [
+    { ...base, id: "tool:source", at: at(1), data: { tool: "read_source", url: "https://example.test/report" } },
+    { ...base, id: "tool:evidence", at: at(2), data: { tool: "read_evidence", id: "E1", url: "https://example.test/report" } },
+    { ...base, id: "tool:web", at: at(3), data: { tool: "web_search", query: "complete search query\nwith a second line" } },
+    { ...base, id: "tool:x", at: at(5), data: { tool: "x_search", query: "original public statement <script>not executable</script>" } },
+  ];
+  const models: SeatModels = { claude: { id: "google/current-config", effort: null } };
+  const html = renderToStaticMarkup(createElement(SessionDialogue, { events, caseId: "fixture", activities: [...activities].reverse(), models }));
+  const { document } = parseHTML(html);
+  const entries = [...document.querySelector('[role="log"] > ol')!.children];
+  assert.equal(entries.length, 6);
+  assert.ok(entries[0].textContent.includes("La afirmación a examinar."));
+  assert.ok(entries[4].textContent.includes("Complete public statement."));
+  assert.deepEqual(entries.flatMap((entry) => entry.querySelector("[data-tool]")?.getAttribute("data-tool") ?? []), ["read_source", "read_evidence", "web_search", "x_search"]);
+  const toolEntries = entries.filter((entry) => entry.querySelector("[data-tool]"));
+  for (const entry of toolEntries) {
+    assert.match(entry.textContent, /Claude · anthropic/);
+    assert.ok(entry.querySelector('[title="calling-model high"] svg line'), "the caller's icon overrides current configuration");
+    const row = entry.querySelector("[data-tool]")!;
+    assert.doesNotMatch(row.textContent, /read_source|read_evidence|web_search|x_search/, "tool names are not visible");
+    assert.equal(row.children.length, 2, "the row contains only the icon and text");
+    const text = row.querySelector("p")!;
+    assert.ok(text.classList.contains("truncate"), "long targets and multiline queries stay on one line");
+    assert.equal(text.getAttribute("title"), text.textContent, "the full text remains available on hover");
+  }
+  assert.ok(document.querySelector('[data-tool="read_source"] svg circle'));
+  assert.equal(document.querySelectorAll('[data-tool="read_evidence"] svg ellipse').length, 2);
+  assert.ok(document.querySelector('[data-tool="web_search"] svg circle'));
+  assert.ok(document.querySelector('[data-tool="x_search"] svg[fill="currentColor"] path'));
+  assert.equal(document.querySelector('[data-tool="read_evidence"] a')?.getAttribute("href"), "/c/fixture/evidence/E1.md");
+  assert.equal(document.querySelectorAll('[data-tool="read_evidence"] a')[1].getAttribute("href"), "https://example.test/report");
+  assert.ok(document.querySelector('[data-tool="web_search"]')!.textContent.includes("complete search query\nwith a second line"));
+  assert.equal(document.querySelector("script"), null);
+  assert.ok(html.includes("&lt;script&gt;not executable&lt;/script&gt;"));
+});
+
+test("activity can appear before the first court message and preserves court sequence despite timestamp skew", () => {
+  const activity: ToolActivity = { schemaVersion: 2, kind: "tool_call", id: "tool:first", at: "2026-11-06T00:00:01.000Z", seat: "judge", modelId: "openai/calling-model", data: { tool: "read_source", url: "https://example.test/submitted" } };
+  const html = renderToStaticMarkup(createElement(SessionDialogue, { events: [], caseId: "fixture", activities: [activity] }));
+  const { document } = parseHTML(html);
+  assert.equal(document.querySelector('[role="log"] > ol')!.children.length, 1);
+  assert.match(document.querySelector('[role="log"]')!.textContent, /Moderador · ChatGPT · openai/);
+  const events: RecordedEvent[] = [
+    { type: "statement", id: "I1", by: "grok", stage: "opening", text: "First authoritative message.", evidenceIds: [], seq: 1, at: "2026-11-06T00:00:03.000Z" },
+    { type: "statement", id: "I2", by: "gemini", stage: "opening", text: "Second authoritative message.", evidenceIds: [], seq: 2, at: "2026-11-06T00:00:00.000Z" },
+  ];
+  const merged = parseHTML(renderToStaticMarkup(createElement(SessionDialogue, { events, caseId: "fixture", activities: [activity] }))).document;
+  assert.deepEqual([...merged.querySelectorAll('[id^="I"]')].map((element) => element.id), ["I1", "I2"]);
 });

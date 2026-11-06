@@ -16,7 +16,7 @@ import { blobConfigured, caseArtifactStore } from "../evidence/blob.ts";
 import { runEvidenceStep, type EvidenceStepResult } from "../evidence/sandbox.ts";
 import type { EvidenceSeat, EvidenceStage } from "../evidence/schema.ts";
 import { closeCase, openCase, saveEvents } from "./steps.ts";
-import { getCase, getImage, revokeSandboxBindings, saveCaseLanguage, saveCaseModels } from "../store.ts";
+import { getCase, getImage, recordCaseToolActivity, revokeSandboxBindings, saveCaseLanguage, saveCaseModels } from "../store.ts";
 import { collectInstruction } from "../instruction/intake.ts";
 import { liveSourceDependencies, SourceService } from "../instruction/sources.ts";
 import { sourceDownloader } from "../instruction/research.ts";
@@ -57,7 +57,7 @@ async function playShared(caseId: string, docket: Docket, spec: TurnSpec, record
     record: stored, reader: new SourceService(caseId, docket.language!, mockInstructionSources), artifacts: mockInstructionArtifacts,
     model: createMockSeat({ spec, record, submission: docket.submission, shared: true }, false).model,
     prepare: async () => "SIMULACIÓN LOCAL: Análisis preparatorio ficticio; no agrega pruebas.", worker: mockResearchWorker,
-    audit: async () => {},
+    audit: async () => {}, activity: recordCaseToolActivity,
   } : undefined);
   return linkEvidenceRun(outcome, undefined, docket.simulated, docket.models);
 }

@@ -8,6 +8,7 @@ import { instructionSandboxLaunch } from "../evidence/broker.ts";
 import { assertToolCapability, authorizeSandboxBinding, committedPhase, type SandboxBinding } from "./authorization.ts";
 import { validateGatewayGeneration } from "./gateway-validation.ts";
 import { createTurnProxy } from "./proxy.ts";
+import type { ToolActivity } from "../domain/tool-activity.ts";
 import { preparationDefinitions } from "./preparation.ts";
 import { MemoryOperationRepository } from "./source-store.ts";
 import { extractSource, SourceService } from "./sources.ts";
@@ -112,7 +113,7 @@ test("persistent sandbox proxy binds the verified name across VM resumes and reu
   const audit = new Map<string, unknown>();
   const dispatch = createTurnProxy({ origin: "https://staging.example.test", teamId: "team", projectId: "project" }, {
     consume: async (name) => { assert.equal(name, "persistent-fixture"); return { caseId: "fixture", binding }; },
-    getCase: async () => ({ ...record, revision: 0 }), getEvents: async () => [], reader: () => reader, artifacts,
+    getCase: async () => ({ ...record, revision: 0 }), getEvents: async () => [], reader: () => reader, artifacts, activity: async () => {},
     audit: async (_caseId, key, value) => { if (auditError) throw new Error(auditError); if (audit.has(key)) assert.deepEqual(value, audit.get(key)); audit.set(key, value); },
     generate: async (_request, actual) => { generations++; assert.deepEqual(actual, body); return JSON.stringify({ content: [], usage: { inputTokens: { cacheRead: 42, cacheWrite: 10 } } }); },
   });
@@ -137,4 +138,32 @@ test("persistent sandbox proxy binds the verified name across VM resumes and reu
   assert.deepEqual(diagnostics.at(-1), ["Sandbox request rejected:", "tool_request_unavailable"], "unknown error messages are never logged");
   assert.deepEqual(await failedAudit.json(), { error: "tool_request_unavailable" });
   assert.equal(generations, 1);
+});
+
+test("sandbox source calls publish caller-attributed activity through the authenticated proxy before reading", async () => {
+  const artifacts = new MemoryArtifactStore(), operations = new MemoryOperationRepository();
+  const activities: ToolActivity[] = [];
+  const reader = new SourceService("fixture", "es", {
+    artifacts, operations, extract: extractSource, translatorModelId: "fixture/translator", translatorFingerprint: "fixture-activity",
+    translate: async (input) => ({ ...input, changed: false }), verifyLanguage: async () => ({ matches: true }),
+    download: async (url) => {
+      assert.equal(activities.length, 1, "activity is durable before source acquisition begins");
+      return { ok: true, finalUrl: url, redirects: 0, contentType: "text/plain", bytes: new TextEncoder().encode("Fuente pública de prueba.") };
+    },
+  });
+  const record: CaseRecord = { id: "fixture", createdAt: "2026-11-06T00:00:00.000Z", status: "in_session", pipelineVersion: 2, submission: { kind: "text", text: "Fixture", resolvedLanguage: "es" }, models: { "counsel.claude": { id: "anthropic/caller", effort: "high" } } };
+  const dispatch = createTurnProxy({ origin: "https://staging.example.test", teamId: "team", projectId: "project" }, {
+    consume: async () => ({ caseId: "fixture", binding: { ...binding, phase: "instruction", seat: "claude" } }),
+    getCase: async () => ({ ...record, revision: 0 }), getEvents: async () => [], reader: () => reader, artifacts,
+    activity: async (_id, activity) => { activities.push(activity); }, audit: async () => {},
+    generate: async () => { throw new Error("No model calls are expected"); },
+  });
+  const response = await dispatch(new Request("https://staging.example.test/api/cases/fixture/turn-tools", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ tool: "read_source", input: { url: "https://example.test/report" }, callId: "read-source" }),
+  }), { host: "staging.example.test", teamId: "team", projectId: "project", sandboxName: "persistent-fixture", sandboxId: "vm" });
+  assert.equal(response.status, 200);
+  assert.equal(activities[0].modelId, "anthropic/caller");
+  assert.equal(activities[0].seat, "claude");
+  assert.deepEqual(activities[0].data, { tool: "read_source", url: "https://example.test/report" });
 });

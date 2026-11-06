@@ -84,6 +84,22 @@ test("quiet streams send heartbeats and rotate before the serverless limit", asy
   assert.equal((await reader.read()).done, true);
 });
 
+test("tool invocations invalidate SSE even while no new court message has been committed", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  let current = { ...progress, activity: 0 };
+  const response = await caseEventStream(request(caseProgressVersion(current)), "fixture", async () => current);
+  const reader = response.body!.getReader();
+  t.after(() => reader.cancel());
+  await frame(reader);
+  current = { ...current, activity: 1 };
+  await advance(t);
+  assert.match(await frame(reader), /"version":"0:in_session:1:tools:1","done":false/);
+  current = { ...current, activity: 2 };
+  await advance(t);
+  assert.match(await frame(reader), /"version":"0:in_session:1:tools:2","done":false/);
+  assert.equal(current.seq, 1);
+});
+
 for (const status of ["resolved", "failed"] as const) {
   test(`a ${status} case emits its terminal snapshot and closes even on a matching cursor`, async () => {
     const terminal = { ...progress, status };

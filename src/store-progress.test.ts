@@ -7,7 +7,7 @@ test("progress reads a single consistent, parameterized snapshot without loading
   const previous = process.env.DATABASE_URL;
   process.env.DATABASE_URL = "postgres://example.invalid/test";
   t.after(() => { if (previous === undefined) delete process.env.DATABASE_URL; else process.env.DATABASE_URL = previous; });
-  let rows: CaseProgress[] = [{ status: "in_session", revision: 2, seq: 10 }];
+  let rows: CaseProgress[] = [{ status: "in_session", revision: 2, seq: 10, activity: 4 }];
   const queries: Array<{ sql: string; values?: unknown[] }> = [];
   t.mock.method(Pool.prototype, "query", (async (sql: string, values?: unknown[]) => {
     queries.push({ sql, values });
@@ -19,7 +19,8 @@ test("progress reads a single consistent, parameterized snapshot without loading
   assert.deepEqual(query.values, [id]);
   assert.match(query.sql, /COALESCE\(\(SELECT MAX\(seq\).*WHERE case_id = cases.id/);
   assert.match(query.sql, /FROM cases WHERE id = \$1$/);
-  assert.doesNotMatch(query.sql, /body|submission|owner_id|audit/);
+  assert.match(query.sql, /COUNT\(\*\)::int FROM case_audit_records.*record_id LIKE 'tool:%'/);
+  assert.doesNotMatch(query.sql, /body|submission|owner_id/);
   rows = [];
   assert.equal(await getCaseProgress("missing"), undefined);
 });

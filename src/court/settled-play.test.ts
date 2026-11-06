@@ -39,7 +39,7 @@ test("four independent source-backed analysts settle once, then every debate pat
       } });
       return playSharedTurn("fixture", { submission, today: "fixture", language: "es", models: DEFAULT_MODELS, simulated: true }, spec, record, attempt, {
         record: stored, reader: reader(), artifacts, repository, model, worker: mockResearchWorker,
-        prepare: async () => "SIMULACIÓN LOCAL: análisis preparatorio, no prueba.", audit: async (_id, _key, body) => { audit.push(body); },
+        prepare: async () => "SIMULACIÓN LOCAL: análisis preparatorio, no prueba.", audit: async (_id, _key, body) => { audit.push(body); }, activity: async (_id, body) => { audit.push(body); },
       }).catch(async (error) => { throw new Error(JSON.stringify((await operations.list("fixture")).filter((operation) => operation.status === "uncertain").map(({ stage, error }) => ({ stage, error }))), { cause: error }); });
     },
   });
@@ -66,6 +66,7 @@ test("four independent source-backed analysts settle once, then every debate pat
   const log = parseCaseLog(buildCaseLog(events, audit, []));
   assert.equal(log.filter((record) => record.kind === "court_event").length, events.length);
   assert.ok(log.some((record) => record.kind === "model_step"));
+  assert.ok(log.some((record) => record.kind === "tool_call"), "tool activity survives public case-log archival");
 });
 
 test("a retry after generation and court-action checkpoints reuses messages, actions, and the paid step", async () => {
@@ -78,7 +79,7 @@ test("a retry after generation and court-action checkpoints reuses messages, act
   let generations = 0, interrupt = true;
   const model = new MockLanguageModelV4({ doGenerate: async (options) => { generations++; return underlying.doGenerate(options); } });
   const audit = new Map<string, unknown>();
-  const deps = { record, reader, artifacts, repository, model, prepare: async () => "Análisis de simulación.", audit: async (_caseId: string, key: string, body: unknown) => {
+  const deps = { record, reader, artifacts, repository, model, activity: async () => {}, prepare: async () => "Análisis de simulación.", audit: async (_caseId: string, key: string, body: unknown) => {
     if (audit.has(key)) assert.deepEqual(body, audit.get(key));
     audit.set(key, body);
     if (interrupt) { interrupt = false; throw new Error("Interrupted after durable generation before message checkpoint"); }

@@ -16,12 +16,13 @@ import { caseShareMetadata, submissionExcerpt } from "@/domain/acta.ts";
 import { caseCardImageUrl } from "@/domain/case-card.ts";
 import { COUNSEL_NAMES, seatModels, type CaseRecord, type RecordedEvent } from "@/domain/court.ts";
 import { project } from "@/domain/court.ts";
+import type { ToolActivity } from "@/domain/tool-activity.ts";
 import { displayHistoricalCitations } from "@/domain/historical-citations.ts";
 import { blobConfigured, caseStorageExists, findEvidenceArchive, hasEvidenceBase } from "@/evidence/blob.ts";
 import { auth0 } from "@/lib/auth0.ts";
 import { detectMissingCaseStorage } from "@/lib/case-storage.ts";
 import { caseProgressVersion } from "@/lib/case-event-stream.ts";
-import { coverVersions, failResolvedCase, findCaseAlias, getCase, getCaseAuditRecords, getEvents, type StoredCaseRecord } from "@/store.ts";
+import { coverVersions, failResolvedCase, findCaseAlias, getCase, getCaseAuditRecords, getCaseToolActivities, getEvents, type StoredCaseRecord } from "@/store.ts";
 import { usageCalls } from "@/domain/usage.ts";
 import { caseCosts } from "@/domain/cost.ts";
 import { loadTokenPrices } from "@/lib/model-costs.ts";
@@ -46,10 +47,10 @@ export async function generateMetadata(props: PageProps<"/c/[id]">): Promise<Met
 
 const date = (at: string) => new Date(at).toLocaleString("es-AR", { dateStyle: "long", timeStyle: "short", timeZone: "America/Argentina/Buenos_Aires" });
 
-function InSession({ c, events }: { c: StoredCaseRecord; events: RecordedEvent[] }) {
+function InSession({ c, events, activities }: { c: StoredCaseRecord; events: RecordedEvent[]; activities: ToolActivity[] }) {
   return (
     <section className="mx-auto max-w-2xl py-16 text-center">
-      <CaseUpdates caseId={c.id} version={caseProgressVersion({ status: c.status, revision: c.revision, seq: events.at(-1)?.seq ?? 0 })} />
+      <CaseUpdates caseId={c.id} version={caseProgressVersion({ status: c.status, revision: c.revision, seq: events.at(-1)?.seq ?? 0, activity: activities.length })} />
       <div className="inline-flex items-center gap-2 rounded-full border border-seal/40 px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.25em] text-seal">
         <span className="session-light size-2.5 rounded-full bg-seal" /> En curso
       </div>
@@ -67,7 +68,7 @@ function InSession({ c, events }: { c: StoredCaseRecord; events: RecordedEvent[]
         <Link href="/method" className="text-celeste-deep underline underline-offset-4">Cómo trabaja el panel</Link>
       </p>
       <p className="mt-6 font-mono text-xs text-ink-soft">Caso Nº {c.id}</p>
-      {c.status === "in_session" && <SessionDialogue events={events} caseId={c.id} models={seatModels(c, events)} />}
+      {c.status === "in_session" && <SessionDialogue events={events} caseId={c.id} models={seatModels(c, events)} activities={activities} />}
     </section>
   );
 }
@@ -82,7 +83,10 @@ export default async function CasePage(props: PageProps<"/c/[id]">) {
     notFound();
   }
   const c = await detectMissingCaseStorage(found, { configured: blobConfigured, exists: caseStorageExists, fail: failResolvedCase });
-  if (c.status === "queued" || c.status === "in_session") return <div className="case-enter"><InSession c={c} events={c.status === "queued" ? [] : await getEvents(id)} /></div>;
+  if (c.status === "queued" || c.status === "in_session") {
+    const [events, activities] = c.status === "queued" ? [[], []] : await Promise.all([getEvents(id), getCaseToolActivities(id)]);
+    return <div className="case-enter"><InSession c={c} events={events} activities={activities} /></div>;
+  }
   if (c.status === "failed") {
     const session = await auth0.getSession();
     return <div className="case-enter"><Suspended c={c} user={session?.user} /></div>;

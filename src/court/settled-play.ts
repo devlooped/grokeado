@@ -10,7 +10,7 @@ import { caseSourceService } from "../instruction/proxy.ts";
 import { preparationDefinitions, prepareInSandbox } from "../instruction/preparation.ts";
 import type { SourceService } from "../instruction/sources.ts";
 import { executeSourceTool, SourceToolSchemas, sourceToolsFor } from "../instruction/tools.ts";
-import { getCase, saveCaseAuditRecord } from "../store.ts";
+import { getCase, recordCaseToolActivity, saveCaseAuditRecord } from "../store.ts";
 import { modelEffort, seatModel } from "./models.ts";
 import { PhaseSession, phaseSystem, type PhaseRepository } from "./phase-session.ts";
 import { seatOf, type Docket, type TurnOutcome, type TurnSpec } from "./turns.ts";
@@ -21,6 +21,7 @@ export type SharedTurnDependencies = {
   prepare?(session: PhaseSession): Promise<string>;
   worker?: Parameters<typeof executeSourceTool>[1]["worker"];
   audit: typeof saveCaseAuditRecord;
+  activity: typeof recordCaseToolActivity;
 };
 
 export async function playSharedTurn(caseId: string, docket: Docket, spec: TurnSpec, record: readonly CourtEvent[], attempt: number, injected?: SharedTurnDependencies): Promise<TurnOutcome> {
@@ -29,6 +30,7 @@ export async function playSharedTurn(caseId: string, docket: Docket, spec: TurnS
   const artifacts = injected?.artifacts ?? caseArtifactStore;
   const reader = injected?.reader ?? caseSourceService(stored);
   const audit = injected?.audit ?? saveCaseAuditRecord;
+  const activity = injected?.activity ?? recordCaseToolActivity;
   const seat = seatOf(spec), phase = turnPhase(spec), model = seatModel(docket.models, seat);
   const corpus = phase === "debate" ? await loadSettledCorpus(caseId, record as RecordedEvent[], artifacts) : undefined;
   const initial = corpus
@@ -63,7 +65,7 @@ export async function playSharedTurn(caseId: string, docket: Docket, spec: TurnS
   const tools: ToolSet = {};
   for (const name of sourceToolsFor(phase)) tools[name] = {
     description: name, inputSchema: SourceToolSchemas[name],
-    execute: (input, options) => executeSourceTool({ tool: name, input, callId: options.toolCallId }, { record: stored, events: record as RecordedEvent[], phase, seat, turnId: id, reader, artifacts, worker: injected?.worker }),
+    execute: (input, options) => executeSourceTool({ tool: name, input, callId: options.toolCallId }, { record: stored, events: record as RecordedEvent[], phase, seat, turnId: id, reader, artifacts, worker: injected?.worker, activity }),
   };
   for (const name of names) tools[name] = {
     description: name, inputSchema: CourtActionSchemas[name],

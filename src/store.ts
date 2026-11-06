@@ -7,6 +7,7 @@ import type { Operation, OperationClaim, OperationRepository } from "./instructi
 import { randomUUID } from "node:crypto";
 import { authorizeSandboxBinding, committedPhase, type SandboxBinding } from "./instruction/authorization.ts";
 import { caseFailureMessage, type SnapshotHealth } from "./lib/admin-notifications.ts";
+import { publicToolActivities, ToolActivitySchema, type ToolActivity } from "./domain/tool-activity.ts";
 
 export { newCaseId };
 
@@ -410,12 +411,13 @@ export async function getEvents(caseId: string): Promise<RecordedEvent[]> {
   return rows.map((r) => ({ ...r.body, seq: r.seq, at: r.at }) as RecordedEvent);
 }
 
-export type CaseProgress = { status: CaseStatus; revision: number; seq: number };
+export type CaseProgress = { status: CaseStatus; revision: number; seq: number; activity?: number };
 
 // One small snapshot for SSE, without loading submissions, model output or audit logs.
 export async function getCaseProgress(caseId: string): Promise<CaseProgress | undefined> {
   const { rows } = await (await db()).query<CaseProgress>(
-    "SELECT status, revision, COALESCE((SELECT MAX(seq) FROM events WHERE case_id = cases.id), 0) AS seq FROM cases WHERE id = $1",
+    "SELECT status, revision, COALESCE((SELECT MAX(seq) FROM events WHERE case_id = cases.id), 0) AS seq, " +
+    "(SELECT COUNT(*)::int FROM case_audit_records WHERE case_id = cases.id AND record_id LIKE 'tool:%') AS activity FROM cases WHERE id = $1",
     [caseId]
   );
   return rows[0];
@@ -638,6 +640,22 @@ export async function saveCaseAuditRecord(caseId: string, id: string, body: unkn
 export async function getCaseAuditRecords(caseId: string): Promise<unknown[]> {
   const { rows } = await (await db()).query<{ body: unknown }>("SELECT body FROM case_audit_records WHERE case_id = $1 ORDER BY record_id", [caseId]);
   return rows.map((row) => row.body);
+}
+
+// A replay keeps the original invocation time rather than publishing another item.
+export async function recordCaseToolActivity(caseId: string, activity: ToolActivity): Promise<void> {
+  const record = ToolActivitySchema.parse(activity);
+  await (await db()).query(
+    "INSERT INTO case_audit_records (case_id, record_id, body) VALUES ($1, $2, $3) ON CONFLICT (case_id, record_id) DO NOTHING",
+    [caseId, record.id, JSON.stringify(record)]
+  );
+}
+
+export async function getCaseToolActivities(caseId: string): Promise<ToolActivity[]> {
+  const { rows } = await (await db()).query<{ body: unknown }>(
+    "SELECT body FROM case_audit_records WHERE case_id = $1 AND record_id LIKE 'tool:%' ORDER BY body->>'at', record_id", [caseId]
+  );
+  return publicToolActivities(rows.map((row) => row.body));
 }
 
 export async function getSourceOperations(caseId: string): Promise<Operation[]> {

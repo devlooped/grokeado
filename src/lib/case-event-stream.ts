@@ -1,7 +1,7 @@
 import { setTimeout as delay } from "node:timers/promises";
 import type { CaseProgress } from "../store.ts";
 
-export const caseProgressVersion = (progress: CaseProgress) => `${progress.revision}:${progress.status}:${progress.seq}`;
+export const caseProgressVersion = (progress: CaseProgress) => `${progress.revision}:${progress.status}:${progress.seq}` + (progress.activity ? `:tools:${progress.activity}` : "");
 
 type ReadProgress = (caseId: string) => Promise<CaseProgress | undefined>;
 
