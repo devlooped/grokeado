@@ -13,6 +13,11 @@ import { z } from "zod";
 export const EXTRACTION_VERSION = "markdown-blocks-v1";
 export const TRANSLATION_VERSION = "canonical-markdown-verified-v2";
 
+// The language verifier is a model, and it sometimes rejects text already in
+// the case language, such as the host's own prompts. A failed operation is final,
+// so a rejection is checked again this many times before it fails the case.
+const LANGUAGE_VERIFICATIONS = 2;
+
 // A completed, rejected result is different from an interrupted external call.
 export class SourceProcessingFailure extends Error {}
 
@@ -254,9 +259,13 @@ export class SourceService {
         if ((input.title && !translated.title.trim()) || (input.body && !translated.body.trim()) ||
             JSON.stringify(protectedParts(input.title)) !== JSON.stringify(protectedParts(translated.title)) ||
             JSON.stringify(protectedParts(input.body)) !== JSON.stringify(protectedParts(translated.body))) throw new SourceProcessingFailure("Translation changed protected Markdown, links, or numbers");
-        const verification = await this.deps.verifyLanguage({ title: translated.title, body: translated.body }, this.language);
+        let verification = await this.deps.verifyLanguage({ title: translated.title, body: translated.body }, this.language);
+        let rejectedVerifications = 0;
+        while (!verification.matches && ++rejectedVerifications < LANGUAGE_VERIFICATIONS) {
+          verification = await this.deps.verifyLanguage({ title: translated.title, body: translated.body }, this.language);
+        }
         if (!verification.matches) throw new SourceProcessingFailure("Translation language could not be confirmed");
-        const content = JSON.stringify({ title: translated.title, body: translated.body, changed: translated.changed, language: this.language, verification, usage: translated.usage ?? null });
+        const content = JSON.stringify({ title: translated.title, body: translated.body, changed: translated.changed, language: this.language, verification, ...(rejectedVerifications ? { rejectedVerifications } : {}), usage: translated.usage ?? null });
         const path = `instruction/operations/${sha256(key)}/translation.json`;
         await this.deps.artifacts.write(this.caseId, new Map([[path, content]]));
         return { path, hash: sha256(content), modelId: this.deps.translatorModelId, effort: this.deps.translatorEffort ?? null, usage: translated.usage ?? null, verificationUsage: verification.usage ?? null };

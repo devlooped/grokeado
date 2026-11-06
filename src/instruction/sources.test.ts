@@ -170,7 +170,7 @@ for (const changed of [false, true]) test(`unconfirmed output language fails clo
   };
   const read = await service().read({ url: "https://example.test/untranslated.txt" });
   for (let attempt = 0; attempt < 2; attempt++) await assert.rejects(service().translated(read.sourceId), (error) => error instanceof SourceTranslationUnavailable && error.status === "failed" && !/ForeignTitle|ForeignSentinel/.test(error.message));
-  assert.equal(verifications, 3);
+  assert.equal(verifications, 6, "each rejection is checked once more before the operation fails");
   assert.equal(counts.translate, 3);
   const files = await deps.artifacts.read("fixture");
   assert.ok(![...files.keys()].some((path) => path.includes("/translations/") || path.endsWith("/translation.json")));
@@ -195,6 +195,19 @@ test("a failed or uncertain translation fails its workflow step at once, with it
   deps.translate = async () => { counts.translate++; throw new Error("Provider connection reset"); };
   for (let attempt = 0; attempt < 2; attempt++) await assert.rejects(service().normalize("", "Otro texto 7"), (error) => FatalError.is(fatalSourceFailure(error)) && /is uncertain: Provider connection reset$/.test((error as Error).message));
   assert.equal(counts.translate, 2);
+});
+
+test("a single false rejection of text already in the case language does not fail the operation", async () => {
+  const { deps, counts, service } = fixture();
+  const answers = [false, true];
+  let verifications = 0;
+  deps.verifyLanguage = async () => ({ matches: answers[verifications++]! });
+  const task = '{"kind":"instruction","counsel":"grok"}\nEtapa de instrucción: exclusivamente aporte de pruebas. Leé las fuentes y registrá cada aporte con file_evidence.';
+  assert.equal((await service().normalize("", task)).body, task);
+  assert.equal((await service().normalize("", task)).body, task, "later readers reuse the confirmed checkpoint");
+  assert.deepEqual({ verifications, translations: counts.translate }, { verifications: 2, translations: 1 });
+  const stored = [...(await deps.artifacts.read("fixture"))].find(([path]) => path.endsWith("/translation.json"))!;
+  assert.equal(JSON.parse(new TextDecoder().decode(stored[1])).rejectedVerifications, 1);
 });
 
 test("an operation another owner still runs stays retryable", async () => {

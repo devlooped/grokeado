@@ -9,6 +9,9 @@ pipeline 1 cases keep their original tools, artifact formats, and download URLs;
 ## Boundaries
 
 - The host owns acquisition, extraction/OCR, language verification and translation.
+  The verifier is a model that sometimes rejects text already in the case
+  language, such as the host's own prompts, so a rejection is checked once more
+  before the translation operation fails for good.
   Durable PostgreSQL operation claims deduplicate work within a case. Completed
   stages and confirmed failures are reused. An interrupted external operation
   becomes uncertain, never an automatic paid retry.
