@@ -22,11 +22,14 @@ async function readPage(id) {
   try {
     await page.goto(`${base}/c/${id}`, { waitUntil: "networkidle" });
     const heading = await page.locator("h1").first().textContent();
+    const quoteNode = page.locator("h1 + blockquote");
+    const quote = await quoteNode.count() ? await quoteNode.textContent() : null;
+    const afterQuote = await quoteNode.count() ? await page.locator("h1 + blockquote + p").textContent() : null;
     const claimNode = page.locator("article#A1 h3");
     const summaryNode = page.locator("section").filter({ has: page.getByRole("heading", { name: "Resumen del caso" }) });
     const claim = await claimNode.count() ? await claimNode.textContent() : null;
     const summary = await summaryNode.count() ? await summaryNode.textContent() : null;
-    return { heading, claim, summary };
+    return { heading, quote, afterQuote, claim, summary };
   } finally {
     await page.close();
   }
@@ -53,6 +56,8 @@ try {
   assert.equal((await getCase(first)).revision, 1);
   const pending = await readPage(first);
   assert.equal(pending.heading, "El panel está analizando");
+  assert.equal(pending.quote, "«Caso aislado para probar caché»");
+  assert.match(pending.afterQuote ?? "", /están investigando y debatiendo tu consulta/);
   assert.equal(pending.claim, null);
   await recordEvents(first, [event("Segunda revisión")]);
   await finishCase(first, "resolved");

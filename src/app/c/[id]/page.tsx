@@ -55,6 +55,7 @@ function InSession({ c, events }: { c: CaseRecord; events: readonly CourtEvent[]
         <GavelIcon className="gavel size-14 text-ink" />
       </div>
       <h1 className="mt-8 font-display text-5xl sm:text-6xl">El panel está analizando</h1>
+      <blockquote className="mx-auto mt-5 line-clamp-3 max-w-lg break-words font-display text-2xl italic leading-snug text-ink">«{submissionExcerpt(c.submission)}»</blockquote>
       <p className="mx-auto mt-4 max-w-md text-ink-soft">
         {COUNSEL_NAMES} están investigando y debatiendo tu consulta. Cuando terminen vas a ver el resultado y el registro completo.
       </p>
@@ -63,7 +64,6 @@ function InSession({ c, events }: { c: CaseRecord; events: readonly CourtEvent[]
         Esta página se actualiza sola. Podés cerrarla: el análisis sigue y el resultado queda en esta misma dirección.{" "}
         <Link href="/method" className="text-celeste-deep underline underline-offset-4">Cómo trabaja el panel</Link>
       </p>
-      <p className="mx-auto mt-8 line-clamp-3 max-w-lg font-display text-lg italic text-ink-soft">«{submissionExcerpt(c.submission)}»</p>
       <p className="mt-6 font-mono text-xs text-ink-soft">Caso Nº {c.id}</p>
     </section>
   );
