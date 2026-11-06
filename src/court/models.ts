@@ -20,6 +20,20 @@ export function modelEffort(model: CourtModel): string | null {
   return typeof value === "string" && value ? value : null;
 }
 
+// A model's provider options without the reasoning effort that courtModel
+// sets, so that the portable `reasoning` call option applies instead.
+export function withoutEffort(options: CourtModel["providerOptions"]): CourtModel["providerOptions"] {
+  if (!options) return undefined;
+  const copy = structuredClone(options) as Record<string, Record<string, unknown>>;
+  delete copy.xai?.reasoningEffort;
+  delete copy.anthropic?.effort;
+  delete copy.openai?.reasoningEffort;
+  const thinking = copy.google?.thinkingConfig as Record<string, unknown> | undefined;
+  if (thinking) { delete thinking.thinkingLevel; if (!Object.keys(thinking).length) delete copy.google!.thinkingConfig; }
+  for (const [key, value] of Object.entries(copy)) if (!Object.keys(value).length) delete copy[key];
+  return Object.keys(copy).length ? copy as CourtModel["providerOptions"] : undefined;
+}
+
 // The inverse of modelEffort: the provider option that carries a reasoning
 // effort through AI Gateway. Other providers keep their own default.
 export function courtModel(id: string, effort?: string | null): CourtModel {

@@ -53,11 +53,12 @@ pipeline 1 cases keep their original tools, artifact formats, and download URLs;
   generation is a step of its own, of at most 150 seconds. In pipeline 3 an
   analyst decides its instruction filing, and its source review votes, in two
   answers of the same conversation, without tools: first in prose, with the
-  model's own thinking and no format, then, after a follow-up message that asks
-  for it, as a typed answer (structured output) of at most 240 seconds. Models
-  that always think, such as Claude, cannot combine thinking with a forced tool
-  call or answer in one request. The host records the typed answer in the next
-  step; an answer that does not parse, or that the host rejects, gets the reason
+  model's own thinking and no format, in at most 240 seconds, then, after a
+  follow-up message that asks for it, as a typed answer (structured output) of
+  at most 150 seconds, with reasoning `none` (the least the model allows:
+  Claude Opus cannot turn its thinking off). Models that always think, such as
+  Claude, cannot combine thinking with a forced tool call or answer in one
+  request. The host records the typed answer in the next step; an answer that does not parse, or that the host rejects, gets the reason
   and another typed generation while the turn (600 seconds) has time. It still fails closed
   if the budget expires without a nonempty final response; a partial draft cannot advance the decision
   channel. Exhaustion and incomplete final responses are non-retryable workflow

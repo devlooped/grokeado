@@ -12,7 +12,7 @@ import { advancePreparation, nativePreparationDefinitions, preparationDefinition
 import { normalizeOrKeep, type SourceService } from "../instruction/sources.ts";
 import { executeSourceTool, SourceToolSchemas, sourceToolsFor } from "../instruction/tools.ts";
 import { getCase, recordCaseToolActivity, saveCaseAuditRecord } from "../store.ts";
-import { modelEffort, seatModel } from "./models.ts";
+import { modelEffort, seatModel, withoutEffort } from "./models.ts";
 import { PhaseSession, phaseSystem, type PhaseRepository, type PhaseTurn } from "./phase-session.ts";
 import { seatOf, type Docket, type TurnOutcome, type TurnSpec } from "./turns.ts";
 
@@ -31,10 +31,11 @@ export type SharedTurnDependencies = {
 // Time allowed to one decision generation and its tools. With setup, its step
 // stays within the function duration even when the runtime starts it late.
 const DECISION_GENERATION_MS = 150_000;
-// A pipeline 3 typed answer copies every URL and quote of a long research
-// report, and its unit does nothing else: the host records it in the next unit.
-const TYPED_GENERATION_MS = 240_000;
-// A pipeline 3 decision turn: a reasoning answer, then the typed answer and
+// A pipeline 3 decision is reasoned in prose over a long research report, with
+// the model's thinking; its typed answer then only copies it, with as little
+// thinking as the model allows, in a decision generation's time.
+const REASONING_GENERATION_MS = 240_000;
+// A pipeline 3 decision turn: the reasoning answer, then the typed answer and
 // one correction after feedback.
 const TYPED_TURN_MS = 600_000;
 
@@ -174,10 +175,13 @@ export async function advanceSharedTurn(caseId: string, docket: Docket, spec: Tu
       const result = await reader.hostStage(stepId, "decision-generation", async () => {
         const root = stepRoot(turn.steps);
         const requestPath = `${root}/request.json`, resultPath = `${root}/result.json`;
-        const request = JSON.stringify({ modelId: model.id, providerOptions: session.state.model.providerOptions, system: session.state.system, messages: session.state.messages, ...(stage === "typed" ? { output: schemas.output } : stage === "tools" ? { tools: schemas } : {}) });
-        const common = { model: injected?.model ?? gateway(model.id), providerOptions: session.state.model.providerOptions,
+        // The typed answer only copies the decision already reasoned: no thinking,
+        // or the least the model allows (Claude Opus cannot turn it off).
+        const reasoning = stage === "typed" ? { providerOptions: withoutEffort(session.state.model.providerOptions), reasoning: "none" as const } : { providerOptions: session.state.model.providerOptions };
+        const request = JSON.stringify({ modelId: model.id, ...reasoning, system: session.state.system, messages: session.state.messages, ...(stage === "typed" ? { output: schemas.output } : stage === "tools" ? { tools: schemas } : {}) });
+        const common = { model: injected?.model ?? gateway(model.id), ...reasoning,
           system: session.state.system, messages: session.state.messages, stopWhen: stepCountIs(1), maxRetries: 0,
-          abortSignal: AbortSignal.timeout(Math.max(1, Math.min(stage === "typed" ? TYPED_GENERATION_MS : DECISION_GENERATION_MS, Date.parse(turn.expiresAt) - Date.now()))) };
+          abortSignal: AbortSignal.timeout(Math.max(1, Math.min(stage === "reasoning" ? REASONING_GENERATION_MS : DECISION_GENERATION_MS, Date.parse(turn.expiresAt) - Date.now()))) };
         let typedAnswer: { output?: unknown; error?: string } | undefined;
         let answer: { messages: ModelMessage[]; usage: unknown; toolCalls: Array<{ toolName: string; toolCallId: string; input: unknown }> };
         if (stage === "reasoning") {

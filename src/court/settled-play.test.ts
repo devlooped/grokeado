@@ -194,6 +194,7 @@ test("pipeline 3: a typed filing that does not parse, or that the host rejects, 
   const model = new MockLanguageModelV4({ doGenerate: async (options) => {
     // The prose decision first, then its typed form in the same conversation.
     assert.equal(options.responseFormat?.type, prompts.length ? "json" : undefined);
+    assert.equal(options.reasoning, prompts.length ? "none" : undefined);
     assert.equal(options.tools, undefined);
     prompts.push(JSON.stringify(options.prompt));
     return { content: [{ type: "text" as const, text: answers[prompts.length - 1]! }], finishReason: { unified: "stop" as const, raw: undefined },

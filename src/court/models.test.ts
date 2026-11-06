@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { COUNSEL_MODELS, courtModel, DEFAULT_MODELS, JUDGE_MODEL, MODEL_ROLES, modelEffort, modelSnapshot, resolveModels } from "./models.ts";
+import { COUNSEL_MODELS, courtModel, DEFAULT_MODELS, JUDGE_MODEL, MODEL_ROLES, modelEffort, modelSnapshot, resolveModels, withoutEffort } from "./models.ts";
 
 test("extracts explicitly configured effort for each provider, not an assumed default", () => {
   assert.equal(modelEffort(JUDGE_MODEL), "high");
@@ -39,6 +39,13 @@ test("the tier evaluator is its own configurable role, defaulting to Terra at me
   const models = resolveModels([{ role: "tier.evaluator", modelId: "spacexai/grok-4.7", effort: "medium" }]);
   assert.deepEqual(models["tier.evaluator"], { id: "spacexai/grok-4.7", providerOptions: { xai: { reasoningEffort: "medium" } } });
   assert.equal(MODEL_ROLES.find((role) => role.key === "tier.evaluator")?.label, "Evaluador de nivel");
+});
+
+test("withoutEffort drops only the effort courtModel sets, so the portable reasoning option applies", () => {
+  for (const id of ["spacexai/a", "google/b", "anthropic/c", "openai/d"]) assert.equal(withoutEffort(courtModel(id, "high").providerOptions), undefined);
+  const options = { anthropic: { effort: "high", sendReasoning: true }, google: { thinkingConfig: { thinkingLevel: "high", includeThoughts: true } } };
+  assert.deepEqual(withoutEffort(options), { anthropic: { sendReasoning: true }, google: { thinkingConfig: { includeThoughts: true } } });
+  assert.equal(options.anthropic.effort, "high", "the model's own options are not changed");
 });
 
 test("courtModel maps effort to the option of each provider and round-trips through modelEffort", () => {
