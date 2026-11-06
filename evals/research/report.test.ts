@@ -50,12 +50,14 @@ test("case metrics find references and check X posts in the index and the votes"
 test("the thresholds gate on latency, quote matching, votes, X posts and tool errors", () => {
   const summary = summarize([result]);
   assert.equal(summary.p95, 200_000);
-  assert.deepEqual(summary.checks, { latency: true, quotes: false, votes: true, x: true, tools: true });
+  assert.deepEqual(summary.checks, { latency: true, quotes: false, votes: true, x: true, tools: true, cases: true });
   assert.equal(summary.bySeat.gemini.matchedShare, 0.5);
   const slow = { ...result, gathers: [...result.gathers, gather("grok", 285_000, "timeout")] };
   assert.equal(summarize([slow]).checks.latency, false);
   const failed = { ...result, gathers: [...result.gathers, { ...gather("claude", 1000), error: "tool rejected" }] };
   assert.equal(summarize([failed]).checks.tools, false);
+  const broken = summarize([{ ...result, error: "decision timeout" }]);
+  assert.deepEqual([broken.checks.tools, broken.checks.cases], [true, false], "a case failure is not a tool failure");
   assert.match(renderResearchReport([result], { started: at, finished: at, spentUsd: 0.5, maxUsd: 8 }), /No cumple todos los umbrales/);
 });
 

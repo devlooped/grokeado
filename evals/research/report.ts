@@ -78,15 +78,18 @@ export function summarize(results: readonly CaseResult[]) {
   const cases = results.map(caseMetrics);
   const xSources = cases.reduce((sum, c) => sum + c.xSources, 0);
   const xComplete = cases.every((c) => c.xEmbedded === c.xSources && c.xVotedByOthers === c.xSources);
-  const errors = results.flatMap((result) => [...result.error ? [`${result.id}: ${result.error}`] : [], ...result.gathers.flatMap((gather) => gather.error ? [`${result.id} · ${gather.seat} · ${gather.phase} · ${gather.modelId} [${gather.tools.join(", ")}]: ${gather.error}`] : [])]);
+  const toolErrors = results.flatMap((result) => result.gathers.flatMap((gather) => gather.error ? [`${result.id} · ${gather.seat} · ${gather.phase} · ${gather.modelId} [${gather.tools.join(", ")}]: ${gather.error}`] : []));
+  const caseErrors = results.flatMap((result) => result.error ? [`${result.id}: ${result.error}`] : []);
+  const errors = [...caseErrors, ...toolErrors];
   const checks = {
     latency: p95 !== undefined && p95 < THRESHOLDS.gatherP95Ms && timeouts === 0,
     quotes: COUNSEL.every((seat) => (bySeat[seat].matchedShare ?? 0) >= THRESHOLDS.matchedShare),
     votes: COUNSEL.every((seat) => bySeat[seat].fullVotes),
     x: xComplete,
-    tools: errors.length === 0,
+    tools: toolErrors.length === 0,
+    cases: caseErrors.length === 0,
   };
-  return { p95, timeouts, bySeat, xSources, checks, errors, passed: Object.values(checks).every(Boolean) };
+  return { p95, timeouts, bySeat, xSources, checks, errors, toolErrors, caseErrors, passed: Object.values(checks).every(Boolean) };
 }
 
 const seconds = (ms: number | undefined) => ms === undefined ? "—" : (ms / 1000).toFixed(0) + " s";
@@ -109,7 +112,8 @@ export function renderResearchReport(results: readonly CaseResult[], run: { star
     `| Citas encontradas en los bloques (≥ 80 % por analista) | ${COUNSEL.map((seat) => MODEL_NAME[seat] + " " + percent(summary.bySeat[seat].matchedShare)).join(", ")} | ${yes(summary.checks.quotes)} |`,
     `| Votos sobre cada fuente E (100 % por analista) | ${COUNSEL.filter((seat) => !summary.bySeat[seat].fullVotes).map((seat) => MODEL_NAME[seat]).join(", ") || "todos completos"} | ${yes(summary.checks.votes)} |`,
     `| Posts de X con texto completo y votados por los demás (100 %) | ${summary.xSources} fuentes de X | ${yes(summary.checks.x)} |`,
-    `| Herramientas nativas aceptadas por el Gateway | ${summary.errors.length} errores | ${yes(summary.checks.tools)} |`,
+    `| Herramientas nativas aceptadas por el Gateway | ${summary.toolErrors.length} errores de herramientas | ${yes(summary.checks.tools)} |`,
+    `| Casos completos hasta la revisión de fuentes | ${results.length - summary.caseErrors.length} de ${results.length} | ${yes(summary.checks.cases)} |`,
     "",
     summary.passed ? "**Cumple todos los umbrales.**" : "**No cumple todos los umbrales: el pipeline por defecto no cambia.**",
   ];

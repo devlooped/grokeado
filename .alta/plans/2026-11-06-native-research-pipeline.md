@@ -1,6 +1,6 @@
 ---
 title: Native provider research, host-collected evidence and batch source critique (pipeline 3)
-status: in-progress
+status: blocked
 created: 2026-11-06
 summary: Analysts research with their provider's own server-side search in one call, the host fetches, matches and unifies what they cite, and each analyst then critiques the whole source index in one batch. A local eval measures it before rollout.
 ---
@@ -119,9 +119,9 @@ The broker already saves each generation's request and response under `instructi
 - [x] 8. Host collection: `collectEvidence` (fetch by unique URL in bounded workflow steps, match, then `evidence_filed`, `proposal_rejected`, `evidence_unified`), wired through `bench.collect` in `procedure.ts` and `court-session.ts`. Pipeline 3 skips the `unification` turn.
 - [x] 9. Criticism for pipeline 3: the E index builder (passage cap, full X post text from the canonical blocks), the batch prompt, native tools, and no `reviewSourceId` host rule. Tests: the index holds every E id, and an X source carries its full text.
 - [x] 10. Audit: add `data.sources` and the search count to pipeline 3 `model_step` records; `case-log` tests.
-- [ ] 11. The local eval (see below), then one paid run, with its report committed under `evals/research/results-<date>.md`.
-  - Harness done (`scripts/eval-research.ts`, `evals/research/`, `npm run eval:research`); the paid run waits for the user's confirmation. Deviation: intake prepares in one call without tools (no host tools in process), and the run stops after source review.
-- [ ] 12. Make pipeline 3 the default for new cases once the eval meets its thresholds. Update `docs/shared-instruction.md` (native tools, host collection, batch criticism, network stance) and the mock seat (`createMockSeat`) so that simulated cases run pipeline 3.
+- [x] 11. The local eval (see below), then one paid run, with its report committed under `evals/research/results-<date>.md`.
+  - Harness done (`scripts/eval-research.ts`, `evals/research/`, `npm run eval:research`). Paid run 2026-11-06 (USD 5.33): [results](../../evals/research/results-2026-11-06.md). It misses the thresholds: no case reached source review complete (decision timeout, fatal translation failure, a decision without a tool call, an intake dismissal), quotes matched 50–60 %, gather p95 271 s. Native tools were accepted for all four providers. Deviation: intake prepares in one call without tools (no host tools in process), and the run stops after source review.
+- [ ] 12. (Blocked: the eval missed its thresholds; the default stays 2.) Make pipeline 3 the default for new cases once the eval meets its thresholds. Update `docs/shared-instruction.md` (native tools, host collection, batch criticism, network stance) and the mock seat (`createMockSeat`) so that simulated cases run pipeline 3.
 
 ## The local eval
 
