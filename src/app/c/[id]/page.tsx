@@ -6,21 +6,22 @@ import { notFound, permanentRedirect } from "next/navigation";
 import { connection } from "next/server";
 import { unstable_cache } from "next/cache";
 import { Suspended } from "@/components/suspended.tsx";
-import { Acta } from "@/components/acta.tsx";
+import { Acta, SessionDialogue } from "@/components/acta.tsx";
 import { EvidencePanel } from "@/components/evidence-panel.tsx";
-import { AutoRefresh } from "@/components/auto-refresh.tsx";
+import { CaseUpdates } from "@/components/case-updates.tsx";
 import { GavelIcon } from "@/components/marks.tsx";
 import { CaseResult } from "@/components/case-result.tsx";
 import { SessionProgress } from "@/components/session-progress.tsx";
 import { caseShareMetadata, submissionExcerpt } from "@/domain/acta.ts";
 import { caseCardImageUrl } from "@/domain/case-card.ts";
-import { COUNSEL_NAMES, seatModels, type CaseRecord, type CourtEvent } from "@/domain/court.ts";
+import { COUNSEL_NAMES, seatModels, type CaseRecord, type RecordedEvent } from "@/domain/court.ts";
 import { project } from "@/domain/court.ts";
 import { displayHistoricalCitations } from "@/domain/historical-citations.ts";
 import { blobConfigured, caseStorageExists, findEvidenceArchive, hasEvidenceBase } from "@/evidence/blob.ts";
 import { auth0 } from "@/lib/auth0.ts";
 import { detectMissingCaseStorage } from "@/lib/case-storage.ts";
-import { coverVersions, failResolvedCase, findCaseAlias, getCase, getCaseAuditRecords, getEvents } from "@/store.ts";
+import { caseProgressVersion } from "@/lib/case-event-stream.ts";
+import { coverVersions, failResolvedCase, findCaseAlias, getCase, getCaseAuditRecords, getEvents, type StoredCaseRecord } from "@/store.ts";
 import { usageCalls } from "@/domain/usage.ts";
 import { caseCosts } from "@/domain/cost.ts";
 import { loadTokenPrices } from "@/lib/model-costs.ts";
@@ -45,10 +46,10 @@ export async function generateMetadata(props: PageProps<"/c/[id]">): Promise<Met
 
 const date = (at: string) => new Date(at).toLocaleString("es-AR", { dateStyle: "long", timeStyle: "short", timeZone: "America/Argentina/Buenos_Aires" });
 
-function InSession({ c, events }: { c: CaseRecord; events: readonly CourtEvent[] }) {
+function InSession({ c, events }: { c: StoredCaseRecord; events: RecordedEvent[] }) {
   return (
     <section className="mx-auto max-w-2xl py-16 text-center">
-      <AutoRefresh everyMs={5000} />
+      <CaseUpdates caseId={c.id} version={caseProgressVersion({ status: c.status, revision: c.revision, seq: events.at(-1)?.seq ?? 0 })} />
       <div className="inline-flex items-center gap-2 rounded-full border border-seal/40 px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.25em] text-seal">
         <span className="session-light size-2.5 rounded-full bg-seal" /> En curso
       </div>
@@ -58,7 +59,7 @@ function InSession({ c, events }: { c: CaseRecord; events: readonly CourtEvent[]
       <h1 className="mt-8 font-display text-5xl sm:text-6xl">El panel está analizando</h1>
       <blockquote className="mx-auto mt-5 line-clamp-3 max-w-lg break-words font-display text-2xl italic leading-snug text-ink">«{submissionExcerpt(c.submission)}»</blockquote>
       <p className="mx-auto mt-4 max-w-md text-ink-soft">
-        {COUNSEL_NAMES} están investigando y debatiendo tu consulta. Cuando terminen vas a ver el resultado y el registro completo.
+        {COUNSEL_NAMES} están investigando y debatiendo tu consulta. Podés seguir el diálogo abajo; cuando terminen vas a ver el resultado y el registro completo.
       </p>
       <SessionProgress events={events} queued={c.status === "queued"} />
       <p className="mx-auto mt-6 max-w-md text-xs text-ink-soft">
@@ -66,6 +67,7 @@ function InSession({ c, events }: { c: CaseRecord; events: readonly CourtEvent[]
         <Link href="/method" className="text-celeste-deep underline underline-offset-4">Cómo trabaja el panel</Link>
       </p>
       <p className="mt-6 font-mono text-xs text-ink-soft">Caso Nº {c.id}</p>
+      {c.status === "in_session" && <SessionDialogue events={events} caseId={c.id} models={seatModels(c, events)} />}
     </section>
   );
 }

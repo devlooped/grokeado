@@ -410,6 +410,17 @@ export async function getEvents(caseId: string): Promise<RecordedEvent[]> {
   return rows.map((r) => ({ ...r.body, seq: r.seq, at: r.at }) as RecordedEvent);
 }
 
+export type CaseProgress = { status: CaseStatus; revision: number; seq: number };
+
+// One small snapshot for SSE, without loading submissions, model output or audit logs.
+export async function getCaseProgress(caseId: string): Promise<CaseProgress | undefined> {
+  const { rows } = await (await db()).query<CaseProgress>(
+    "SELECT status, revision, COALESCE((SELECT MAX(seq) FROM events WHERE case_id = cases.id), 0) AS seq FROM cases WHERE id = $1",
+    [caseId]
+  );
+  return rows[0];
+}
+
 // Idempotent: a retried step re-inserts the same (case_id, seq) rows and they are ignored.
 export async function recordEvents(caseId: string, events: readonly RecordedEvent[]): Promise<void> {
   if (!events.length) return;

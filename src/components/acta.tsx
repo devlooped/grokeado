@@ -1,5 +1,5 @@
 import { ABSENCE_LABEL, EVIDENCE_STANCE_LABEL, STAGE_LABEL, VERDICT_LABEL } from "@/domain/acta.ts";
-import { COUNSEL, MODEL_NAME, seatModels, type CaseView, type Counsel, type Evidence, type RecordedEvent, type SeatModels, type SourceView, type Stage } from "@/domain/court.ts";
+import { COUNSEL, MODEL_NAME, modelDetail, modelMark, modelName, project, seatModels, type CaseView, type Counsel, type Evidence, type RecordedEvent, type Seat, type SeatModels, type SourceView, type Stage } from "@/domain/court.ts";
 import { FoldButtons, FoldNavigation } from "./acta-folding.tsx";
 import { CitationLink, Cited, citationHref, citationRefs, mentions, type Citations } from "./citations.tsx";
 import { GavelIcon, JudgeSeal, ModelMark, VERDICT_TEXT, VerdictGlyph, VoteChip } from "./marks.tsx";
@@ -11,6 +11,7 @@ interface Context extends Citations {
   view: CaseView;
   sourceAliases: ReadonlyMap<string, string>;
   models: SeatModels;
+  live?: boolean;
 }
 
 function Speaker({ by, small }: { by: Counsel; small?: boolean }) {
@@ -128,7 +129,7 @@ function Entry({ e, ctx }: { e: RecordedEvent; ctx: Context }) {
           <div>
             <p className="text-sm font-semibold">El moderador fija las afirmaciones a examinar</p>
             <ol className="mt-1 space-y-1 text-sm">
-              {e.claims.map((c) => <li key={c.id}><Cited text={c.id} ctx={ctx} /> <Cited text={c.text} ctx={ctx} /></li>)}
+              {e.claims.map((c) => <li key={c.id} id={ctx.live ? c.id : undefined}><Cited text={c.id} ctx={ctx} /> <Cited text={c.text} ctx={ctx} /></li>)}
             </ol>
           </div>
         </div>
@@ -490,5 +491,75 @@ export function Acta({ events, view, caseId, sourceAliases = new Map(), models =
         {sections.map((section, i) => <SectionFold key={i} section={section} index={i} ctx={ctx} />)}
       </div>
     </div>
+  );
+}
+
+// Only public, completed contributions belong in the live dialogue. Model steps,
+// research logs and reasoning traces are not part of this event allowlist.
+function dialogueSpeaker(e: RecordedEvent): Seat | undefined {
+  switch (e.type) {
+    case "claims_entered":
+    case "dismissed":
+    case "evidence_unified":
+    case "floor_granted":
+    case "ruling":
+    case "case_summary":
+      return "judge";
+    case "judgment":
+    case "content_judgment":
+      return e.method === "judge" ? "judge" : undefined;
+    case "evidence_filed":
+      return e.evidence.by;
+    case "instruction_completed":
+    case "source_review_vote":
+    case "statement":
+    case "objection":
+    case "objection_reply":
+    case "vote":
+    case "content_vote":
+      return e.by;
+    default:
+      return undefined;
+  }
+}
+
+export function SessionDialogue({ events, caseId, models = seatModels({}, events) }: { events: RecordedEvent[]; caseId: string; models?: SeatModels }) {
+  const view = project(events);
+  const ctx: Context = { view, caseId, refs: citationRefs(events, view), sourceAliases: new Map(), models, live: true };
+  const messages = events.flatMap((e) => {
+    const speaker = dialogueSpeaker(e);
+    return speaker ? [{ e, speaker }] : [];
+  });
+  return (
+    <section aria-labelledby="session-dialogue-title" className="mt-12 text-left">
+      <div className="rule-double pt-4">
+        <h2 id="session-dialogue-title" className="font-display text-3xl">Diálogo del panel</h2>
+        <p className="mt-1 text-sm text-ink-soft">Las intervenciones aparecen completas al registrarse. Sin trazas de razonamiento.</p>
+      </div>
+      <div role="log" aria-labelledby="session-dialogue-title" aria-live="polite" aria-relevant="additions" className="mt-6">
+        {!messages.length && <p className="text-sm text-ink-soft">Esperando la primera intervención del moderador.</p>}
+        <ol className="space-y-6">
+          {messages.map(({ e, speaker }) => {
+            const model = models[speaker];
+            const mark = model ? modelMark(model.id) : speaker === "judge" ? undefined : speaker;
+            const name = speaker === "judge" ? "Moderador" + (model ? " · " + modelName(model.id) : "") : model ? modelName(model.id) : MODEL_NAME[speaker];
+            return (
+              <li key={e.seq} className="flex gap-3">
+                <span title={model ? modelDetail(model) : name} className="grid size-9 shrink-0 place-items-center rounded-full border border-rule bg-paper">
+                  {mark ? <ModelMark model={mark} className="size-5" /> : <GavelIcon className="size-5 text-seal" />}
+                </span>
+                <div className="min-w-0 flex-1 border-l border-rule pb-2 pl-4">
+                  <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 text-xs text-ink-soft">
+                    <span className="font-semibold text-ink">{name}</span>
+                    <time dateTime={e.at}>{time(e.at)}</time>
+                  </div>
+                  <Entry e={e} ctx={ctx} />
+                </div>
+              </li>
+            );
+          })}
+        </ol>
+      </div>
+    </section>
   );
 }

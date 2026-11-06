@@ -23,7 +23,7 @@ if (mode === "submit") {
   await page.waitForURL(/\/c\//);
   const heading = await page.getByRole("heading", { level: 1 }).textContent();
   assert(heading === "El panel está analizando", "after submitting, the case page shows only 'El panel está analizando'");
-  assert((await page.locator("article").count()) === 0, "no claims or votes are shown while in session");
+  assert((await page.locator("article[data-claim]").count()) === 0, "result cards are not shown while in session; completed dialogue messages may appear");
   await page.screenshot({ path: out + "/in-session.png", fullPage: true });
   console.log("case " + page.url().split("/").at(-1));
 }
