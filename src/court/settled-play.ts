@@ -147,7 +147,8 @@ export async function advanceSharedTurn(caseId: string, docket: Docket, spec: Tu
       // The typed answer of the last generation, recorded in a unit of its own.
       const { step, output, error } = turn.answer;
       let feedback: string;
-      if (error) feedback = "Your answer did not match the requested format (" + error + ").";
+      const again = " Answer again with your whole answer in the requested format.";
+      if (error) feedback = "Your answer did not match the requested format (" + error + ")." + again;
       else {
         const { input, dropped } = typed.input(output);
         const first = actions.plan.produced.length;
@@ -159,10 +160,13 @@ export async function advanceSharedTurn(caseId: string, docket: Docket, spec: Tu
         turn.done = actions.plan.done();
         turn.results[`answer-${step}`] = { input: JSON.stringify(input), output: { result, dropped } };
         await artifacts.write(caseId, new Map([[`${stepRoot(step)}/${typed.artifact}`, JSON.stringify({ result, dropped })]]));
-        feedback = typeof result === "string" ? "" : "The host could not record your answer: " + result.error;
+        // A partial source review keeps its votes: the retry names the sources
+        // still missing, and the seat votes on those only.
+        const notRecorded = dropped.length ? " Not recorded: " + dropped.map(({ proposal, reason }) => ((proposal as { sourceId?: string }).sourceId ?? (proposal as { url?: string }).url) + " (" + reason + ")").join("; ") + "." : "";
+        feedback = typeof result !== "string" ? "The host could not record your answer: " + result.error + "." + again : turn.done ? "" : result + notRecorded;
       }
       delete turn.answer;
-      if (feedback && !turn.done && more()) session.state.messages.push({ role: "user", content: feedback + " Answer again with your whole answer in the requested format." });
+      if (feedback && !turn.done && more()) session.state.messages.push({ role: "user", content: feedback });
       await session.save();
       // A new answer, if any, is generated in a step of its own.
       if (more()) return undefined;

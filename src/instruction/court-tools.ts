@@ -108,6 +108,20 @@ export const sourceReviewSchema = z.object({
   }).strict()).describe("One vote for each source of the index, none left out"),
 }).strict();
 
+const voteInput = CourtActionSchemas.review_sources.shape.votes.element;
+
+// A vote review_sources would reject (a reason too short) is dropped on its
+// own: its source is then still missing, and the retry asks for it again.
+function reviewVotes(output: z.infer<typeof sourceReviewSchema>) {
+  const votes: z.infer<typeof voteInput>[] = [], dropped: Array<{ proposal: unknown; reason: string }> = [];
+  for (const vote of output.votes) {
+    const parsed = voteInput.safeParse(vote);
+    if (parsed.success) votes.push(parsed.data);
+    else dropped.push({ proposal: vote, reason: parsed.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join("; ") });
+  }
+  return { input: { votes }, dropped };
+}
+
 // A typed decision of pipeline 3: the seat first answers in prose, without a
 // format, then the host asks in a follow-up for the same decision in the
 // format, and records it with the court action. Models that always think
@@ -119,7 +133,8 @@ export type TypedDecision = {
   request: string;
   // The artifact that records what the host filed.
   artifact: string;
-  input(output: unknown): { input: unknown; dropped: DroppedProposal[] };
+  // The action's input, and the entries it would reject, dropped one by one.
+  input(output: unknown): { input: unknown; dropped: Array<{ proposal: unknown; reason: string }> };
 };
 
 export function typedDecision(phase: InstructionPhase, record: readonly CourtEvent[]): TypedDecision | undefined {
@@ -132,7 +147,7 @@ export function typedDecision(phase: InstructionPhase, record: readonly CourtEve
   if (phase === "criticism") return {
     action: "review_sources", schema: sourceReviewSchema, artifact: "review.json",
     request: "Now give the votes you decided, in the requested format: one for each source of the index, with its concrete reason.",
-    input: (output) => ({ input: output, dropped: [] }),
+    input: (output) => reviewVotes(output as z.infer<typeof sourceReviewSchema>),
   };
   return undefined;
 }

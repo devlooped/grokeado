@@ -58,7 +58,10 @@ pipeline 1 cases keep their original tools, artifact formats, and download URLs;
   at most 150 seconds, with reasoning `none` (the least the model allows:
   Claude Opus cannot turn its thinking off). Models that always think, such as
   Claude, cannot combine thinking with a forced tool call or answer in one
-  request. The host records the typed answer in the next step; an answer that does not parse, or that the host rejects, gets the reason
+  request. The host records the typed answer in the next step. A source review
+  that leaves out sources, or whose votes are invalid, keeps its valid votes:
+  the follow-up names the sources still missing, and the seat votes on those
+  only; an answer that does not parse, or that the host rejects, gets the reason
   and another typed generation while the turn (600 seconds) has time. It still fails closed
   if the budget expires without a nonempty final response; a partial draft cannot advance the decision
   channel. Exhaustion and incomplete final responses are non-retryable workflow

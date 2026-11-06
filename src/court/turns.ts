@@ -344,6 +344,23 @@ export function planTurn(
           z.object({ votes: z.array(z.object({ sourceId: z.string(), veto: z.boolean(), reason: z.string().min(10) })) }),
           ({ votes }) => {
             if (reviewed()) throw new Rejection("You already recorded your source review.");
+            if (native) {
+              // Pipeline 3 keeps the valid votes of an incomplete review, and its
+              // retry votes only on the sources still missing, which this names.
+              const voted = (id: string) => all().some((e) => e.type === "source_review_vote" && e.by === by && e.sourceId === id);
+              const ignored: string[] = [];
+              let recorded = 0;
+              for (const vote of votes) {
+                if (!sources.some((s) => s.id === vote.sourceId)) ignored.push(vote.sourceId + " (not in the index)");
+                else if (voted(vote.sourceId)) ignored.push(vote.sourceId + " (already voted)");
+                else { emit({ type: "source_review_vote", by, ...vote }); recorded++; }
+              }
+              const missing = sources.filter((s) => !voted(s.id)).map((s) => s.id);
+              const note = ignored.length ? " Ignored: " + ignored.join(", ") + "." : "";
+              return missing.length
+                ? `Recorded ${recorded} votes.${note} Your vote is still missing on: ${missing.join(", ")}. Vote on those sources only.`
+                : "Votes and reasons recorded." + note;
+            }
             const ids = votes.map((v) => v.sourceId);
             if (ids.length !== sources.length || new Set(ids).size !== ids.length || sources.some((s) => !ids.includes(s.id)))
               throw new Rejection("Vote exactly once for each source in the shared source file.");
