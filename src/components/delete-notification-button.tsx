@@ -11,7 +11,6 @@ export function DeleteNotificationButton({ id, title }: { id: string; title: str
   const [error, setError] = useState("");
 
   async function remove() {
-    if (!window.confirm(`¿Eliminar la notificación «${title}»? Esta acción no se puede deshacer.`)) return;
     setPending(true);
     setError("");
     try {
