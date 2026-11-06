@@ -675,6 +675,11 @@ export async function consumeSandboxBinding(sandboxId: string, caseId?: string):
   finally { client.release(); }
 }
 
+export async function caseSandboxNames(caseId: string): Promise<string[]> {
+  const { rows } = await (await db()).query<{ sandbox_id: string }>("SELECT sandbox_id FROM case_sandbox_bindings WHERE case_id = $1", [caseId]);
+  return rows.map((row) => row.sandbox_id);
+}
+
 export async function revokeSandboxBindings(caseId: string, phase?: string): Promise<void> {
   await (await db()).query("UPDATE case_sandbox_bindings SET body = jsonb_set(body - 'activeTurn', '{revoked}', 'true'::jsonb) WHERE case_id = $1 AND ($2::text IS NULL OR body->>'phase' = $2)", [caseId, phase ?? null]);
 }

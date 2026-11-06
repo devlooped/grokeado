@@ -25,6 +25,7 @@ import { createMockSeat } from "../court/mock.ts";
 import { playSharedTurn } from "../court/settled-play.ts";
 import { settleEvidence } from "../evidence/settled.ts";
 import { caseSourceService } from "../instruction/proxy.ts";
+import { deleteCaseSandboxes } from "../instruction/preparation.ts";
 
 // One snapshot per session: every turn uses, and the case records, the same models.
 async function configuredModels(caseId: string, shared = false): Promise<ModelConfig> {
@@ -72,6 +73,14 @@ async function settleShared(caseId: string, language: string, events: readonly R
 async function revokeShared(caseId: string) {
   "use step";
   await revokeSandboxBindings(caseId);
+}
+
+// Case files are in storage by now; the VMs and their snapshots are not needed.
+// Never fail a case over cleanup: snapshot retention and expiry bound the rest.
+async function disposeSandboxes(caseId: string) {
+  "use step";
+  try { await deleteCaseSandboxes(caseId); }
+  catch (error) { console.warn("Could not delete case sandboxes:", error); }
 }
 
 async function collect(caseId: string, submission: Submission, simulated: boolean, describer: CourtModel) {
@@ -200,12 +209,16 @@ export async function courtSession(caseId: string): Promise<void> {
     });
     await illustrate(caseId, simulated, models);
     if (!shared || !simulated) await archive(caseId);
-    if (shared) await revokeShared(caseId);
+    if (shared) {
+      await revokeShared(caseId);
+      await disposeSandboxes(caseId);
+    }
     await closeCase(caseId, "resolved");
   } catch (err) {
     if (shared) {
       try { await revokeShared(caseId); }
       catch (cleanupError) { console.warn("Could not revoke sandbox bindings:", cleanupError); }
+      await disposeSandboxes(caseId);
     }
     await closeCase(caseId, "failed", describeError(err));
     throw err;

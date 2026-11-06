@@ -3,7 +3,7 @@ import test from "node:test";
 import { Sandbox } from "@vercel/sandbox";
 import { FatalError } from "workflow";
 import { MemoryPhaseRepository, PhaseSession } from "../court/phase-session.ts";
-import { prepareInSandbox } from "./preparation.ts";
+import { deleteCaseSandboxes, prepareInSandbox } from "./preparation.ts";
 
 test("preparation requires a final response, preserves checkpoints on exhaustion, and resumes the same sandbox", async () => {
   const keys = ["INSTRUCTION_TOOL_ORIGIN", "INSTRUCTION_SANDBOX_SNAPSHOT_ID", "INSTRUCTION_SANDBOX_TEAM_ID", "INSTRUCTION_SANDBOX_PROJECT_ID"] as const;
@@ -35,7 +35,13 @@ test("preparation requires a final response, preserves checkpoints on exhaustion
     };
     const deps = {
       sandbox: {
-        create: async (input: { timeout: number }) => { assert.equal(input.timeout, 300_000); creates++; return sandbox; },
+        create: async (input: { timeout: number; persistent: boolean; snapshotExpiration: number; keepLastSnapshots: unknown }) => {
+          assert.equal(input.timeout, 300_000);
+          assert.equal(input.persistent, true);
+          assert.equal(input.snapshotExpiration, 24 * 60 * 60_000, "resume snapshots outlive a phase, not a month");
+          assert.deepEqual(input.keepLastSnapshots, { count: 1, deleteEvicted: true }, "each stop replaces the previous resume snapshot");
+          creates++; return sandbox;
+        },
         get: async (input: { name: string; resume: boolean }) => { assert.deepEqual(input, { name: sandbox.name, resume: true }); resumes++; return sandbox; },
       } as unknown as typeof Sandbox,
       bind: async (_caseId: string, name: string) => { assert.equal(name, sandbox.name); },
@@ -123,4 +129,23 @@ test("preparation requires a final response, preserves checkpoints on exhaustion
   } finally {
     keys.forEach((key, index) => { if (previous[index] === undefined) delete process.env[key]; else process.env[key] = previous[index]; });
   }
+});
+
+test("a finished case deletes each of its sandboxes with their orphan snapshots, and reports failures after trying them all", async () => {
+  const deleted: string[] = [];
+  const sandbox = {
+    get: async ({ name }: { name: string }) => ({
+      delete: async (options: { deleteOrphanSnapshots: boolean }) => {
+        assert.equal(options.deleteOrphanSnapshots, true);
+        if (name === "broken") throw new Error("gone");
+        deleted.push(name);
+      },
+    }),
+  } as unknown as typeof Sandbox;
+  await deleteCaseSandboxes("fixture", { sandbox, names: async (caseId) => { assert.equal(caseId, "fixture"); return ["a", "b"]; } });
+  assert.deepEqual(deleted.sort(), ["a", "b"]);
+  deleted.length = 0;
+  await assert.rejects(deleteCaseSandboxes("fixture", { sandbox, names: async () => ["broken", "c"] }), /Could not delete 1 sandbox/);
+  assert.deepEqual(deleted, ["c"]);
+  await deleteCaseSandboxes("fixture", { sandbox, names: async () => [] });
 });

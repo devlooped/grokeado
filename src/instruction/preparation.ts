@@ -6,7 +6,7 @@ import type { ModelMessage } from "ai";
 import { FatalError } from "workflow";
 import type { PhaseSession } from "../court/phase-session.ts";
 import { instructionSandboxLaunch } from "../evidence/broker.ts";
-import { saveSandboxBinding } from "../store.ts";
+import { caseSandboxNames, saveSandboxBinding } from "../store.ts";
 import { SourceToolSchemas, sourceToolsFor } from "./tools.ts";
 import { ComputeSchema } from "../../sandbox/harness/compute.ts";
 import { instructionBridgeConfig } from "./config.ts";
@@ -18,6 +18,11 @@ export function preparationDefinitions(phase: PhaseSession["state"]["phase"]) {
   ];
 }
 
+// A persistent VM snapshots its filesystem on every stop so the next turn of
+// the phase can resume it. Only the latest snapshot is ever resumed: keep that
+// one, briefly, and delete the VMs with their snapshots once the case ends.
+export const PREPARATION_SNAPSHOTS = { snapshotExpiration: 24 * 60 * 60_000, keepLastSnapshots: { count: 1, deleteEvicted: true } };
+
 export async function prepareInSandbox(session: PhaseSession, deps = { sandbox: Sandbox, bind: saveSandboxBinding }): Promise<string> {
   const { origin, snapshotId } = await instructionBridgeConfig();
   const turn = session.state.activeTurn!;
@@ -26,7 +31,7 @@ export async function prepareInSandbox(session: PhaseSession, deps = { sandbox: 
   const resuming = Boolean(session.state.sandboxId);
   const sandbox = session.state.sandboxId
     ? await deps.sandbox.get({ name: session.state.sandboxId, resume: true })
-    : await deps.sandbox.create({ source: { type: "snapshot", snapshotId }, timeout: 300_000, persistent: true, networkPolicy: launch.networkPolicy, env: launch.env, tags: { case: session.caseId.slice(0, 32), phase: session.state.phase, seat: session.state.seat } });
+    : await deps.sandbox.create({ source: { type: "snapshot", snapshotId }, timeout: 300_000, persistent: true, ...PREPARATION_SNAPSHOTS, networkPolicy: launch.networkPolicy, env: launch.env, tags: { case: session.caseId.slice(0, 32), phase: session.state.phase, seat: session.state.seat } });
   if (!session.state.sandboxId) { session.state.sandboxId = sandbox.name; await session.save(); }
   await deps.bind(session.caseId, sandbox.name, {
     phase: session.state.phase, seat: session.state.seat, sessionKey: session.key, phaseSessionId: session.state.id,
@@ -78,4 +83,15 @@ export async function prepareInSandbox(session: PhaseSession, deps = { sandbox: 
     if (session.state.activeTurn) { delete session.state.activeTurn; await session.save(); }
     await sandbox.stop({ signal: AbortSignal.timeout(10_000) });
   }
+}
+
+// Delete every preparation VM of a finished case, with the snapshots only it
+// uses. The configured harness snapshot is shared, so it is never deleted.
+export async function deleteCaseSandboxes(caseId: string, deps = { sandbox: Sandbox, names: caseSandboxNames }): Promise<void> {
+  const results = await Promise.allSettled((await deps.names(caseId)).map(async (name) => {
+    const sandbox = await deps.sandbox.get({ name, signal: AbortSignal.timeout(10_000) });
+    await sandbox.delete({ deleteOrphanSnapshots: true, signal: AbortSignal.timeout(10_000) });
+  }));
+  const failed = results.filter((result) => result.status === "rejected");
+  if (failed.length) throw new AggregateError(failed.map((result) => result.reason), `Could not delete ${failed.length} sandbox(es) of case ${caseId}`);
 }

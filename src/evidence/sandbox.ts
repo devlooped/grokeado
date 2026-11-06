@@ -92,6 +92,9 @@ export async function runEvidenceStep(
   const readOnlyHashes = readOnlyHashesFor(workspace);
   const sandbox = await Sandbox.create({
     source: { type: "snapshot", snapshotId },
+    // A single-use VM: results are read back before it stops, so skip the
+    // automatic snapshot that persistent (default) sandboxes take on stop.
+    persistent: false,
     timeout: 225_000,
     resources: { vcpus: 2 },
     networkPolicy: launch.networkPolicy,

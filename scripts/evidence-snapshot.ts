@@ -6,6 +6,8 @@ const timeoutMs = 15 * 60_000;
 // universal is Ubuntu, with Node 24, so tesseract-ocr-spa and poppler install.
 const sandbox = await Sandbox.create({
   image: "vercel/sandbox/universal",
+  // Only the explicit snapshot below is kept; a failed build leaves nothing.
+  persistent: false,
   timeout: timeoutMs,
   networkPolicy: "allow-all",
   resources: { vcpus: 2 },

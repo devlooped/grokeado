@@ -120,6 +120,9 @@ authorization. Plan completion records implementation, not a passed live smoke.
 
 Persistent sandboxes resume by name. Their OIDC-verified `sandboxName` selects
 the binding, not the VM `sandboxId`, which can change across resumes.
+Each stop snapshots the VM for the next turn; only the latest snapshot is kept
+(24 h expiry), and the case's sandboxes are deleted with their snapshots when
+the case resolves or fails. Evidence-step sandboxes are not persistent.
 The SDK-authenticated proxy checks team/project, sandbox/case/session binding,
 committed phase, active turn, expiry and request budget. Only exact POST tool and
 generation paths are forwarded. Generation is constrained to the snapshotted
