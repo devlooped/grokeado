@@ -1,7 +1,9 @@
-import type { CourtEvent } from "@/domain/court.ts";
+import type { CheckType, CourtEvent } from "@/domain/court.ts";
 
 // The stages of the method page, in the order the court goes through them.
 export const PROGRESS_STEPS = ["Instrucción", "Crítica de fuentes", "Debate", "Resultado"] as const;
+// A Quick check: the analysts answer, then vote.
+export const QUICK_PROGRESS_STEPS = ["Respuestas", "Resultado"] as const;
 
 const STAGE_OF: Partial<Record<CourtEvent["type"], number>> = {
   evidence_unified: 1,
@@ -26,16 +28,23 @@ export function sessionStage(events: readonly Pick<CourtEvent, "type">[]): numbe
   return events.reduce((stage, e) => Math.max(stage, STAGE_OF[e.type] ?? 0), 0);
 }
 
-export function SessionProgress({ events, queued }: { events: readonly CourtEvent[]; queued: boolean }) {
-  const current = queued ? -1 : sessionStage(events);
+// A Quick check reaches its result with the first vote.
+export function quickStage(events: readonly Pick<CourtEvent, "type">[]): number {
+  return sessionStage(events) === 3 ? 1 : 0;
+}
+
+export function SessionProgress({ events, queued, check = "expert" }: { events: readonly CourtEvent[]; queued: boolean; check?: CheckType }) {
+  const quick = check === "quick";
+  const steps: readonly string[] = quick ? QUICK_PROGRESS_STEPS : PROGRESS_STEPS;
+  const current = queued ? -1 : quick ? quickStage(events) : sessionStage(events);
   const claims = events.findLast((e) => e.type === "claims_entered")?.claims.length ?? 0;
   return (
     <div className="mx-auto mt-10 max-w-xl text-left">
       <p className="sr-only" role="status">
-        {queued ? "El caso está en espera." : "Etapa " + (current + 1) + " de " + PROGRESS_STEPS.length + ": " + PROGRESS_STEPS[current] + "."}
+        {queued ? "El caso está en espera." : "Etapa " + (current + 1) + " de " + steps.length + ": " + steps[current] + "."}
       </p>
-      <ol className="grid grid-cols-4 gap-2" aria-label="Etapas del análisis">
-        {PROGRESS_STEPS.map((step, i) => {
+      <ol className={"grid gap-2 " + (quick ? "grid-cols-2" : "grid-cols-4")} aria-label="Etapas del análisis">
+        {steps.map((step, i) => {
           const state = i < current ? "done" : i === current ? "current" : "pending";
           return (
             <li key={step} aria-current={state === "current" ? "step" : undefined}>
@@ -56,6 +65,8 @@ export function SessionProgress({ events, queued }: { events: readonly CourtEven
       <p className="mt-4 text-center text-sm text-ink-soft">
         {queued
           ? "El caso está en espera; el panel lo toma en un momento."
+          : quick
+            ? current === 0 ? "Los analistas están respondiendo." : "Los analistas están votando."
           : claims > 0
             ? claims + (claims === 1 ? " afirmación en estudio." : " afirmaciones en estudio.")
             : "El moderador está identificando las afirmaciones."}

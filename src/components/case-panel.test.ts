@@ -72,3 +72,8 @@ test("older cases use opening-event seats without inventing support models", () 
   assert.ok(!document.querySelector("h3"), "no support configuration was recorded");
   assert.equal(render(c), "", "do not introduce unknown models");
 });
+
+test("the panel names the check type, Expert for cases recorded before check types", () => {
+  assert.match(render(record), /Chequeo experto/);
+  assert.match(render({ ...record, submission: { kind: "text", text: "Una afirmación", check: "quick" } }), /Chequeo rápido/);
+});

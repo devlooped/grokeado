@@ -40,6 +40,31 @@ process, provider API keys, or X OAuth connection is required.
 
 ## Court procedure
 
+A request is checked either **Quick** (Rápido, the default on the request form)
+or **Expert** (Experto). The type is stored with the submission as `check`;
+cases recorded before it read as Expert, and a rerun keeps the type.
+
+### Quick check
+
+A Quick check has no claims, instruction, source review, debate, objections or
+moderator summary. Each of the four analysts, in parallel, receives the case
+language rule and `FACT CHECK: <content>` (a link with the submitter's note, or
+the image with its note), answers in prose using its provider's own web search
+tools (no sandbox), then gives its overall vote on the whole content in the same
+conversation. Each answer and each vote is its own workflow step, bounded to
+240 seconds and tried once more on failure; a seat that still has no vote is
+recorded as absent. Three agreeing votes decide; otherwise, with at least three
+votes, the moderator breaks the tie from the content, the answers and the votes
+alone, without tools. Fewer than three votes fail the case, which can be retried.
+The answers are recorded as `quick_response` events with the pages their
+provider cited; those pages are the providers' citations, not sources reviewed
+by the panel. Every generation's request and result is kept under `quick/` in
+the case artifacts, and the archive holds them with one `case.jsonl`. A Quick
+case always uses the shared storage version, even under
+`COURT_PIPELINE_VERSION=1`, and needs only Blob storage and the AI Gateway key.
+
+### Expert check
+
 After the moderator identifies the claims, the court opens **instrucción**, a
 stage exclusively for evidence. Every analyst must actively search for evidence
 both supporting and opposing every claim, file relevant excerpts with their

@@ -450,14 +450,14 @@ export async function recordEvents(caseId: string, events: readonly RecordedEven
 }
 
 // Select a pipeline only on first opening; shared retries retain their record.
-export async function openSession(id: string, requestedPipeline: PipelineVersion | (() => PipelineVersion | Promise<PipelineVersion>) = 1): Promise<CaseRecord> {
+export async function openSession(id: string, requestedPipeline: PipelineVersion | ((submission: Submission) => PipelineVersion | Promise<PipelineVersion>) = 1): Promise<CaseRecord> {
   const client = await (await db()).connect();
   try {
     await client.query("BEGIN");
     let selected: PipelineVersion = 1;
     if (typeof requestedPipeline === "function") {
-      const { rows } = await client.query("SELECT id FROM cases WHERE id = $1 AND pipeline_version IS NULL AND models IS NULL AND status = 'queued' AND NOT EXISTS (SELECT 1 FROM events WHERE case_id = $1) FOR UPDATE", [id]);
-      if (rows.length) selected = await requestedPipeline();
+      const { rows } = await client.query<{ id: string; submission: Submission }>("SELECT id, submission FROM cases WHERE id = $1 AND pipeline_version IS NULL AND models IS NULL AND status = 'queued' AND NOT EXISTS (SELECT 1 FROM events WHERE case_id = $1) FOR UPDATE", [id]);
+      if (rows[0]) selected = await requestedPipeline(rows[0].submission);
     } else selected = requestedPipeline;
     if (sharedPipeline(selected)) await client.query("UPDATE cases SET pipeline_version = " + selected + " WHERE id = $1 AND pipeline_version IS NULL AND models IS NULL AND status = 'queued' AND NOT EXISTS (SELECT 1 FROM events WHERE case_id = $1)", [id]);
     const { rows } = await client.query<CaseRow>("UPDATE cases SET status = 'in_session', error = NULL, pipeline_version = COALESCE(pipeline_version, 1) WHERE id = $1 RETURNING *", [id]);

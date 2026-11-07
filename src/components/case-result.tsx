@@ -1,5 +1,5 @@
 import { caseOutcome, contentOutcome, VERDICT_LABEL } from "@/domain/case.ts";
-import { COUNSEL, MODEL_NAME, seatModels, type CaseRecord, type CaseView, type ClaimView, type RecordedEvent, type SeatModels } from "@/domain/court.ts";
+import { checkType, COUNSEL, MODEL_NAME, seatModels, type CaseRecord, type CaseView, type ClaimView, type RecordedEvent, type SeatModels } from "@/domain/court.ts";
 import { Cited, citationRefs, type Citations } from "./citations.tsx";
 import { ClaimsIcon, GavelIcon, JudgeSeal, MegaphoneIcon, VERDICT_TEXT, VerdictDot, VoteChip } from "./marks.tsx";
 import { CasePanel } from "./case-panel.tsx";
@@ -102,7 +102,7 @@ function Original({ c, view, models, citations, combined = false }: { c: CaseRec
       {s.kind !== "text" && s.note && <p className="mt-3 text-sm text-ink-soft">Comentario: {s.note}</p>}
       {outcome?.method === "reported" && <p className="mt-3 text-xs text-ink-soft">Consenso informado en el <a href="#case-summary-title" className="text-celeste-deep underline">resumen del moderador</a>.</p>}
       {Object.keys(view.contentVotes).length > 0 && (
-        <details className="mt-3 text-sm">
+        <details open={checkType(s) === "quick"} className="mt-3 text-sm">
           <summary className="w-fit cursor-pointer text-xs text-celeste-deep hover:underline">Evaluaciones del contenido completo</summary>
           <ul className="mt-3 space-y-3 rounded-sm bg-paper-deep/50 p-4">
             {COUNSEL.map((by) => {

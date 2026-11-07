@@ -4,7 +4,7 @@ import { MemoryArtifactStore, normalizeArtifactBytes } from "./artifacts.ts";
 
 test("new artifacts are write-once across every namespace and generic writer", async () => {
   const store = new MemoryArtifactStore();
-  for (const path of ["instruction/sources/src_a/original.bin", "evidence/E1.md", "discussion/grok/run/draft.md", "case.jsonl", "case.json"]) {
+  for (const path of ["instruction/sources/src_a/original.bin", "evidence/E1.md", "discussion/grok/run/draft.md", "quick/grok/answer-0/result.json", "case.jsonl", "case.json"]) {
     await store.write("fixture", new Map([[path, "original"]]));
     await store.write("fixture", new Map([[path, "original"]]));
     await assert.rejects(store.write("fixture", new Map([[path, "changed"]])), /Immutable artifact conflict/);

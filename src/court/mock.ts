@@ -118,6 +118,27 @@ function responses({ spec, record, submission, native }: MockTurn): Call[][] {
   }
 }
 
+// A Quick check: the analyst's answer in prose, its typed vote on the whole
+// content, and the moderator's tie-break. Every analyst votes the same way, so a
+// simulated case resolves by consensus.
+export function createQuickMockModel(step: "answer" | "vote" | "tiebreak") {
+  const text = step === "answer"
+    ? prefix + "Respuesta ficticia para probar el chequeo rápido; no busqué ni verifiqué el material enviado.\nLas fuentes de esta simulación no existen."
+    : JSON.stringify(step === "vote"
+      ? { verdict: "no_verificable", rationale: prefix + "La respuesta es ficticia: no verifica el contenido enviado." }
+      : { verdict: "no_verificable", reasoning: prefix + "Desempate ficticio, sin verificación real." });
+  return new MockLanguageModelV4({
+    provider: "local-mock",
+    modelId: MOCK_MODEL_ID,
+    doGenerate: async () => ({
+      content: [{ type: "text" as const, text }],
+      finishReason: { unified: "stop" as const, raw: undefined },
+      usage: { inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 }, outputTokens: { total: 0, text: 0, reasoning: 0 } },
+      warnings: [],
+    }),
+  });
+}
+
 export function createMockSeat(turn: MockTurn, search: boolean) {
   const script = responses(turn).map((step) => step.map((call) => {
     if (!turn.shared) return call;

@@ -123,7 +123,7 @@ export async function findEvidenceArchive(caseId: string): Promise<EvidenceArchi
 }
 
 export async function hasEvidenceBase(caseId: string): Promise<boolean> {
-  return Boolean(await headObject(`${ROOT(caseId)}base/index.md`) || await headObject(`cases/${encodeURIComponent(caseId)}/instruction/base/submission.json`));
+  return Boolean(await headObject(`${ROOT(caseId)}base/index.md`) || await headObject(`cases/${encodeURIComponent(caseId)}/instruction/base/submission.json`) || await headObject(`cases/${encodeURIComponent(caseId)}/case.jsonl`));
 }
 
 export async function writeEvidenceArchive(caseId: string, bytes: Uint8Array): Promise<EvidenceArchive> {
@@ -193,7 +193,7 @@ export const caseArtifactStore: ArtifactStore = {
       if (hash) {
         if (hashes.has(hash[2]!) && hashes.get(hash[2]!) !== hash[1]) throw new EvidenceConsistencyError("Conflicting immutable artifact hashes");
         hashes.set(hash[2]!, hash[1]!);
-      } else if (/^(?:instruction|evidence|discussion)\//.test(path) || path === "case.jsonl" || path === "case.json") {
+      } else if (/^(?:instruction|evidence|discussion|quick)\//.test(path) || path === "case.jsonl" || path === "case.json") {
         files.set(path, await readObject(object));
       }
     }

@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation";
 import { start } from "workflow/api";
 import { z } from "zod";
-import type { Submission } from "@/domain/court.ts";
+import { CHECK_TYPES, type Submission } from "@/domain/court.ts";
 import { auth0 } from "@/lib/auth0.ts";
 import { BETA_MESSAGE, canRequestCase, isAdmin } from "@/lib/case-access.ts";
 import { deleteCaseBlobs } from "@/evidence/blob.ts";
@@ -38,7 +38,7 @@ const RequestForm = z.discriminatedUnion("kind", [
   }),
 ]);
 
-export type RequestField = "text" | "url" | "note" | "image" | "language";
+export type RequestField = "text" | "url" | "note" | "image" | "language" | "check";
 // The field names the input to fix, so the form can mark and focus it.
 export type RequestState = { error?: string; field?: RequestField };
 
@@ -50,6 +50,8 @@ export async function requestFactCheck(_prev: RequestState, formData: FormData):
   if (!user?.sub || !canRequestCase(user)) return { error: BETA_MESSAGE };
   const language = z.enum(["auto", "es", "en"], { error: "Elegí un idioma válido." }).default("auto").safeParse(formData.get("language") ?? undefined);
   if (!language.success) return { error: language.error.issues[0]?.message, field: "language" };
+  const check = z.enum(CHECK_TYPES, { error: "Elegí un tipo de chequeo válido." }).default("quick").safeParse(formData.get("check") ?? undefined);
+  if (!check.success) return { error: check.error.issues[0]?.message, field: "check" };
   const parsed = RequestForm.safeParse(Object.fromEntries(formData));
   if (!parsed.success) {
     const issue = parsed.error.issues[0];
@@ -62,9 +64,9 @@ export async function requestFactCheck(_prev: RequestState, formData: FormData):
   const input = parsed.data;
   if (input.kind === "image") {
     image = Buffer.from(await input.image.arrayBuffer());
-    submission = { kind: "image", mimeType: input.image.type, note: input.note, language: language.data };
+    submission = { kind: "image", mimeType: input.image.type, note: input.note, language: language.data, check: check.data };
   } else {
-    submission = { ...input, language: language.data };
+    submission = { ...input, language: language.data, check: check.data };
   }
   const id = await createNewCase(submission, image, user.sub);
   try {

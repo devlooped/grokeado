@@ -119,11 +119,34 @@ function Statement({ e, ctx }: { e: Extract<RecordedEvent, { type: "statement" }
   );
 }
 
+// A Quick check: the analyst's whole answer, as plain text, and the pages its
+// provider cited (not sources reviewed by the panel).
+function QuickResponse({ e }: { e: Extract<RecordedEvent, { type: "quick_response" }> }) {
+  return (
+    <div id={"respuesta-" + e.by} className="scroll-mt-24 target:ring-2 target:ring-celeste">
+      <p className="whitespace-pre-line leading-relaxed">{e.text}</p>
+      {e.sources.length > 0 && (
+        <div className="mt-3 text-xs text-ink-soft">
+          <p>Fuentes que citó {MODEL_NAME[e.by]}:</p>
+          <ul className="mt-1 space-y-1">
+            {e.sources.map((s) => (
+              <li key={s.url}><a href={s.url} target="_blank" rel="noreferrer noopener" className="break-all text-celeste-deep underline underline-offset-2">{s.title || s.url}</a></li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Entry({ e, ctx }: { e: RecordedEvent; ctx: Context }) {
   const { view } = ctx;
+  const quick = Object.keys(view.responses).length > 0;
   switch (e.type) {
     case "session_opened":
-      return <Clerk>{e.simulated && "Simulación local · fuentes y respuestas ficticias · "}Empieza el debate · {time(e.at)}</Clerk>;
+      return <Clerk>{e.simulated && "Simulación local · fuentes y respuestas ficticias · "}{quick ? "Empieza el chequeo rápido" : "Empieza el debate"} · {time(e.at)}</Clerk>;
+    case "quick_response":
+      return <QuickResponse e={e} />;
     case "claims_entered":
       return (
         <div className="flex gap-3">
@@ -274,7 +297,7 @@ function Entry({ e, ctx }: { e: RecordedEvent; ctx: Context }) {
     case "absence":
       return <Clerk>{MODEL_NAME[e.by]} no se pronunció en la {ABSENCE_LABEL[e.stage]}</Clerk>;
     case "session_closed":
-      return <Clerk>Termina el debate · {time(e.at)}</Clerk>;
+      return <Clerk>{quick ? "Termina el chequeo" : "Termina el debate"} · {time(e.at)}</Clerk>;
   }
 }
 
@@ -284,10 +307,11 @@ const INDENTED = new Set<RecordedEvent["type"]>([
   "objection", "objection_reply", "ruling", "vote", "content_vote", "case_summary",
 ]);
 
-type SectionKey = "apertura" | "instruccion" | "fuentes" | Stage | "resultado";
+type SectionKey = "apertura" | "respuestas" | "instruccion" | "fuentes" | Stage | "resultado";
 
 const SECTION_TITLE: Record<SectionKey, string> = {
   apertura: "Apertura",
+  respuestas: "Respuestas",
   instruccion: "Instrucción",
   fuentes: "Crítica de fuentes",
   opening: "Exposiciones iniciales",
@@ -316,7 +340,8 @@ function sectionsOf(events: readonly RecordedEvent[]): Section[] {
   const sections: Section[] = [];
   let key: SectionKey = "apertura";
   for (const e of events) {
-    if (e.type === "instruction_opened") key = "instruccion";
+    if (e.type === "quick_response") key = "respuestas";
+    else if (e.type === "instruction_opened") key = "instruccion";
     else if ((e.type === "evidence_filed" || e.type === "instruction_completed") && key === "apertura") key = "instruccion";
     else if (e.type === "evidence_unified") key = "fuentes";
     else if (e.type === "floor_granted" || e.type === "statement") key = e.stage;
@@ -362,6 +387,8 @@ function itemsOf(section: Section): Item[] {
         group = undefined;
         items.push({ kind: "event", e });
       }
+    } else if (section.key === "respuestas" && e.type === "quick_response") {
+      open(e.by, e).events.push(e);
     } else items.push({ kind: "event", e });
   }
   return items;
@@ -372,7 +399,10 @@ function summaryOf(section: Section, view: CaseView): string {
   const plural = (n: number, one: string, many: string) => n + " " + (n === 1 ? one : many);
   switch (section.key) {
     case "apertura":
+      if (Object.keys(view.responses).length) return "Chequeo rápido";
       return view.dismissal ? "Caso descartado" : plural(view.claims.length, "afirmación a examinar", "afirmaciones a examinar");
+    case "respuestas":
+      return plural(count("quick_response"), "respuesta", "respuestas") + " con búsqueda propia";
     case "instruccion": {
       const analysts = new Set(section.events.flatMap((e) => (e.type === "evidence_filed" ? [e.evidence.by] : [])));
       return "Pruebas a favor y en contra · " + plural(count("evidence_filed"), "prueba", "pruebas") + " de " + plural(analysts.size, "analista", "analistas");
@@ -382,6 +412,7 @@ function summaryOf(section: Section, view: CaseView): string {
       return "Expediente común · " + plural(sources.length, "fuente", "fuentes") + " · " + plural(sources.filter((s) => s.excluded).length, "anulada", "anuladas");
     }
     case "resultado":
+      if (Object.keys(view.responses).length) return plural(count("content_vote"), "voto", "votos") + " sobre el contenido completo";
       return plural(count("judgment"), "resultado", "resultados");
     default: {
       const parts = [plural(count("statement"), "intervención", "intervenciones")];
@@ -394,6 +425,16 @@ function summaryOf(section: Section, view: CaseView): string {
 
 function groupTitle(group: Group, ctx: Context): React.ReactNode {
   const statement = group.events.find((e) => e.type === "statement");
+  const response = group.events.find((e) => e.type === "quick_response");
+  if (response) {
+    const cited = response.sources.length;
+    return (
+      <>
+        <span className="font-semibold">{MODEL_NAME[group.by]}</span>
+        <span className="text-ink-soft"> · respuesta · {cited} {cited === 1 ? "fuente citada" : "fuentes citadas"}</span>
+      </>
+    );
+  }
   if (!group.stage) {
     const filed = group.events.filter((e) => e.type === "evidence_filed").length;
     return (
@@ -415,6 +456,7 @@ function groupTitle(group: Group, ctx: Context): React.ReactNode {
 
 function GroupFold({ group, ctx }: { group: Group; ctx: Context }) {
   const statement = group.events.find((e) => e.type === "statement");
+  const response = group.events.find((e) => e.type === "quick_response");
   return (
     <details open className="fold">
       <summary className="fold-summary flex cursor-pointer items-center gap-3">
@@ -422,6 +464,7 @@ function GroupFold({ group, ctx }: { group: Group; ctx: Context }) {
         <span className="min-w-0 flex-1">
           <span className="block text-sm">{groupTitle(group, ctx)}</span>
           {statement && <span className="fold-preview text-sm text-ink-soft"><Cited text={statement.text} ctx={ctx} /></span>}
+          {response && <span className="fold-preview text-sm text-ink-soft">{response.text}</span>}
         </span>
         <Chevron />
       </summary>
@@ -516,6 +559,7 @@ function dialogueSpeaker(e: RecordedEvent): Seat | undefined {
     case "instruction_completed":
     case "source_review_vote":
     case "statement":
+    case "quick_response":
     case "objection":
     case "objection_reply":
     case "vote":

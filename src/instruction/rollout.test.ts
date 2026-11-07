@@ -64,3 +64,24 @@ test("mock shared instruction still requires the dedicated local database", asyn
     for (const [key, value] of Object.entries(previous)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
   }
 });
+
+test("a Quick check keeps shared storage and needs no sandbox bridge", async () => {
+  const values = { R2_ACCOUNT_ID: "account", R2_BUCKET: "bucket", R2_ACCESS_KEY_ID: "fixture-only", R2_SECRET_ACCESS_KEY: "fixture-only", R2_PUBLIC_URL: "https://public.example.test", AI_GATEWAY_API_KEY: "fixture-only" };
+  const keys = [...Object.keys(values), "COURT_PIPELINE_VERSION", "INSTRUCTION_TOOL_ORIGIN", "INSTRUCTION_SANDBOX_TEAM_ID", "INSTRUCTION_SANDBOX_PROJECT_ID", "INSTRUCTION_SANDBOX_SNAPSHOT_ID", "EVIDENCE_SANDBOX_SNAPSHOT_ID", "VERCEL_OIDC_TOKEN", "VERCEL_OIDC_TOKEN_FILE"];
+  const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+  try {
+    for (const key of keys) delete process.env[key];
+    Object.assign(process.env, values);
+    assert.equal(await requestedPipeline("fixture", false, "quick"), 2);
+    await assert.rejects(requestedPipeline("fixture", false, "expert"), /required|requires/, "an Expert case still needs the bridge");
+    process.env.COURT_PIPELINE_VERSION = "1";
+    assert.equal(await requestedPipeline("fixture", false, "quick"), 2, "the legacy switch does not apply to Quick checks");
+    assert.equal(await requestedPipeline("fixture", false, "expert"), 1);
+    process.env.COURT_PIPELINE_VERSION = "3";
+    assert.equal(await requestedPipeline("fixture", false, "quick"), 3);
+    process.env.AI_GATEWAY_API_KEY = "placeholder";
+    await assert.rejects(requestedPipeline("fixture", false, "quick"), /AI Gateway key are required/);
+  } finally {
+    for (const [key, value] of Object.entries(previous)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
+  }
+});

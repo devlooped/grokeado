@@ -90,6 +90,16 @@ export default function MethodPage() {
         <p className="mt-4 text-sm text-ink-soft">Después de decidir las afirmaciones, los analistas evalúan el contenido completo si hay una sola afirmación o forman una narrativa común. Si al menos tres votan sobre el conjunto, tres votos coincidentes dan el resultado; si no coinciden, desempata el moderador. Las afirmaciones independientes pueden no tener un resultado global. Los casos anteriores pueden no incluir esta votación.</p>
       </section>
 
+      <section id="chequeo-rapido" className="mt-12 scroll-mt-6">
+        <h2 className="font-display text-3xl">Chequeo rápido y chequeo experto</h2>
+        <p className="mt-3 max-w-3xl text-sm leading-relaxed text-ink-soft">
+          Al pedir un chequeo elegís el tipo. El <strong className="text-ink">chequeo rápido</strong> (el predeterminado) le pregunta a cada analista, en paralelo, si el contenido es cierto: cada uno busca con las herramientas de su proveedor, responde con sus palabras y vota sobre el contenido completo. Tres votos coincidentes dan el resultado; si no, el moderador desempata leyendo solo esas respuestas, sin investigar. No hay afirmaciones separadas, crítica de fuentes ni debate, y las páginas que cita cada respuesta son las de su proveedor, no fuentes revisadas por el panel.
+        </p>
+        <p className="mt-3 max-w-3xl text-sm leading-relaxed text-ink-soft">
+          El <strong className="text-ink">chequeo experto</strong> sigue el proceso completo que describe esta página: instrucción, crítica de fuentes, debate y votos por afirmación. Tarda más y deja un registro más detallado.
+        </p>
+      </section>
+
       <section id="proceso" className="mt-14 scroll-mt-6">
         <div className="rule-double pt-5">
           <h2 className="font-display text-3xl">El proceso, paso a paso</h2>

@@ -96,3 +96,14 @@ test("case requests reject unsupported languages before touching storage", async
   form.set("language", "fr");
   assert.deepEqual(await requestFactCheck({}, form), { error: "Elegí un idioma válido.", field: "language" });
 });
+
+test("case requests reject unknown check types before touching storage", async (t) => {
+  t.mock.method(auth0, "getSession", async () => ({ user: { sub: "daniel", email: "daniel@cazzulino.com", email_verified: true } }) as Awaited<ReturnType<typeof auth0.getSession>>);
+  const query = t.mock.method(Pool.prototype, "query", () => { throw new Error("unexpected database access"); });
+  const form = new FormData();
+  form.set("kind", "text");
+  form.set("text", "Una afirmación suficientemente larga para pedir un chequeo.");
+  form.set("check", "deep");
+  assert.deepEqual(await requestFactCheck({}, form), { error: "Elegí un tipo de chequeo válido.", field: "check" });
+  assert.equal(query.mock.callCount(), 0);
+});

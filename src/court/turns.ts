@@ -4,6 +4,7 @@ import { COUNSEL, MODEL_NAME, modelName, VERDICTS, imageDescribed, project, type
 import { DEFAULT_MODELS, type ModelConfig } from "./models.ts";
 import { Rejection, tool, type Toolset } from "./toolset.ts";
 import { languageRule } from "../domain/language.ts";
+import { VERDICT_INSTRUCTIONS } from "./verdict-instructions.ts";
 
 export type SeatId = "judge" | Counsel;
 
@@ -49,9 +50,6 @@ export interface Docket {
 
 const OBJECTION_GROUNDS =
   "a claim without evidence; evidence that does not exist or is miscited or misrepresented; an unreliable source; or an argument unrelated to the claims under examination";
-
-const VERDICT_INSTRUCTIONS =
-  "Choose verdadero if the evidence supports the claim; falso if it contradicts it; no_verificable (Insostenible) if it is not enough to support or refute it; or enganoso (Engañoso) if it presents partial or out-of-context data that leads to a wrong conclusion.";
 
 function counselBrief(c: Counsel, today: string, judge: string): string {
   const colleagues = COUNSEL.filter((x) => x !== c).map((x) => MODEL_NAME[x]);

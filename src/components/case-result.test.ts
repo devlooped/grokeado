@@ -358,3 +358,21 @@ test("older cases use the opening event for vote details without repeating the m
   assert.ok(document.querySelector('[title="Claude (claude-opus-5.5): Falso"]'), "no effort when none was configured");
   assert.match(parseHTML(render(events, old)).document.querySelector('[aria-labelledby="case-summary-title"] p.text-xs')?.textContent ?? "", /^Por el moderador$/);
 });
+
+test("a Quick check shows the content verdict with its four votes open, and no claims card", () => {
+  const quick: CaseRecord = { ...c, submission: { kind: "text", text: "Una afirmación.", check: "quick" } };
+  const input: CourtEvent[] = [
+  { type: "session_opened", judgeModel: "anthropic/claude-opus-5.5", counselModels: { grok: "g", gemini: "m", claude: "c", chatgpt: "o" } },
+  ...COUNSEL.map((by): CourtEvent => ({ type: "quick_response", by, text: "Respuesta de " + by + ".\nSegunda línea.", sources: by === "grok" ? [{ url: "https://example.test/indec", title: "INDEC" }] : [] })),
+  ...COUNSEL.map((by, i): CourtEvent => ({ type: "content_vote", by, verdict: i === 0 ? "verdadero" : "falso", rationale: "Voto de " + by })),
+  { type: "content_judgment", verdict: "falso", method: "consensus", reasoning: "" },
+  { type: "session_closed" },
+];
+  const { document } = parseHTML(render(input, quick));
+  assert.match(document.querySelector('[aria-label="Resultado del contenido completo: Falso"]')!.textContent, /Falso/);
+  const votes = [...document.querySelectorAll("details")].find((d) => d.querySelector("summary")?.textContent === "Evaluaciones del contenido completo")!;
+  assert.ok(votes.hasAttribute("open"));
+  assert.equal(votes.querySelectorAll("li").length, 4);
+  assert.equal(document.querySelector("#case-claims-title"), null);
+  assert.match(document.toString(), /Chequeo rápido/);
+});

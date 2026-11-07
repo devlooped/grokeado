@@ -68,11 +68,21 @@ export type CaseStatus = "queued" | "in_session" | "resolved" | "failed";
 
 export type CaseLanguageChoice = "auto" | "es" | "en";
 
+// Quick: each analyst answers and votes on the whole content, with its own
+// search. Expert: the whole court (claims, instruction, debate).
+export const CHECK_TYPES = ["quick", "expert"] as const;
+export type CheckType = (typeof CHECK_TYPES)[number];
+
 export type Submission = (
   | { kind: "text"; text: string }
   | { kind: "link"; url: string; note?: string }
   | { kind: "image"; mimeType: string; note?: string }
-) & { language?: CaseLanguageChoice; resolvedLanguage?: string };
+) & { language?: CaseLanguageChoice; resolvedLanguage?: string; check?: CheckType };
+
+// Absent on cases recorded before check types existed: they were Expert.
+export function checkType(s: Submission): CheckType {
+  return s.check ?? "expert";
+}
 
 export interface SubmissionContext {
   title: string;
@@ -155,6 +165,8 @@ export type CourtEvent =
   | { type: "instruction_closed" }
   | { type: "floor_granted"; to: Counsel; stage: Stage }
   | { type: "statement"; id: string; by: Counsel; stage: Stage; text: string; evidenceIds: string[]; evidenceRunId?: string; modelId?: string; effort?: string | null }
+  // Quick check: an analyst's whole answer, and the URLs its provider cited.
+  | { type: "quick_response"; by: Counsel; text: string; sources: QuickSource[]; modelId?: string; effort?: string | null }
   | { type: "objection"; id: string; by: Counsel; against: string; grounds: string }
   | { type: "objection_reply"; objectionId: string; by: Counsel; text: string }
   | { type: "ruling"; objectionId: string; sustained: boolean; reason: string }
@@ -165,6 +177,11 @@ export type CourtEvent =
   | { type: "case_summary"; text: string }
   | { type: "absence"; by: Counsel; stage: Stage | "discovery" | "instruction" | "source_review" | "objection" | "content" }
   | { type: "session_closed" };
+
+export interface QuickSource {
+  url: string;
+  title?: string;
+}
 
 export type RecordedEvent = CourtEvent & { seq: number; at: string };
 
@@ -204,6 +221,8 @@ export interface CaseView {
   contentVotes: Partial<Record<Counsel, { verdict: Verdict | null; rationale: string }>>;
   contentVotingRecorded: boolean;
   contentJudgment?: { verdict: Verdict; method: "consensus" | "judge"; reasoning: string };
+  // Quick check: each analyst's answer.
+  responses: Partial<Record<Counsel, { text: string; sources: QuickSource[] }>>;
   evidence: Map<string, Evidence>;
   sources: Map<string, SourceView>;
   struck: Set<string>;
@@ -213,7 +232,7 @@ export interface CaseView {
 }
 
 export function project(events: readonly CourtEvent[]): CaseView {
-  const view: CaseView = { claims: [], contentVotes: {}, contentVotingRecorded: false, evidence: new Map(), sources: new Map(), struck: new Set(), closed: false };
+  const view: CaseView = { claims: [], contentVotes: {}, contentVotingRecorded: false, responses: {}, evidence: new Map(), sources: new Map(), struck: new Set(), closed: false };
   const objectionTarget = new Map<string, string>();
   const claim = (id: string) => view.claims.find((c) => c.id === id);
   for (const e of events) {
@@ -256,6 +275,9 @@ export function project(events: readonly CourtEvent[]): CaseView {
         if (c) c.judgment = { verdict: e.verdict, method: e.method, reasoning: e.reasoning };
         break;
       }
+      case "quick_response":
+        view.responses[e.by] = { text: e.text, sources: e.sources };
+        break;
       case "content_vote":
         view.contentVotingRecorded = true;
         view.contentVotes[e.by] = { verdict: e.verdict, rationale: e.rationale };

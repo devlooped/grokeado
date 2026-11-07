@@ -4,8 +4,10 @@ import { counselModels, courtModel, DEFAULT_MODELS, MOCK_MODEL_ID, modelEffort, 
 import { playTurn } from "../court/play.ts";
 import { resolveCaseLanguage } from "../court/language.ts";
 import { holdSession } from "../court/procedure.ts";
+import { holdQuickSession, type QuickAnswer, type QuickEntry, type QuickFailure } from "../court/quick.ts";
+import { quickAnswer, quickTiebreak, quickVote, simulatedQuickDependencies } from "../court/quick-play.ts";
 import type { Docket, TurnOutcome, TurnSpec } from "../court/turns.ts";
-import { sharedPipeline, type CaseRecord, type CourtEvent, type RecordedEvent, type Submission, type SubmissionContext } from "../domain/court.ts";
+import { checkType, sharedPipeline, type CaseRecord, type Counsel, type CourtEvent, type RecordedEvent, type Submission, type SubmissionContext } from "../domain/court.ts";
 import { languageRule } from "../domain/language.ts";
 import { collectEvidenceBase } from "../evidence/collect.ts";
 import { imageDescriber } from "../evidence/describe.ts";
@@ -232,6 +234,23 @@ async function prepareEvidence(caseId: string, spec: TurnSpec, simulated: boolea
   return runEvidenceStep(caseId, request.seat, request.stage, request.task, simulated, language, { seat: seatModel(models, request.seat), translator: models.translator });
 }
 
+// A Quick check: one step per generation, so a completed paid answer is not
+// paid again when the workflow replays.
+async function answerQuick(caseId: string, submission: Submission, language: string, model: CourtModel, by: Counsel, attempt: number, simulated: boolean) {
+  "use step";
+  return quickAnswer(caseId, submission, language, model, by, attempt, simulated ? simulatedQuickDependencies("answer") : undefined);
+}
+
+async function voteQuick(caseId: string, submission: Submission, language: string, model: CourtModel, by: Counsel, answer: QuickAnswer, attempt: number, retry: QuickFailure | undefined, simulated: boolean) {
+  "use step";
+  return quickVote(caseId, submission, language, model, by, answer, attempt, retry, simulated ? simulatedQuickDependencies("vote") : undefined);
+}
+
+async function tiebreakQuick(caseId: string, submission: Submission, language: string, model: CourtModel, entries: QuickEntry[], attempt: number, simulated: boolean) {
+  "use step";
+  return quickTiebreak(caseId, submission, language, model, entries, attempt, simulated ? simulatedQuickDependencies("tiebreak") : undefined);
+}
+
 function describeError(err: unknown): string {
   const message = typeof err === "object" && err !== null && "message" in err ? String((err as { message: unknown }).message) : String(err);
   return message.slice(0, 500);
@@ -245,22 +264,36 @@ export async function courtSession(caseId: string): Promise<void> {
     shared = sharedPipeline(pipelineVersion);
     const models = await configuredModels(caseId, shared);
     const counsel = counselModels(models);
+    const effort = (model: CourtModel) => simulated ? null : modelEffort(model);
+    const seats = {
+      models: { judge: models.judge.id, counsel: { grok: counsel.grok.id, gemini: counsel.gemini.id, claude: counsel.claude.id, chatgpt: counsel.chatgpt.id } },
+      efforts: { judge: effort(models.judge), counsel: { grok: effort(counsel.grok), gemini: effort(counsel.gemini), claude: effort(counsel.claude), chatgpt: effort(counsel.chatgpt) } },
+    };
+    if (checkType(submission) === "quick") {
+      // No intake, instruction or sandbox (nothing to revoke on failure): each
+      // analyst answers and votes.
+      shared = false;
+      const language = await determineLanguage(caseId, submission, undefined, simulated, models.language);
+      await holdQuickSession({
+        submission, simulated, ...seats,
+        answer: (by, attempt) => answerQuick(caseId, submission, language, counsel[by], by, attempt, simulated),
+        vote: (by, answer, attempt, retry) => voteQuick(caseId, submission, language, counsel[by], by, answer, attempt, retry, simulated),
+        tiebreak: (entries, attempt) => tiebreakQuick(caseId, submission, language, models.judge, entries, attempt, simulated),
+        commit: (events: readonly RecordedEvent[]) => saveEvents(caseId, [...events]),
+      });
+      await illustrate(caseId, simulated, models);
+      if (!simulated) await archive(caseId);
+      await closeCase(caseId, "resolved");
+      return;
+    }
     const collected = shared ? await collectShared(caseId, submission, simulated, models) : undefined;
     const submissionContext = collected?.context ?? (shared ? undefined : await collect(caseId, submission, simulated, models["image.description"]));
     const language = collected?.language ?? await determineLanguage(caseId, submission, submissionContext, simulated, models.language);
     const docket: Docket = { submission: collected?.submission ?? submission, today, simulated, language, models, ...(submissionContext ? { submissionContext } : {}) };
-    const effort = (model: CourtModel) => simulated ? null : modelEffort(model);
     await holdSession({
       submission,
       simulated,
-      models: {
-        judge: models.judge.id,
-        counsel: { grok: counsel.grok.id, gemini: counsel.gemini.id, claude: counsel.claude.id, chatgpt: counsel.chatgpt.id },
-      },
-      efforts: {
-        judge: effort(models.judge),
-        counsel: { grok: effort(counsel.grok), gemini: effort(counsel.gemini), claude: effort(counsel.claude), chatgpt: effort(counsel.chatgpt) },
-      },
+      ...seats,
       play: async (spec, record, attempt) => {
         if (shared) return playShared(caseId, docket, spec, record, attempt);
         const evidence = await prepareEvidence(caseId, spec, simulated, language, models);

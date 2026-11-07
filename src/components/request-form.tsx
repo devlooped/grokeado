@@ -2,6 +2,13 @@
 
 import { startTransition, useActionState, useEffect, useId, useRef, useState, type ClipboardEvent, type DragEvent, type FormEvent, type KeyboardEvent } from "react";
 import { requestFactCheck, type RequestField, type RequestState } from "@/app/actions.ts";
+import type { CheckType } from "@/domain/court.ts";
+
+// Quick comes first and is the default.
+const CHECKS: ReadonlyArray<{ id: CheckType; label: string; hint: string }> = [
+  { id: "quick", label: "Rápido", hint: "Cada analista responde y vota; sin debate." },
+  { id: "expert", label: "Experto", hint: "Investigación, crítica de fuentes y debate." },
+];
 
 const KINDS = [
   { id: "text", label: "Texto" },
@@ -44,6 +51,7 @@ const label = "mb-1.5 block text-sm font-medium text-ink";
 
 export function RequestForm() {
   const [kind, setKind] = useState<Kind>("text");
+  const [check, setCheck] = useState<CheckType>("quick");
   const [text, setText] = useState("");
   const [image, setImage] = useState<{ name: string; size: number }>();
   const [local, setLocal] = useState<RequestState>();
@@ -52,6 +60,8 @@ export function RequestForm() {
   const uid = useId();
   const ids = {
     language: uid + "-language",
+    check: uid + "-check",
+    checkHint: uid + "-check-hint",
     text: uid + "-text",
     url: uid + "-url",
     linkNote: uid + "-link-note",
@@ -64,7 +74,7 @@ export function RequestForm() {
 
   // A client check wins over the last server answer; an error about a field of another kind is not shown.
   const shown = local ?? state;
-  const problem = shown.error && (!shown.field || shown.field === "language" || FIELDS[kind].includes(shown.field)) ? shown : undefined;
+  const problem = shown.error && (!shown.field || shown.field === "language" || shown.field === "check" || FIELDS[kind].includes(shown.field)) ? shown : undefined;
   const invalid = (f: RequestField) => problem?.field === f || undefined;
   const describedBy = (f: RequestField, extra?: string) => [extra, problem?.field === f ? ids.error : undefined].filter(Boolean).join(" ") || undefined;
 
@@ -149,6 +159,21 @@ export function RequestForm() {
         </select>
         <p className="mt-1 text-xs text-ink-soft">Detectar usa el idioma del material enviado; español se trata como español latinoamericano.</p>
       </div>
+
+      <fieldset className="mt-5" aria-describedby={describedBy("check", ids.checkHint)}>
+        <legend className={label}>Tipo de chequeo</legend>
+        <div className="inline-flex rounded-sm border border-rule bg-paper-deep p-1">
+          {CHECKS.map((c, i) => (
+            <label key={c.id} className="cursor-pointer">
+              <input type="radio" id={i === 0 ? ids.check : undefined} name="check" value={c.id} checked={check === c.id} onChange={() => setCheck(c.id)} aria-invalid={invalid("check")} className="peer sr-only" />
+              <span className="block rounded-sm px-4 py-1.5 text-sm font-medium text-ink-soft transition hover:text-ink peer-checked:bg-ink peer-checked:text-paper peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-celeste-deep">
+                {c.label}
+              </span>
+            </label>
+          ))}
+        </div>
+        <p id={ids.checkHint} className="mt-1 text-xs text-ink-soft">{CHECKS.find((c) => c.id === check)!.hint}</p>
+      </fieldset>
 
       <fieldset className="mt-5">
         <legend className="sr-only">Tipo de material</legend>

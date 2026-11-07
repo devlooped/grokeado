@@ -49,7 +49,7 @@ test("a collection failure after opening marks the case as failed and rethrows",
   const client = {
     query: async (sql: string, values?: unknown[]) => {
       if (sql === "BEGIN" || sql === "COMMIT" || sql === "DELETE FROM events WHERE case_id = $1") return { rows: [] };
-      if (sql.startsWith("SELECT id FROM cases WHERE")) {
+      if (sql.startsWith("SELECT id, submission FROM cases WHERE")) {
         assert.deepEqual(values, [caseId]);
         return { rows: [] };
       }
@@ -109,7 +109,7 @@ test("a bridge preflight failure before opening marks the case failed and create
     query: async (sql: string) => {
       queries.push(sql);
       if (sql === "BEGIN" || sql === "ROLLBACK") return { rows: [] };
-      if (sql.startsWith("SELECT id FROM cases WHERE")) return { rows: [{ id: "case-preflight" }] };
+      if (sql.startsWith("SELECT id, submission FROM cases WHERE")) return { rows: [{ id: "case-preflight", submission: { kind: "text", text: "fixture", check: "expert" } }] };
       throw new Error("Unexpected query");
     },
     release: () => {},

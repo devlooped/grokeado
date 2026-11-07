@@ -10,7 +10,7 @@ import { normalizeArtifactBytes, type ArtifactStore } from "./artifacts.ts";
 import { buildCaseLog } from "./case-log.ts";
 import { loadSettledCorpus } from "./settled.ts";
 import { caseUsageArtifact } from "../domain/usage.ts";
-import { sharedPipeline } from "../domain/court.ts";
+import { checkType, sharedPipeline } from "../domain/court.ts";
 
 const compress = promisify(deflateRaw);
 const MAX_ZIP_VALUE = 0xffffffff;
@@ -30,9 +30,9 @@ function crc32(bytes: Uint8Array): number {
 }
 
 // Write a standard ZIP with UTF-8 paths, deflated contents, and a central directory.
-// Reject ZIP64 sizes rather than emit a truncated archive.
-export async function createEvidenceArchive(files: EvidenceFiles): Promise<Buffer> {
-  const settled = files.has("instruction/base/submission.json");
+// Reject ZIP64 sizes rather than emit a truncated archive. A Quick check has no
+// instruction base, so the shared pipeline says it is the one-file format.
+export async function createEvidenceArchive(files: EvidenceFiles, settled = files.has("instruction/base/submission.json")): Promise<Buffer> {
   if (settled ? !files.has("case.jsonl") : !files.has("evidence/base/index.md")) throw new Error("El expediente no contiene el índice base.");
   if (settled && [...files.keys()].some((path) => /(?:^|\/)(?:transcript)\.jsonl$/.test(path))) throw new Error("New archives contain only one public case.jsonl log");
   if (files.size >= 0xffff) throw new Error("El expediente contiene demasiados archivos para un ZIP.");
@@ -121,7 +121,9 @@ export async function archiveEvidence(caseId: string, store: ArchiveStore = { re
   if (sharedPipeline(stored?.pipelineVersion)) {
     if (!store.artifacts || !store.getCaseAuditRecords || !store.getSourceOperations) throw new Error("Durable new-format archive storage unavailable");
     const events = await store.getEvents(caseId);
-    if (!events.some((event) => event.type === "dismissed")) await loadSettledCorpus(caseId, events, store.artifacts);
+    // A dismissed case and a Quick check have no settled corpus.
+    const quick = stored ? checkType(stored.submission) === "quick" : false;
+    if (!quick && !events.some((event) => event.type === "dismissed")) await loadSettledCorpus(caseId, events, store.artifacts);
     let audit = await store.getCaseAuditRecords(caseId);
     let published = audit;
     // case.jsonl is in the case language: its prompt records, written in
@@ -138,7 +140,7 @@ export async function archiveEvidence(caseId: string, store: ArchiveStore = { re
     await store.artifacts.write(caseId, new Map([["case.jsonl", log], ["case.json", JSON.stringify(caseUsageArtifact(caseId, audit), null, 2)]]));
     const files = await store.artifacts.read(caseId);
     for (const path of files.keys()) if (/(?:^|\/)(?:transcript)\.jsonl$/.test(path)) files.delete(path);
-    return store.writeEvidenceArchive(caseId, await createEvidenceArchive(files));
+    return store.writeEvidenceArchive(caseId, await createEvidenceArchive(files, true));
   }
   const files = await store.readEvidenceTree(caseId);
   const events = await store.getEvents(caseId);

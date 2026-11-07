@@ -1,10 +1,15 @@
-import { COUNSEL, MODEL_NAME, modelName, project, type CaseRecord, type CaseView, type CourtEvent, type Stage, type Submission, type Verdict } from "./court.ts";
+import { COUNSEL, MODEL_NAME, modelName, project, type CaseRecord, type CaseView, type CheckType, type CourtEvent, type Stage, type Submission, type Verdict } from "./court.ts";
 
 export function submissionExcerpt(s: Submission): string {
   if (s.kind === "text") return s.text;
   if (s.kind === "link") return s.note ? s.note + " · " + s.url : s.url;
   return s.note ?? "Imagen";
 }
+
+export const CHECK_LABEL: Record<CheckType, string> = {
+  quick: "Chequeo rápido",
+  expert: "Chequeo experto",
+};
 
 export const STAGE_LABEL: Record<Stage, string> = {
   opening: "exposición inicial",
@@ -91,6 +96,8 @@ export function describe(e: CourtEvent): string {
       return "El moderador da la palabra a " + MODEL_NAME[e.to] + " para su " + STAGE_LABEL[e.stage] + ".";
     case "statement":
       return "[" + e.id + "] " + MODEL_NAME[e.by] + " (" + STAGE_LABEL[e.stage] + "): " + e.text + (e.evidenceIds.length ? " [cita " + e.evidenceIds.join(", ") + "]" : "");
+    case "quick_response":
+      return MODEL_NAME[e.by] + " responde:\n" + e.text + (e.sources.length ? "\nFuentes citadas: " + e.sources.map((s) => s.url).join(", ") : "");
     case "objection":
       return "[" + e.id + "] " + MODEL_NAME[e.by] + " objeta " + e.against + ": " + e.grounds;
     case "objection_reply":

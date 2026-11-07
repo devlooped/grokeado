@@ -20,9 +20,20 @@ test("the form uses native radios and visible labels, and keeps every kind mount
     const label = document.querySelector('label[for="' + input.id + '"]')!;
     assert.ok(label && !label.className.includes("sr-only"), name + " has a visible label");
   }
-  const sets = [...document.querySelectorAll("fieldset")].slice(1);
+  const sets = [...document.querySelectorAll("fieldset")].slice(2);
   assert.deepEqual(sets.map((f) => f.hasAttribute("disabled")), [false, true, true]);
   assert.deepEqual(sets.map((f) => f.hasAttribute("hidden")), [false, true, true]);
+});
+
+test("the check type defaults to Rápido, before Experto, with a hint for the chosen one", () => {
+  const { document } = parseHTML(renderToStaticMarkup(createElement(RequestForm)));
+  const checks = [...document.querySelectorAll('input[type="radio"][name="check"]')];
+  assert.deepEqual(checks.map((r) => r.getAttribute("value")), ["quick", "expert"]);
+  assert.deepEqual(checks.map((r) => r.hasAttribute("checked")), [true, false]);
+  assert.deepEqual(checks.map((r) => r.parentElement!.textContent!.trim()), ["Rápido", "Experto"]);
+  const fieldset = checks[0].closest("fieldset")!;
+  assert.equal(fieldset.querySelector("legend")!.textContent, "Tipo de chequeo");
+  assert.equal(document.getElementById(fieldset.getAttribute("aria-describedby")!)!.textContent, "Cada analista responde y vota; sin debate.");
 });
 
 test("the text counter says what is missing below the minimum, else how much is used", () => {

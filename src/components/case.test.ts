@@ -262,3 +262,24 @@ test("the case record records content votes, abstentions and the moderator's tie
   assert.ok(html.includes("Desempate del moderador"));
   assert.ok(html.includes("El contexto cambia el sentido del conjunto."));
 });
+
+test("a Quick check lists each analyst's answer with its cited pages, then the votes and the result", () => {
+  const input: CourtEvent[] = [
+  { type: "session_opened", judgeModel: "anthropic/claude-opus-5.5", counselModels: { grok: "g", gemini: "m", claude: "c", chatgpt: "o" } },
+  ...COUNSEL.map((by): CourtEvent => ({ type: "quick_response", by, text: "Respuesta de " + by + ".\nSegunda línea.", sources: by === "grok" ? [{ url: "https://example.test/indec", title: "INDEC" }] : [] })),
+  ...COUNSEL.map((by, i): CourtEvent => ({ type: "content_vote", by, verdict: i === 0 ? "verdadero" : "falso", rationale: "Voto de " + by })),
+  { type: "content_judgment", verdict: "falso", method: "consensus", reasoning: "" },
+  { type: "session_closed" },
+];
+  const { document } = parseHTML(render(input));
+  const titles = [...document.querySelectorAll("summary h3")].map((h) => h.textContent);
+  assert.deepEqual(titles, ["Apertura", "Respuestas", "Resultado"]);
+  const answers = [...document.querySelectorAll('[id^="respuesta-"]')];
+  assert.deepEqual(answers.map((a) => a.id), COUNSEL.map((by) => "respuesta-" + by));
+  assert.match(answers[0]!.textContent, /Respuesta de grok\.\nSegunda línea\./);
+  assert.equal(answers[0]!.querySelector("a")?.getAttribute("href"), "https://example.test/indec");
+  assert.match(document.toString(), /1 fuente citada/);
+  assert.match(document.toString(), /4 votos sobre el contenido completo/);
+  assert.match(document.toString(), /Empieza el chequeo rápido/);
+  assert.doesNotMatch(document.toString(), /afirmaciones a examinar|Empieza el debate/);
+});

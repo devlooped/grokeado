@@ -136,6 +136,35 @@ test("case.jsonl publishes the English prompts in the case language, from the sh
   assert.match(new TextDecoder().decode((await artifacts.read("fixture")).get("case.jsonl")), /Registrá las decisiones/);
 });
 
+test("a Quick check archives its answers and model steps without a settled corpus", async () => {
+  const artifacts = new MemoryArtifactStore();
+  await artifacts.write("fixture", new Map([["quick/grok/answer-0/request.json", '{"prompt":"FACT CHECK: Texto"}'], ["quick/grok/answer-0/result.json", '{"text":"Respuesta"}']]));
+  const at = "2026-11-07T00:00:00.000Z";
+  const events: RecordedEvent[] = [
+    { type: "quick_response", by: "grok", text: "Respuesta", sources: [{ url: "https://example.test/fuente" }], seq: 1, at },
+    { type: "content_vote", by: "grok", verdict: "falso", rationale: "Los datos oficiales lo contradicen.", seq: 2, at },
+    { type: "content_judgment", verdict: "falso", method: "consensus", reasoning: "Mayoría.", seq: 3, at },
+    { type: "session_closed", seq: 4, at },
+  ];
+  const step = { schemaVersion: 2, id: "step:quick:grok:answer:0", kind: "model_step", at, seat: "grok", phase: "quick", modelId: "openai/test", effort: "high", data: { channel: "decision", sessionId: "quick:grok", sequence: 0, usage: { inputTokens: 10, outputTokens: 5 }, request: "quick/grok/answer-0/request.json", result: "quick/grok/answer-0/result.json" } };
+  let archived = false;
+  await archiveEvidence("fixture", {
+    getCase: async () => ({ id: "fixture", createdAt: at, status: "resolved" as const, submission: { kind: "text" as const, text: "Texto", resolvedLanguage: "es", check: "quick" as const }, revision: 1, pipelineVersion: 2 as const }),
+    artifacts, getEvents: async () => events, getCaseAuditRecords: async () => [step], getSourceOperations: async () => [],
+    readEvidenceTree: async () => { throw new Error("Legacy reader must not run"); },
+    writeEvidenceTree: async () => { throw new Error("Legacy writer must not run"); },
+    writeCaseTranscript: async () => { throw new Error("Legacy transcript must not run"); },
+    writeEvidenceArchive: async () => { archived = true; return { downloadUrl: "fixture", etag: "v1" }; },
+    prompts: () => { throw new Error("A Quick check has no prompt records"); },
+  });
+  assert.ok(archived);
+  const files = await artifacts.read("fixture");
+  const log = parseCaseLog(new TextDecoder().decode(files.get("case.jsonl")));
+  assert.deepEqual(log.filter((record) => record.kind === "court_event").map((record) => record.data), events);
+  assert.ok(log.some((record) => record.id === "step:quick:grok:answer:0"));
+  assert.ok(files.has("quick/grok/answer-0/request.json"));
+});
+
 test("archives the entire evidence tree with reproducible UTF-8 paths and original bytes", async () => {
   const zip = await createEvidenceArchive(files);
   assert.deepEqual(zip, await createEvidenceArchive(new Map([...files].reverse())));

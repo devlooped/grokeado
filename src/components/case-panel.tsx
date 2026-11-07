@@ -1,5 +1,6 @@
 import { MODEL_ROLES } from "@/court/models.ts";
-import { COUNSEL, modelDetail, type CaseRecord, type ModelUse, type SeatModels } from "@/domain/court.ts";
+import { CHECK_LABEL } from "@/domain/case.ts";
+import { checkType, COUNSEL, modelDetail, type CaseRecord, type ModelUse, type SeatModels } from "@/domain/court.ts";
 import { GavelIcon, ModelName } from "./marks.tsx";
 import { CaseCost } from "./case-cost.tsx";
 import type { CaseCosts } from "../domain/cost.ts";
@@ -33,7 +34,10 @@ export function CasePanel({ c, models, costs }: { c: CaseRecord; models: SeatMod
     <section aria-labelledby="case-panel-title" className="min-w-0 rounded-sm border border-rule bg-paper/60 p-5 text-sm">
       <div className="flex items-center gap-3">
         <span className="grid size-9 shrink-0 place-items-center rounded-sm border border-rule text-seal"><GavelIcon className="size-5" /></span>
-        <h2 id="case-panel-title" className="font-display text-2xl">Panel</h2>
+        <div>
+          <h2 id="case-panel-title" className="font-display text-2xl">Panel</h2>
+          <p className="font-mono text-[10px] text-ink-soft">{CHECK_LABEL[checkType(c.submission)]}</p>
+        </div>
       </div>
       <dl className="mt-4 space-y-3">
         {models.judge && <PanelMember role="Moderador" model={models.judge} />}

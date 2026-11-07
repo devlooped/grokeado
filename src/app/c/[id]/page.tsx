@@ -12,9 +12,9 @@ import { CaseUpdates } from "@/components/case-updates.tsx";
 import { GavelIcon } from "@/components/marks.tsx";
 import { CaseResult } from "@/components/case-result.tsx";
 import { SessionProgress } from "@/components/session-progress.tsx";
-import { caseShareMetadata, submissionExcerpt } from "@/domain/case.ts";
+import { caseShareMetadata, CHECK_LABEL, submissionExcerpt } from "@/domain/case.ts";
 import { caseCardImageUrl } from "@/domain/case-card.ts";
-import { COUNSEL_NAMES, seatModels, type CaseRecord, type RecordedEvent } from "@/domain/court.ts";
+import { checkType, COUNSEL_NAMES, seatModels, type CaseRecord, type RecordedEvent } from "@/domain/court.ts";
 import { project, sharedPipeline } from "@/domain/court.ts";
 import type { ToolActivity } from "@/domain/tool-activity.ts";
 import { displayHistoricalCitations } from "@/domain/historical-citations.ts";
@@ -48,6 +48,7 @@ export async function generateMetadata(props: PageProps<"/c/[id]">): Promise<Met
 const date = (at: string) => new Date(at).toLocaleString("es-AR", { dateStyle: "long", timeStyle: "short", timeZone: "America/Argentina/Buenos_Aires" });
 
 function InSession({ c, events, activities }: { c: StoredCaseRecord; events: RecordedEvent[]; activities: ToolActivity[] }) {
+  const check = checkType(c.submission);
   return (
     <section className="mx-auto max-w-2xl py-16 text-center">
       <CaseUpdates caseId={c.id} version={caseProgressVersion({ status: c.status, revision: c.revision, seq: events.at(-1)?.seq ?? 0, activity: activities.length })} />
@@ -60,9 +61,9 @@ function InSession({ c, events, activities }: { c: StoredCaseRecord; events: Rec
       <h1 className="mt-8 font-display text-5xl sm:text-6xl">El panel está analizando</h1>
       <blockquote className="mx-auto mt-5 line-clamp-3 max-w-lg break-words font-display text-2xl italic leading-snug text-ink">«{submissionExcerpt(c.submission)}»</blockquote>
       <p className="mx-auto mt-4 max-w-md text-ink-soft">
-        {COUNSEL_NAMES} están investigando y debatiendo tu consulta. Podés seguir el diálogo abajo; cuando terminen vas a ver el resultado y el registro completo.
+        {COUNSEL_NAMES} {check === "quick" ? "están respondiendo tu consulta, cada uno con su propia búsqueda" : "están investigando y debatiendo tu consulta"}. Podés seguir el diálogo abajo; cuando terminen vas a ver el resultado y el registro completo.
       </p>
-      <SessionProgress events={events} queued={c.status === "queued"} />
+      <SessionProgress events={events} queued={c.status === "queued"} check={check} />
       <p className="mx-auto mt-6 max-w-md text-xs text-ink-soft">
         Esta página se actualiza sola. Podés cerrarla: el análisis sigue y el resultado queda en esta misma dirección.{" "}
         <Link href="/method" className="text-celeste-deep underline underline-offset-4">Cómo trabaja el panel</Link>
@@ -111,6 +112,7 @@ async function ResolvedCase({ c, id, revision }: { c: CaseRecord; id: string; re
   const view = project(events);
   const models = seatModels(c, events);
   const byJudge = view.claims.filter((cl) => cl.judgment?.method === "judge").length;
+  const quick = checkType(c.submission) === "quick";
 
   return (
     <div className="case-enter">
@@ -119,7 +121,9 @@ async function ResolvedCase({ c, id, revision }: { c: CaseRecord; id: string; re
           <p className="font-mono text-xs uppercase tracking-widest text-ink-soft">Caso Nº {c.id} · {date(c.createdAt)}</p>
           <h1 className="mt-2 font-display text-5xl">{view.dismissal ? "Caso descartado" : "Resultado"}</h1>
         </div>
-        {!view.dismissal && (
+        {quick ? (
+          <p className="max-w-xs text-right text-sm text-ink-soft">{CHECK_LABEL.quick}: cada analista respondió y votó, sin debate.</p>
+        ) : !view.dismissal && (
           <p className="max-w-xs text-right text-sm text-ink-soft">
             {view.claims.length} {view.claims.length === 1 ? "afirmación examinada" : "afirmaciones examinadas"}
             {byJudge > 0 ? ", " + byJudge + " " + (byJudge === 1 ? "desempatada" : "desempatadas") + " por el moderador" : ", todas por mayoría"}.
@@ -133,15 +137,15 @@ async function ResolvedCase({ c, id, revision }: { c: CaseRecord; id: string; re
 
       <section className="mt-16">
         <div className="rule-double pt-4">
-          <h2 className="font-display text-4xl">Registro del debate</h2>
-          <p className="mt-1 text-sm text-ink-soft">Todo lo que pasó en el debate, completo y en orden.</p>
+          <h2 className="font-display text-4xl">{quick ? "Respuestas de los analistas" : "Registro del debate"}</h2>
+          <p className="mt-1 text-sm text-ink-soft">{quick ? "Cada respuesta completa, con las fuentes que citó su proveedor, y luego los votos." : "Todo lo que pasó en el debate, completo y en orden."}</p>
         </div>
         <div className="mt-8">
           <Case events={events} view={view} caseId={id} sourceAliases={aliases} models={models} />
         </div>
       </section>
 
-      {hasEvidence && <EvidencePanel caseId={id} settled={sharedPipeline(c.pipelineVersion)} />}
+      {hasEvidence && <EvidencePanel caseId={id} settled={sharedPipeline(c.pipelineVersion)} quick={quick} />}
     </div>
   );
 }
