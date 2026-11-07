@@ -361,7 +361,7 @@ test("older cases use the opening event for vote details without repeating the m
   assert.match(parseHTML(render(events, old)).document.querySelector('[aria-labelledby="case-summary-title"] p.text-xs')?.textContent ?? "", /^Por el moderador$/);
 });
 
-test("a Quick check shows the content verdict with its four votes open, and no claims card", () => {
+test("a Quick check shows the content verdict and four votes with reasons collapsed, and no claims card", () => {
   const quick: CaseRecord = { ...c, submission: { kind: "text", text: "Una afirmación.", check: "quick" } };
   const input: CourtEvent[] = [
   { type: "session_opened", judgeModel: "anthropic/claude-opus-5.5", counselModels: { grok: "g", gemini: "m", claude: "c", chatgpt: "o" } },
@@ -375,7 +375,7 @@ test("a Quick check shows the content verdict with its four votes open, and no c
   const figure = document.querySelector("figure")!;
   const votes = figure.querySelector("details")!;
   assert.equal(votes.querySelector("summary")?.textContent, "Fundamentos de cada voto");
-  assert.ok(votes.hasAttribute("open"));
+  assert.ok(!votes.hasAttribute("open"));
   assert.equal(votes.querySelectorAll("li").length, 4);
   const chips = figure.querySelector('[role="group"][aria-label="Votos de los analistas sobre el contenido"]')!;
   assert.ok(chips.className.includes("justify-end"));
