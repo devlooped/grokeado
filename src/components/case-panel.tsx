@@ -59,7 +59,7 @@ export function CasePanel({ c, models, costs }: { c: CaseRecord; models: SeatMod
           </dl>
         </details>
       )}
-      <CaseCost costs={costs} />
+      {costs && <CaseCost costs={costs} />}
     </section>
   );
 }

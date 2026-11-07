@@ -5,6 +5,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { COUNSEL, project, type CaseRecord, type CourtEvent } from "../domain/court.ts";
 import { displayHistoricalCitations } from "../domain/historical-citations.ts";
+import { caseCosts } from "../domain/cost.ts";
 import { CaseResult } from "./case-result.tsx";
 import { Case } from "./case.tsx";
 
@@ -29,6 +30,15 @@ const events: CourtEvent[] = [
 function render(input: CourtEvent[], record: CaseRecord = c) {
   return renderToStaticMarkup(createElement(CaseResult, { c: record, view: project(input) }));
 }
+
+test("the result renders costs only when supplied, including cases with no recorded usage", () => {
+  const view = project(events);
+  const withoutCosts = renderToStaticMarkup(createElement(CaseResult, { c, view }));
+  assert.doesNotMatch(withoutCosts, /Costo|no tiene uso de tokens registrado/);
+  const withCosts = renderToStaticMarkup(createElement(CaseResult, { c, view, costs: caseCosts([], {}) }));
+  assert.match(withCosts, /Costo/);
+  assert.match(withCosts, /no tiene uso de tokens registrado/);
+});
 
 test("the content, panel and claims form an overview immediately before the moderator summary", () => {
   const html = render(events);

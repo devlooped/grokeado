@@ -20,6 +20,7 @@ import type { ToolActivity } from "@/domain/tool-activity.ts";
 import { displayHistoricalCitations } from "@/domain/historical-citations.ts";
 import { blobConfigured, caseStorageExists, findEvidenceArchive, hasEvidenceBase } from "@/evidence/blob.ts";
 import { auth0 } from "@/lib/auth0.ts";
+import { canViewCaseCost } from "@/lib/case-access.ts";
 import { detectMissingCaseStorage } from "@/lib/case-storage.ts";
 import { caseProgressVersion } from "@/lib/case-event-stream.ts";
 import { coverVersions, failResolvedCase, findCaseAlias, getCase, getCaseAuditRecords, getCaseToolActivities, getEvents, type StoredCaseRecord } from "@/store.ts";
@@ -103,10 +104,13 @@ const getResolvedEvents = unstable_cache(async (id: string, revision: number) =>
 }, ["resolved-case-events-v1"], { revalidate: 3600 });
 
 async function ResolvedCase({ c, id, revision }: { c: CaseRecord; id: string; revision: number }) {
-  const [recordedEvents, audit] = await Promise.all([getResolvedEvents(id, revision), getCaseAuditRecords(id)]);
+  const [recordedEvents, session] = await Promise.all([getResolvedEvents(id, revision), auth0.getSession()]);
   const { events, aliases } = displayHistoricalCitations(recordedEvents);
-  const calls = usageCalls(audit);
-  const costs = caseCosts(calls, calls.length ? await loadTokenPrices() : {});
+  let costs;
+  if (canViewCaseCost(session?.user)) {
+    const calls = usageCalls(await getCaseAuditRecords(id));
+    costs = caseCosts(calls, calls.length ? await loadTokenPrices() : {});
+  }
   const hasEvidence = blobConfigured() && Boolean(await findEvidenceArchive(id) || await hasEvidenceBase(id));
   const simulated = events.some((e) => e.type === "session_opened" && e.simulated);
   const view = project(events);
