@@ -1,36 +1,22 @@
 import { ZodError } from "zod";
-import type { CourtEvent, Evidence, EvidenceProposal, RecordedEvent, UnifiedSource } from "../domain/court.ts";
+import type { CourtEvent, Evidence, RecordedEvent, UnifiedSource } from "../domain/court.ts";
+import { canonicalUrl, COLLECTION_BATCH, proposalsOf, type Proposal } from "./proposed-urls.ts";
 import { matchQuote } from "./quote-match.ts";
-import { mapLimit, normalizeSourceUrl, type CanonicalSource, type SourceBlock, type SourceService } from "./sources.ts";
+import { mapLimit, type CanonicalSource, type SourceBlock, type SourceService } from "./sources.ts";
+
+export { COLLECTION_BATCH, proposalsOf, proposedUrls, type Proposal } from "./proposed-urls.ts";
 
 // Pipeline 3: the analysts propose sources by URL and verbatim quote; the host
 // fetches each URL once, files the proposals whose quote it finds as evidence,
 // and groups them by canonical source, as unify_evidence did in pipeline 2.
 
-export type Proposal = EvidenceProposal & { by: Evidence["by"]; seq: number; at: string };
 export type FetchedUrl = { url: string; sourceId?: string; error?: string };
 // finalUrl: the page the proposed URL led to, when it was read (a grounding
 // redirect names no page of its own).
 export type RejectedProposal = Proposal & { reason: string; finalUrl?: string };
 
-// The URLs fetched by one workflow step, so that no step waits on more than a
-// few downloads.
-export const COLLECTION_BATCH = 4;
 // As for file_evidence: a passage longer than this is no longer a quote.
 const MAX_EXCERPT_CHARS = 30_000;
-
-export function proposalsOf(events: readonly RecordedEvent[]): Proposal[] {
-  return events.flatMap((event) => event.type === "evidence_proposed" ? [{ ...event.proposal, by: event.by, seq: event.seq, at: event.at }] : []);
-}
-
-function canonicalUrl(url: string): string | undefined {
-  try { return normalizeSourceUrl(url); } catch { return undefined; }
-}
-
-// Every proposed URL once, in the order first proposed.
-export function proposedUrls(events: readonly RecordedEvent[]): string[] {
-  return [...new Set(proposalsOf(events).flatMap((proposal) => canonicalUrl(proposal.url) ?? []))];
-}
 
 // One bounded unit of collection. Downloads and extraction are durable,
 // deduplicated source operations: a retried step reads them back. A source that

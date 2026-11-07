@@ -7,6 +7,7 @@ import { languageVerifierFor, translatorFor, type LanguageVerifier, type Transla
 import { sha256 } from "../evidence/validate.ts";
 import { sourceOperationRepository } from "../store.ts";
 import type { OperationRepository, OperationStatus } from "./source-store.ts";
+import { normalizeSourceUrl } from "./proposed-urls.ts";
 import { FatalError } from "workflow";
 import { z } from "zod";
 
@@ -62,12 +63,7 @@ export type SourceReadResult = {
   blocks: SourceBlock[]; truncated: boolean; next?: { block: number; offset: number };
 } | { sourceId: string; status: Exclude<OperationStatus, "ready" | "running">; operation: string; errorCode?: string };
 
-export function normalizeSourceUrl(raw: string): string {
-  const url = new URL(raw);
-  if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) throw new Error("Invalid source URL");
-  url.hash = "";
-  return url.href;
-}
+export { normalizeSourceUrl };
 
 function sourceIdFor(url: string) { return `src_${sha256(url).slice(0, 24)}`; }
 function sourceRoot(id: string) {

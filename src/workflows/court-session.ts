@@ -18,7 +18,8 @@ import { runEvidenceStep, type EvidenceStepResult } from "../evidence/sandbox.ts
 import type { EvidenceSeat, EvidenceStage } from "../evidence/schema.ts";
 import { closeCase, openCase, saveEvents } from "./steps.ts";
 import { getCase, getCaseAuditRecords, getImage, recordCaseToolActivity, revokeSandboxBindings, saveCaseAuditRecord, saveCaseLanguage, saveCaseModels } from "../store.ts";
-import { COLLECTION_BATCH, collectEvidence, fetchProposedUrls, proposedUrls, rejectionRecord, type FetchedUrl } from "../instruction/collection.ts";
+import { collectEvidence, fetchProposedUrls, rejectionRecord, type FetchedUrl } from "../instruction/collection.ts";
+import { COLLECTION_BATCH, proposedUrls } from "../instruction/proposed-urls.ts";
 import { collectInstruction } from "../instruction/intake.ts";
 import { fatalSourceFailure, liveSourceDependencies, SourceService } from "../instruction/sources.ts";
 import { sourceDownloader } from "../instruction/research.ts";
