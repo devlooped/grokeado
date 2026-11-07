@@ -59,6 +59,12 @@ test("the thresholds gate on latency, quote matching, votes, X posts and tool er
   const broken = summarize([{ ...result, error: "decision timeout" }]);
   assert.deepEqual([broken.checks.tools, broken.checks.cases], [true, false], "a case failure is not a tool failure");
   assert.match(renderResearchReport([result], { started: at, finished: at, spentUsd: 0.5, maxUsd: 8 }), /No cumple todos los umbrales/);
+  // A case that failed before host collection has no quote, vote or X data: those checks fail instead of passing.
+  const uncollected = { ...result, events: result.events.filter((e) => e.type === "evidence_proposed"), rejected: [], error: "Source is still being read" };
+  const empty = summarize([uncollected]);
+  assert.equal(empty.bySeat.grok.matchedShare, undefined);
+  assert.deepEqual([empty.checks.quotes, empty.checks.votes, empty.checks.x], [false, false, false]);
+  assert.equal(seatMetrics(uncollected, "grok").duplicates, 0);
 });
 
 test("percentile takes the nearest rank", () => {

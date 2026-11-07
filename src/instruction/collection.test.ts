@@ -12,11 +12,12 @@ const pages: Record<string, string> = {
   "https://example.org/nota": "La nota periodística sostiene que el dato oficial fue revisado al alza.",
 };
 // A grounding redirect, as Gemini cites its sources.
-const redirects: Record<string, string> = { "https://redirect.example/grounding/nota": "https://example.org/nota" };
+const redirects: Record<string, string> = { "https://redirect.example/grounding/nota": "https://example.org/nota", "https://redirect.example/grounding/nota-2": "https://example.org/nota" };
 
-function reader() {
+function reader(extractMs = 0) {
   let downloads = 0;
-  const service = new SourceService("fixture", "es", { operations: new MemoryOperationRepository(), artifacts: new MemoryArtifactStore(), extract: extractSource,
+  const service = new SourceService("fixture", "es", { operations: new MemoryOperationRepository(), artifacts: new MemoryArtifactStore(),
+    extract: async (download, extension) => { await new Promise((resolve) => setTimeout(resolve, extractMs)); return extractSource(download, extension); },
     translatorModelId: "fixture/translator", translatorFingerprint: "fixture-v1", translate: async (input) => ({ ...input, changed: false }), verifyLanguage: async () => ({ matches: true }),
     download: async (url) => { downloads++; const target = redirects[url] ?? url; return pages[target] ? { ok: true, finalUrl: target, redirects: target === url ? 0 : 1, contentType: "text/plain", bytes: new TextEncoder().encode(pages[target]!) } : { ok: false, error: "http_404" }; },
   });
@@ -59,6 +60,16 @@ test("the host fetches each proposed URL once, files matched quotes and groups t
   const log = parseCaseLog(buildCaseLog([], rejected.map(rejectionRecord), []));
   assert.deepEqual(log.map((record) => [record.kind, record.seat, record.data.reason]), [["proposal_rejected", "grok", "quote_not_found"], ["proposal_rejected", "claude", "source_failed"]]);
   assert.equal(log[0]!.data.finalUrl, "https://example.org/nota");
+});
+
+test("two URLs that lead to the same page, read at once, wait for one reading", async () => {
+  const { service, downloads } = reader(300);
+  const urls = ["https://redirect.example/grounding/nota", "https://redirect.example/grounding/nota-2", "https://example.org/nota"];
+  const fetched = await fetchProposedUrls(service, urls);
+  assert.deepEqual(fetched.map((result) => result.error), [undefined, undefined, undefined]);
+  assert.equal(new Set(fetched.map((result) => result.sourceId)).size, 1, "one source for the page");
+  assert.equal(downloads(), 3);
+  await assert.rejects(fetchProposedUrls(reader(300).service, urls, 0), /is still being read/, "without the wait, the step fails");
 });
 
 test("without proposals, collection files an empty source file", async () => {

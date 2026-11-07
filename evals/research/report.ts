@@ -26,11 +26,15 @@ export type SeatMetrics = {
   votes: number; sources: number; searches: number; costUsd: number;
 };
 
+// Whether host collection ran: before it, no quote was checked and no source
+// can be voted on, so these checks have no data rather than passing.
+const collected = (result: CaseResult) => result.events.some((e) => e.type === "evidence_unified");
+
 export function seatMetrics(result: CaseResult, seat: Counsel): SeatMetrics {
   const proposals = result.events.flatMap((e) => e.type === "evidence_proposed" && e.by === seat ? [e.proposal] : []);
   const rejected = result.rejected.filter((proposal) => proposal.by === seat);
   const fetchFailures = rejected.filter((proposal) => FETCH_REASONS(proposal.reason)).length;
-  const quoteChecked = proposals.length - fetchFailures;
+  const quoteChecked = collected(result) ? proposals.length - fetchFailures : 0;
   const matched = quoteChecked - rejected.filter((proposal) => !FETCH_REASONS(proposal.reason)).length;
   const filed = result.events.filter((e) => e.type === "evidence_filed" && e.evidence.by === seat).length;
   const sources = sourcesOf(result).length;
@@ -73,11 +77,11 @@ export function summarize(results: readonly CaseResult[]) {
   const bySeat = Object.fromEntries(COUNSEL.map((seat) => {
     const metrics = results.map((result) => seatMetrics(result, seat));
     const checked = metrics.reduce((sum, m) => sum + m.quoteChecked, 0), matched = metrics.reduce((sum, m) => sum + m.matched, 0);
-    return [seat, { matchedShare: checked ? matched / checked : undefined, fullVotes: metrics.every((m) => m.votes === m.sources) }];
+    return [seat, { matchedShare: checked ? matched / checked : undefined, fullVotes: results.every((result, index) => collected(result) && metrics[index]!.votes === metrics[index]!.sources) }];
   })) as Record<Counsel, { matchedShare?: number; fullVotes: boolean }>;
   const cases = results.map(caseMetrics);
   const xSources = cases.reduce((sum, c) => sum + c.xSources, 0);
-  const xComplete = cases.every((c) => c.xEmbedded === c.xSources && c.xVotedByOthers === c.xSources);
+  const xComplete = results.every(collected) && cases.every((c) => c.xEmbedded === c.xSources && c.xVotedByOthers === c.xSources);
   const toolErrors = results.flatMap((result) => result.gathers.flatMap((gather) => gather.error ? [`${result.id} · ${gather.seat} · ${gather.phase} · ${gather.modelId} [${gather.tools.join(", ")}]: ${gather.error}`] : []));
   const caseErrors = results.flatMap((result) => result.error ? [`${result.id}: ${result.error}`] : []);
   const errors = [...caseErrors, ...toolErrors];

@@ -35,11 +35,21 @@ export function proposedUrls(events: readonly RecordedEvent[]): string[] {
 // One bounded unit of collection. Downloads and extraction are durable,
 // deduplicated source operations: a retried step reads them back. A source that
 // cannot be read rejects its proposals; one still being read by another owner
-// fails the step, so that the workflow retries it.
-export async function fetchProposedUrls(reader: SourceService, urls: readonly string[]): Promise<FetchedUrl[]> {
+// after a wait fails the step, so that the workflow retries it.
+const PENDING_WAIT_MS = 60_000, PENDING_POLL_MS = 250;
+
+export async function fetchProposedUrls(reader: SourceService, urls: readonly string[], pendingWaitMs = PENDING_WAIT_MS): Promise<FetchedUrl[]> {
   return mapLimit(urls, COLLECTION_BATCH, async (url) => {
     try {
-      const result = await reader.read({ url, maxChars: 1 });
+      // Two URLs of the batch can lead to the same page (two grounding
+      // redirects, or a redirect and its target): the second waits for the
+      // first reading instead of failing the step.
+      const deadline = Date.now() + pendingWaitMs;
+      let result = await reader.read({ url, maxChars: 1 });
+      while (result.status === "pending" && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, PENDING_POLL_MS));
+        result = await reader.read({ url, maxChars: 1 });
+      }
       if (result.status === "ready") return { url, sourceId: result.sourceId };
       if (result.status === "pending") throw new Error(`Source ${url} is still being read`);
       return { url, error: result.errorCode ?? `source_${result.status}` };
