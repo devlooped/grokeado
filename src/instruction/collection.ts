@@ -9,7 +9,9 @@ import { mapLimit, normalizeSourceUrl, type CanonicalSource, type SourceBlock, t
 
 export type Proposal = EvidenceProposal & { by: Evidence["by"]; seq: number; at: string };
 export type FetchedUrl = { url: string; sourceId?: string; error?: string };
-export type RejectedProposal = Proposal & { reason: string };
+// finalUrl: the page the proposed URL led to, when it was read (a grounding
+// redirect names no page of its own).
+export type RejectedProposal = Proposal & { reason: string; finalUrl?: string };
 
 // The URLs fetched by one workflow step, so that no step waits on more than a
 // few downloads.
@@ -63,9 +65,9 @@ export async function collectEvidence(events: readonly RecordedEvent[], fetched:
     }
     const { source, blocks } = sources.get(result.sourceId)!;
     const match = matchQuote(blocks, proposal.quote);
-    if (!match) { rejected.push({ ...proposal, reason: "quote_not_found" }); continue; }
+    if (!match) { rejected.push({ ...proposal, reason: "quote_not_found", finalUrl: source.acquisition.finalUrl }); continue; }
     const excerpt = blocks.filter((block) => match.blockIds.includes(block.id)).map((block) => `[${block.id}] ${block.text}`).join("\n\n");
-    if (excerpt.length > MAX_EXCERPT_CHARS) { rejected.push({ ...proposal, reason: "passage_too_long" }); continue; }
+    if (excerpt.length > MAX_EXCERPT_CHARS) { rejected.push({ ...proposal, reason: "passage_too_long", finalUrl: source.acquisition.finalUrl }); continue; }
     // The same passage proposed twice by one analyst, with the same stance, is one contribution.
     const key = JSON.stringify([proposal.by, proposal.claimId, proposal.stance, source.sourceId, match.blockIds]);
     if (seen.has(key)) continue;
@@ -86,5 +88,5 @@ export async function collectEvidence(events: readonly RecordedEvent[], fetched:
 // The audit record of a proposal the host did not file: what was proposed, and why.
 export function rejectionRecord(proposal: RejectedProposal) {
   return { schemaVersion: 2 as const, id: `proposal:${proposal.seq}`, kind: "proposal_rejected" as const, at: proposal.at, seat: proposal.by, phase: "instruction",
-    data: { claimId: proposal.claimId, url: proposal.url, quote: proposal.quote, stance: proposal.stance, reason: proposal.reason } };
+    data: { claimId: proposal.claimId, url: proposal.url, ...(proposal.finalUrl ? { finalUrl: proposal.finalUrl } : {}), quote: proposal.quote, stance: proposal.stance, reason: proposal.reason } };
 }

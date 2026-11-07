@@ -11,12 +11,14 @@ const pages: Record<string, string> = {
   "https://example.org/informe": "El informe oficial indica que la inflación de octubre fue del 2,7 por ciento.\n\nOtro párrafo sin relación con la afirmación.",
   "https://example.org/nota": "La nota periodística sostiene que el dato oficial fue revisado al alza.",
 };
+// A grounding redirect, as Gemini cites its sources.
+const redirects: Record<string, string> = { "https://redirect.example/grounding/nota": "https://example.org/nota" };
 
 function reader() {
   let downloads = 0;
   const service = new SourceService("fixture", "es", { operations: new MemoryOperationRepository(), artifacts: new MemoryArtifactStore(), extract: extractSource,
     translatorModelId: "fixture/translator", translatorFingerprint: "fixture-v1", translate: async (input) => ({ ...input, changed: false }), verifyLanguage: async () => ({ matches: true }),
-    download: async (url) => { downloads++; return pages[url] ? { ok: true, finalUrl: url, redirects: 0, contentType: "text/plain", bytes: new TextEncoder().encode(pages[url]!) } : { ok: false, error: "http_404" }; },
+    download: async (url) => { downloads++; const target = redirects[url] ?? url; return pages[target] ? { ok: true, finalUrl: target, redirects: target === url ? 0 : 1, contentType: "text/plain", bytes: new TextEncoder().encode(pages[target]!) } : { ok: false, error: "http_404" }; },
   });
   return { service, downloads: () => downloads };
 }
@@ -31,11 +33,11 @@ test("the host fetches each proposed URL once, files matched quotes and groups t
     propose("grok", "A1", "https://example.org/informe#tabla", "la inflacion de octubre fue del 2,7 por ciento"),
     propose("claude", "A1", "https://example.org/informe", "La inflación de octubre fue del 2,7 por ciento.", "context"),
     propose("claude", "A1", "https://example.org/informe", "La inflación de octubre fue del 2,7 por ciento.", "context"),
-    propose("grok", "A1", "https://example.org/nota", "el dato oficial fue revisado a la baja según la nota", "opposes"),
+    propose("grok", "A1", "https://redirect.example/grounding/nota", "el dato oficial fue revisado a la baja según la nota", "opposes"),
     propose("claude", "A1", "https://example.org/caida", "Una página que ya no existe en el sitio."),
   ];
   const urls = proposedUrls(events);
-  assert.deepEqual(urls, ["https://example.org/informe", "https://example.org/nota", "https://example.org/caida"]);
+  assert.deepEqual(urls, ["https://example.org/informe", "https://redirect.example/grounding/nota", "https://example.org/caida"]);
   const { service, downloads } = reader();
   const fetched = await fetchProposedUrls(service, urls);
   assert.equal(downloads(), 3);
@@ -50,12 +52,13 @@ test("the host fetches each proposed URL once, files matched quotes and groups t
   assert.ok(unified?.type === "evidence_unified");
   assert.deepEqual(unified.sources.map((source) => [source.id, source.contributions.map((evidence) => evidence.id)]), [["E1", ["P1", "P2"]]]);
   assert.equal(unified.sources[0]!.sourceId, filed[0]!.sourceId);
-  assert.deepEqual(rejected.map((proposal) => proposal.reason), ["quote_not_found", "source_failed"]);
+  assert.deepEqual(rejected.map((proposal) => [proposal.reason, proposal.finalUrl]), [["quote_not_found", "https://example.org/nota"], ["source_failed", undefined]], "a rejection names the page a redirect led to");
   // Retried, the step reads the same operations back and files the same events.
   assert.deepEqual((await collectEvidence(events, await fetchProposedUrls(service, urls), service)).events, collected);
   assert.equal(downloads(), 3);
   const log = parseCaseLog(buildCaseLog([], rejected.map(rejectionRecord), []));
   assert.deepEqual(log.map((record) => [record.kind, record.seat, record.data.reason]), [["proposal_rejected", "grok", "quote_not_found"], ["proposal_rejected", "claude", "source_failed"]]);
+  assert.equal(log[0]!.data.finalUrl, "https://example.org/nota");
 });
 
 test("without proposals, collection files an empty source file", async () => {

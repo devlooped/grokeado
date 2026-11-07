@@ -6,6 +6,16 @@ export function normalizeQuoteText(value: string): string {
   return value.normalize("NFKD").replace(/\p{M}/gu, "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 }
 
+// The text a reader sees in a Markdown block: an image is not text, and a link
+// is its label, without its target or title, so that a quote across a link
+// still matches.
+export function readableText(markdown: string): string {
+  return markdown
+    .replace(/!\[[^\]]*\]\((?:[^()\s]|\([^()]*\))*(?:\s+"[^"]*")?\)/g, " ")
+    .replace(/\[([^\]]*)\]\((?:[^()\s]|\([^()]*\))*(?:\s+"[^"]*")?\)/g, "$1")
+    .replace(/<(?:https?|mailto):[^>\s]*>/g, " ");
+}
+
 // A shorter quote would match too many passages to attest anything.
 const MIN_QUOTE_CHARS = 20;
 const MIN_SEGMENT_CHARS = 8;
@@ -17,12 +27,13 @@ const MIN_SEGMENT_CHARS = 8;
 export function matchQuote(blocks: readonly SourceBlock[], quote: string): { blockIds: string[] } | undefined {
   const segments = quote.split(/…|\.{3,}|\[\s*(?:…|\.{3})\s*\]/u).map(normalizeQuoteText).filter(Boolean);
   if (!segments.length || segments.join(" ").length < MIN_QUOTE_CHARS || segments.some((segment) => segment.length < MIN_SEGMENT_CHARS)) return undefined;
+  const normalized = blocks.map((block) => normalizeQuoteText(readableText(block.text)));
   const starts: number[] = [];
   let text = "";
   for (const block of blocks) {
     if (text) text += " ";
     starts.push(text.length);
-    text += normalizeQuoteText(block.text);
+    text += normalized[starts.length - 1];
   }
   const covered = new Set<number>();
   let from = 0;
@@ -31,7 +42,7 @@ export function matchQuote(blocks: readonly SourceBlock[], quote: string): { blo
     if (at < 0) return undefined;
     const end = at + segment.length;
     blocks.forEach((block, index) => {
-      const start = starts[index]!, stop = start + normalizeQuoteText(block.text).length;
+      const start = starts[index]!, stop = start + normalized[index]!.length;
       if (start < end && stop > at) covered.add(index);
     });
     from = end;
