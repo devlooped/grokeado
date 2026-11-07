@@ -2,7 +2,7 @@ import { render } from "pele";
 
 // The source is fixed in the application, not supplied by visitors.
 export const PROCESS_DIAGRAM = `flowchart TD
-  accTitle: El proceso de un chequeo
+  accTitle: El proceso de un chequeo experto
   accDescr: Desde el material enviado hasta el cierre del debate, pasando por instrucción, crítica de fuentes, exposiciones, objeciones, votos y resultado.
   A["Se presenta un texto, enlace o imagen"] --> B["Se abre el debate: moderador y cuatro analistas"]
   B --> C{"¿Hay afirmaciones<br/>fácticas verificables?"}
@@ -53,7 +53,23 @@ export const PROCESS_DIAGRAM = `flowchart TD
     AC --> Z
   end`;
 
+export const QUICK_PROCESS_DIAGRAM = `flowchart TD
+  accTitle: El proceso de un chequeo rápido
+  accDescr: Los cuatro analistas investigan y votan el contenido completo en paralelo. Tres votos coincidentes deciden; con al menos tres votos sin mayoría, el moderador desempata sin investigar. Con menos de tres votos o si falla el desempate no hay resultado y un administrador puede reintentar el caso.
+  A["Se presenta un texto, enlace o imagen"] --> B["Los cuatro analistas investigan en paralelo<br/>con las herramientas de sus proveedores"]
+  B --> C["Cada analista responde y vota<br/>el contenido completo con fundamentos"]
+  C --> D["Se registran las respuestas, las citas<br/>de los proveedores, los votos y las ausencias"]
+  D --> E{"¿Hay 3 votos coincidentes?"}
+  E -- Sí --> F["Resultado por mayoría"]
+  E -- No --> G{"¿Hay al menos 3 votos?"}
+  G -- No --> H["Sin resultado: un administrador<br/>puede reintentar el caso"]
+  G -- Sí --> I["El moderador desempata con el contenido,<br/>las respuestas y los votos, sin investigar"]
+  I --> J{"¿Pudo desempatar?"}
+  J -- Sí --> K["Resultado con fundamento del moderador"]
+  J -- No --> H`;
+
 const diagram = render(PROCESS_DIAGRAM, { idPrefix: "proceso-metodo", responsive: false, links: false, images: false });
+const quickDiagram = render(QUICK_PROCESS_DIAGRAM, { idPrefix: "proceso-rapido", responsive: false, links: false, images: false });
 
 export function ProcessDiagram() {
   return (
@@ -65,8 +81,25 @@ export function ProcessDiagram() {
         className="process-diagram overflow-x-auto rounded-sm border border-rule bg-paper/70 p-4 sm:p-6"
         tabIndex={0}
         role="region"
-        aria-label="Diagrama del proceso; desplazá horizontalmente para verlo completo"
+        aria-label="Diagrama del chequeo experto; desplazá horizontalmente para verlo completo"
         dangerouslySetInnerHTML={{ __html: diagram.svg }}
+      />
+    </figure>
+  );
+}
+
+export function QuickProcessDiagram() {
+  return (
+    <figure className="mt-6">
+      <figcaption className="mb-2 text-xs text-ink-soft">
+        En pantallas pequeñas, deslizá horizontalmente para recorrer el diagrama completo.
+      </figcaption>
+      <div
+        className="process-diagram overflow-x-auto rounded-sm border border-rule bg-paper/70 p-4 sm:p-6"
+        tabIndex={0}
+        role="region"
+        aria-label="Diagrama del chequeo rápido; desplazá horizontalmente para verlo completo"
+        dangerouslySetInnerHTML={{ __html: quickDiagram.svg }}
       />
     </figure>
   );
