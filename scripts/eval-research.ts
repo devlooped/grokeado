@@ -1,5 +1,6 @@
 import nextEnv from "@next/env";
 import { gateway } from "ai";
+import { FatalError } from "workflow";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
@@ -13,12 +14,12 @@ import { holdSession } from "../src/court/procedure.ts";
 import { playSharedTurn } from "../src/court/settled-play.ts";
 import { COUNSEL, project, type CaseRecord, type Counsel, type RecordedEvent } from "../src/domain/court.ts";
 import { MemoryArtifactStore } from "../src/evidence/artifacts.ts";
-import { collectEvidence, fetchProposedUrls, proposedUrls, type RejectedProposal } from "../src/instruction/collection.ts";
+import { COLLECTION_BATCH, collectEvidence, fetchProposedUrls, proposedUrls, type FetchedUrl, type RejectedProposal } from "../src/instruction/collection.ts";
 import { criticismIndex } from "../src/instruction/criticism-index.ts";
 import { NATIVE_CALL_MARGIN_MS } from "../src/instruction/preparation.ts";
 import { sourceDownloader } from "../src/instruction/research.ts";
 import { MemoryOperationRepository } from "../src/instruction/source-store.ts";
-import { liveSourceDependencies, SourceService } from "../src/instruction/sources.ts";
+import { fatalSourceFailure, liveSourceDependencies, SourceService } from "../src/instruction/sources.ts";
 
 // Pipeline 3 research, in this process, with no sandbox and no database: the
 // production prompt builders and native tool table, the harness's call
@@ -85,6 +86,28 @@ function safeError(error: unknown) {
   return message.slice(0, 2500);
 }
 
+// Host collection as the court-session workflow runs it: a few URLs per step,
+// and a step that fails is retried (the Workflow default, 3 retries) unless the
+// failure is fatal. Source operations are durable, so a retry reads back what
+// the failed attempt already read.
+const STEP_MAX_RETRIES = 3, STEP_RETRY_DELAY_MS = 1000;
+async function fetchInSteps(reader: SourceService, urls: readonly string[]): Promise<FetchedUrl[]> {
+  const fetched: FetchedUrl[] = [];
+  for (let start = 0; start < urls.length; start += COLLECTION_BATCH) {
+    const batch = urls.slice(start, start + COLLECTION_BATCH);
+    for (let attempt = 0; ; attempt++) {
+      try { fetched.push(...await fetchProposedUrls(reader, batch)); break; }
+      catch (error) {
+        const failure = fatalSourceFailure(error);
+        if (failure instanceof FatalError || attempt >= STEP_MAX_RETRIES) throw failure;
+        console.log("REINTENTO recolección " + (start / COLLECTION_BATCH + 1) + " (" + (attempt + 1) + "/" + STEP_MAX_RETRIES + "): " + safeError(error));
+        await new Promise((resolve) => setTimeout(resolve, STEP_RETRY_DELAY_MS));
+      }
+    }
+  }
+  return fetched;
+}
+
 async function runCase(entry: ResearchCase): Promise<CaseResult & { trace: unknown[] }> {
   const caseId = "eval-research-" + entry.id;
   const submission = { ...entry.submission, resolvedLanguage: "es" };
@@ -138,7 +161,7 @@ async function runCase(entry: ResearchCase): Promise<CaseResult & { trace: unkno
       submission, models: { judge: models.judge.id, counsel: Object.fromEntries(COUNSEL.map((seat) => [seat, seatModel(models, seat).id])) as Record<Counsel, string> },
       commit: async (batch) => { events.push(...batch); },
       collect: async (log) => {
-        const collected = await collectEvidence(log, await fetchProposedUrls(reader, proposedUrls(log)), reader);
+        const collected = await collectEvidence(log, await fetchInSteps(reader, proposedUrls(log)), reader);
         rejected = collected.rejected;
         return collected.events;
       },
