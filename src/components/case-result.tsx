@@ -72,6 +72,7 @@ function Original({ c, view, models, citations, combined = false }: { c: CaseRec
   const s = c.submission;
   const claims = view.claims;
   const outcome = contentOutcome(view);
+  const quick = checkType(s) === "quick";
   return (
     <figure className={combined ? "min-w-0" : "min-w-0 rounded-sm border border-rule bg-paper/60 p-5"}>
       <figcaption className="mb-5 flex flex-wrap items-center gap-3">
@@ -102,16 +103,28 @@ function Original({ c, view, models, citations, combined = false }: { c: CaseRec
       {s.kind !== "text" && s.note && <p className="mt-3 text-sm text-ink-soft">Comentario: {s.note}</p>}
       {outcome?.method === "reported" && <p className="mt-3 text-xs text-ink-soft">Consenso informado en el <a href="#case-summary-title" className="text-celeste-deep underline">resumen del moderador</a>.</p>}
       {Object.keys(view.contentVotes).length > 0 && (
-        <details open={checkType(s) === "quick"} className="mt-3 text-sm">
-          <summary className="w-fit cursor-pointer text-xs text-celeste-deep hover:underline">Evaluaciones del contenido completo</summary>
+        <details open={quick} className="mt-3 text-sm">
+          <summary className="w-fit cursor-pointer text-xs text-celeste-deep hover:underline">{quick ? "Fundamentos de cada voto" : "Evaluaciones del contenido completo"}</summary>
           <ul className="mt-3 space-y-3 rounded-sm bg-paper-deep/50 p-4">
             {COUNSEL.map((by) => {
               const vote = view.contentVotes[by];
-              return <li key={by}><span className="font-semibold">{MODEL_NAME[by]}:</span>{" "}{vote ? <><span className={vote.verdict ? "font-semibold " + VERDICT_TEXT[vote.verdict] : "font-semibold"}>{vote.verdict ? VERDICT_LABEL[vote.verdict] : "No corresponde"}.</span>{" "}<span className="text-ink-soft"><Cited text={vote.rationale} ctx={citations} /></span></> : <span className="text-ink-soft">no votó.</span>}</li>;
+              return <li key={by} id={quick ? voteId("contenido", by) : undefined} tabIndex={quick ? -1 : undefined} className={quick ? "scroll-mt-24 target:rounded-sm target:bg-celeste/15" : undefined}><span className="font-semibold">{MODEL_NAME[by]}:</span>{" "}{vote ? <><span className={vote.verdict ? "font-semibold " + VERDICT_TEXT[vote.verdict] : "font-semibold"}>{vote.verdict ? VERDICT_LABEL[vote.verdict] : "No corresponde"}.</span>{" "}<span className="text-ink-soft"><Cited text={vote.rationale} ctx={citations} /></span></> : <span className="text-ink-soft">no votó.</span>}</li>;
             })}
             {view.contentJudgment?.method === "judge" && <li className="border-l-2 border-seal pl-3"><span className="font-semibold text-seal">Desempate del moderador:</span> <Cited text={view.contentJudgment.reasoning} ctx={citations} /></li>}
           </ul>
         </details>
+      )}
+      {quick && (
+        <div className="mt-4 flex flex-wrap items-center justify-end gap-3" role="group" aria-label="Votos de los analistas sobre el contenido">
+          {COUNSEL.map((by) => {
+            const vote = view.contentVotes[by];
+            return vote ? (
+              <a key={by} href={"#" + voteId("contenido", by)} aria-label={"Ver fundamento de " + MODEL_NAME[by] + ": " + (vote.verdict ? VERDICT_LABEL[vote.verdict] : "No corresponde")} className="rounded-full focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-celeste-deep">
+                <VoteChip model={by} verdict={vote.verdict} used={models[by]} />
+              </a>
+            ) : <VoteChip key={by} model={by} used={models[by]} />;
+          })}
+        </div>
       )}
     </figure>
   );

@@ -98,8 +98,8 @@ export function ModelName({ model }: { model: ModelUse }) {
   );
 }
 
-export function VoteChip({ model, verdict, used, size = "md" }: { model: Counsel; verdict?: Verdict; used?: ModelUse; size?: "sm" | "md" }) {
-  const label = MODEL_NAME[model] + (used ? " (" + modelDetail(used) + ")" : "") + ": " + (verdict ? VERDICT_LABEL[verdict] : "no votó");
+export function VoteChip({ model, verdict, used, size = "md" }: { model: Counsel; verdict?: Verdict | null; used?: ModelUse; size?: "sm" | "md" }) {
+  const label = MODEL_NAME[model] + (used ? " (" + modelDetail(used) + ")" : "") + ": " + (verdict ? VERDICT_LABEL[verdict] : verdict === null ? "No corresponde" : "no votó");
   return (
     <span title={label} aria-label={label} className={"relative inline-grid place-items-center rounded-full border border-rule bg-paper/70 shadow-sm " + (size === "sm" ? "size-6" : "size-10")}>
       <ModelMark model={model} className={size === "sm" ? "size-3" : "size-5"} />

@@ -60,6 +60,8 @@ test("the content card shows its own verdict and transparent votes without chang
   assert.ok(figure.textContent.includes("La narrativa omite contexto"));
   assert.ok(figure.textContent.includes("No corresponde"));
   assert.ok(figure.textContent.includes("Desempate del moderador"));
+  assert.equal(figure.querySelector("summary")?.textContent, "Evaluaciones del contenido completo");
+  assert.equal(figure.querySelector('[aria-label="Votos de los analistas sobre el contenido"]'), null);
   assert.ok(document.querySelector('[aria-label="Resultado de afirmaciones: Mixto"]'));
 });
 
@@ -370,9 +372,43 @@ test("a Quick check shows the content verdict with its four votes open, and no c
 ];
   const { document } = parseHTML(render(input, quick));
   assert.match(document.querySelector('[aria-label="Resultado del contenido completo: Falso"]')!.textContent, /Falso/);
-  const votes = [...document.querySelectorAll("details")].find((d) => d.querySelector("summary")?.textContent === "Evaluaciones del contenido completo")!;
+  const figure = document.querySelector("figure")!;
+  const votes = figure.querySelector("details")!;
+  assert.equal(votes.querySelector("summary")?.textContent, "Fundamentos de cada voto");
   assert.ok(votes.hasAttribute("open"));
   assert.equal(votes.querySelectorAll("li").length, 4);
+  const chips = figure.querySelector('[role="group"][aria-label="Votos de los analistas sobre el contenido"]')!;
+  assert.ok(chips.className.includes("justify-end"));
+  assert.equal(chips, figure.lastElementChild);
+  for (const [i, by] of COUNSEL.entries()) {
+    const link = chips.querySelector('a[href="#voto-contenido-' + by + '"]')!;
+    assert.ok(link.querySelector(".size-10 svg"), by + " has a model mark");
+    assert.ok(link.querySelector(".bg-" + (i === 0 ? "verdadero" : "falso")), by + " has a verdict");
+    assert.equal(document.getElementById("voto-contenido-" + by)?.closest("details"), votes);
+  }
+  assert.ok(chips.querySelector('[title="ChatGPT (gpt-6.1-sol high): Falso"]'));
   assert.equal(document.querySelector("#case-claims-title"), null);
   assert.match(document.toString(), /Chequeo rápido/);
+});
+
+test("quick content chips distinguish absent votes from recorded no corresponde votes", () => {
+  const input: CourtEvent[] = [
+    { type: "content_vote", by: "grok", verdict: null, rationale: "No corresponde." },
+    { type: "content_vote", by: "gemini", verdict: "enganoso", rationale: "Falta contexto." },
+  ];
+  for (const submission of [
+    { kind: "text" as const, text: "Contenido", check: "quick" as const },
+    { kind: "link" as const, url: "https://example.org", check: "quick" as const },
+    { kind: "image" as const, mimeType: "image/png", check: "quick" as const },
+  ]) {
+    const { document } = parseHTML(render(input, { ...c, submission, models: undefined }));
+    const chips = document.querySelector('[aria-label="Votos de los analistas sobre el contenido"]')!;
+    assert.ok(chips.querySelector('a[href="#voto-contenido-grok"][aria-label="Ver fundamento de Grok: No corresponde"] [aria-label="Grok: No corresponde"]'));
+    assert.ok(chips.querySelector('a[href="#voto-contenido-gemini"] [aria-label="Gemini: Engañoso"]'));
+    assert.ok(chips.querySelector('[aria-label="Claude: no votó"]'));
+    assert.ok(!chips.querySelector('a[href="#voto-contenido-claude"]'));
+  }
+  const empty = parseHTML(render([], { ...c, submission: { kind: "text", text: "Contenido", check: "quick" }, models: undefined })).document;
+  assert.equal(empty.querySelectorAll('[aria-label="Votos de los analistas sobre el contenido"] [title$="no votó"]').length, 4);
+  assert.equal(empty.querySelector("figure details"), null);
 });
