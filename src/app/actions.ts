@@ -1,15 +1,14 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { start } from "workflow/api";
 import { z } from "zod";
 import { CHECK_TYPES, type Submission } from "@/domain/court.ts";
 import { auth0 } from "@/lib/auth0.ts";
 import { BETA_MESSAGE, canRequestCase, isAdmin } from "@/lib/case-access.ts";
+import { startCourtSession } from "@/lib/case-workflow.ts";
 import { deleteCaseBlobs } from "@/evidence/blob.ts";
 import { withSandboxCleanup } from "@/instruction/preparation.ts";
 import { createNewCase, finishCase, requeueCase } from "@/store.ts";
-import { courtSession } from "@/workflows/court-session.ts";
 
 const IMAGE_TYPES = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif" } as const;
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
@@ -70,7 +69,7 @@ export async function requestFactCheck(_prev: RequestState, formData: FormData):
   }
   const id = await createNewCase(submission, image, user.sub);
   try {
-    await start(courtSession, [id]);
+    await startCourtSession(id);
   } catch (err) {
     console.error("could not start court session:", err);
     await finishCase(id, "failed", "No se pudo iniciar la sesión.");
@@ -84,7 +83,7 @@ export async function retryCase(id: string): Promise<void> {
 
   if (await requeueCase(id, withSandboxCleanup(deleteCaseBlobs))) {
     try {
-      await start(courtSession, [id]);
+      await startCourtSession(id);
     } catch (err) {
       console.error("could not start court session:", err);
       await finishCase(id, "failed", "No se pudo iniciar la sesión.");

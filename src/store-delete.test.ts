@@ -25,7 +25,7 @@ function fakeDatabase(t: TestContext, status: string | undefined) {
 test("deletes aliases and all related blobs before committing the cascading case delete", async (t) => {
   const calls = fakeDatabase(t, "resolved");
   assert.equal(await deleteCase("AA-123-BB", async (ids) => { calls.push("blob"); assert.deepEqual(ids, ["AA-123-BB", "old-id"]); }), "deleted");
-  assert.deepEqual(calls, ["BEGIN", "SELECT status FROM cases WHERE id = $1 FOR UPDATE", "SELECT old_id FROM case_aliases WHERE case_id = $1", "blob", "DELETE FROM cases WHERE id = $1", "COMMIT", "release"]);
+  assert.deepEqual(calls, ["BEGIN", "SELECT status, stopped_workflow_run_id FROM cases WHERE id = $1 FOR UPDATE", "SELECT old_id FROM case_aliases WHERE case_id = $1", "blob", "DELETE FROM cases WHERE id = $1", "COMMIT", "release"]);
 });
 
 test("does not delete active or missing cases and rolls back if blob cleanup fails", async (t) => {

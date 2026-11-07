@@ -12,7 +12,7 @@ export async function deleteCaseResponse(request: Request, id: string, user: Cas
   try {
     const result = await remove(id);
     if (result === "missing") return Response.json({ error: "Caso no encontrado." }, { status: 404 });
-    if (result === "active") return Response.json({ error: "No se puede eliminar un caso en curso." }, { status: 409 });
+    if (result === "active") return Response.json({ error: "El caso o una tarea detenida sigue en curso. Intentá de nuevo más tarde." }, { status: 409 });
     return new Response(null, { status: 204 });
   } catch (error) {
     console.error("Case deletion failed:", error);

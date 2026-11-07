@@ -14,7 +14,7 @@ export async function rerunCaseResponse(request: Request, id: string, user: Case
   try {
     const result = await deps.restartCase(id);
     if (result === "missing") return Response.json({ error: "Caso no encontrado." }, { status: 404 });
-    if (result === "active") return Response.json({ error: "No se puede volver a ejecutar un caso en curso." }, { status: 409 });
+    if (result === "active") return Response.json({ error: "El caso o una tarea detenida sigue en curso. Intentá de nuevo más tarde." }, { status: 409 });
     if (result === "missing-image") return Response.json({ error: "No se encontró la imagen original." }, { status: 409 });
     try {
       await deps.start(id);

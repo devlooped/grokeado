@@ -68,7 +68,7 @@ test("an authorized retry uses the transactional reset and does not restart a re
     if (originalUrl === undefined) delete process.env.DATABASE_URL;
     else process.env.DATABASE_URL = originalUrl;
   }
-  assert.ok(queries.some(({ sql }) => sql === "SELECT status FROM cases WHERE id = $1 FOR UPDATE"));
+  assert.ok(queries.some(({ sql }) => sql === "SELECT status, stopped_workflow_run_id FROM cases WHERE id = $1 FOR UPDATE"));
   assert.deepEqual(queries.find(({ sql }) => sql.startsWith("SELECT status"))?.values, ["failed-case"]);
   assert.ok(queries.some(({ sql }) => sql === "ROLLBACK"));
   assert.ok(!queries.some(({ sql }) => /^(UPDATE|DELETE)/.test(sql)));

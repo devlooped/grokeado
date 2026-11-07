@@ -30,7 +30,7 @@ test("restart keeps the ID and submission, while clearing all generated state an
   assert.deepEqual(blobs, [["AA-123-BB", "old-id"]]);
   assert.deepEqual(calls.map(({ sql }) => sql), [
     "BEGIN",
-    "SELECT status FROM cases WHERE id = $1 FOR UPDATE",
+    "SELECT status, stopped_workflow_run_id FROM cases WHERE id = $1 FOR UPDATE",
     "SELECT submission->>'kind' = 'image' AND NOT EXISTS (SELECT 1 FROM images WHERE case_id = $1) AS missing_image FROM cases WHERE id = $1",
     "SELECT old_id FROM case_aliases WHERE case_id = $1",
     "DELETE FROM events WHERE case_id = $1",
@@ -40,7 +40,7 @@ test("restart keeps the ID and submission, while clearing all generated state an
     "DELETE FROM case_phase_sessions WHERE case_id = $1",
     "DELETE FROM case_audit_records WHERE case_id = $1",
     "DELETE FROM case_sandbox_bindings WHERE case_id = $1",
-    "UPDATE cases SET created_at = $2, status = 'queued', submission = submission - 'resolvedLanguage', error = NULL, revision = revision + 1, models = NULL, pipeline_version = NULL WHERE id = $1",
+    "UPDATE cases SET created_at = $2, status = 'queued', submission = submission - 'resolvedLanguage', error = NULL, revision = revision + 1, models = NULL, pipeline_version = NULL, workflow_run_id = NULL, stopped_workflow_run_id = NULL WHERE id = $1",
     "COMMIT",
     "release",
   ]);

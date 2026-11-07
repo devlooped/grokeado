@@ -9,6 +9,7 @@ import { authorizeSandboxBinding, committedPhase, type SandboxBinding } from "./
 import { caseFailureMessage, type SnapshotHealth } from "./lib/admin-notifications.ts";
 import { publicToolActivities, ToolActivitySchema, type ToolActivity } from "./domain/tool-activity.ts";
 import type { PromptTranslationCache } from "./evidence/prompt-translation.ts";
+import { stoppedRunSettled } from "./lib/stopped-run.ts";
 
 export { newCaseId };
 
@@ -61,6 +62,8 @@ async function db(): Promise<Pool> {
        ALTER TABLE cases ADD COLUMN IF NOT EXISTS revision INTEGER NOT NULL DEFAULT 0;
        ALTER TABLE cases ADD COLUMN IF NOT EXISTS models JSONB;
        ALTER TABLE cases ADD COLUMN IF NOT EXISTS pipeline_version INTEGER;
+       ALTER TABLE cases ADD COLUMN IF NOT EXISTS workflow_run_id TEXT;
+       ALTER TABLE cases ADD COLUMN IF NOT EXISTS stopped_workflow_run_id TEXT;
        CREATE TABLE IF NOT EXISTS events (
          case_id TEXT NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
          seq INTEGER NOT NULL,
@@ -198,6 +201,47 @@ export async function createNewCase(submission: Submission, image?: Buffer, owne
   }
 }
 
+// Serialize starting and stopping with the case row. The workflow can begin
+// immediately, but its first database step waits until the run ID is saved.
+export async function startCaseWorkflow(id: string, start: () => Promise<{ runId: string }>, cancel: (runId: string) => Promise<void>): Promise<void> {
+  const client = await (await db()).connect();
+  let runId: string | undefined;
+  try {
+    await client.query("BEGIN");
+    const { rows } = await client.query<{ status: CaseStatus; workflow_run_id: string | null }>("SELECT status, workflow_run_id FROM cases WHERE id = $1 FOR UPDATE", [id]);
+    if (!rows[0] || rows[0].status !== "queued" || rows[0].workflow_run_id) throw new Error("El caso no está disponible para iniciar.");
+    runId = (await start()).runId;
+    await client.query("UPDATE cases SET workflow_run_id = $2 WHERE id = $1", [id, runId]);
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    if (runId) {
+      try { await cancel(runId); } catch (cancelError) { console.error("Could not cancel unrecorded workflow:", cancelError); }
+    }
+    throw error;
+  } finally { client.release(); }
+}
+
+export async function stopCaseWorkflow(id: string, cancel: (runId: string) => Promise<void>): Promise<"stopped" | "missing" | "inactive" | "unavailable"> {
+  const client = await (await db()).connect();
+  try {
+    await client.query("BEGIN");
+    const { rows } = await client.query<{ status: CaseStatus; workflow_run_id: string | null }>("SELECT status, workflow_run_id FROM cases WHERE id = $1 FOR UPDATE", [id]);
+    const row = rows[0];
+    if (!row || (row.status !== "queued" && row.status !== "in_session") || !row.workflow_run_id) {
+      await client.query("ROLLBACK");
+      return !row ? "missing" : row.status !== "queued" && row.status !== "in_session" ? "inactive" : "unavailable";
+    }
+    await cancel(row.workflow_run_id);
+    await client.query("UPDATE cases SET status = 'failed', error = $2, stopped_workflow_run_id = workflow_run_id WHERE id = $1", [id, "El análisis fue detenido por un administrador."]);
+    await client.query("COMMIT");
+    return "stopped";
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally { client.release(); }
+}
+
 // Persist the detection so retries reuse the same language as the first attempt.
 export async function saveCaseLanguage(id: string, language: string): Promise<void> {
   await (await db()).query("UPDATE cases SET submission = jsonb_set(submission, '{resolvedLanguage}', to_jsonb($2::text)) WHERE id = $1", [id, language]);
@@ -267,12 +311,16 @@ export async function deleteCase(id: string, deleteBlobs: (ids: string[]) => Pro
   const client = await (await db()).connect();
   try {
     await client.query("BEGIN");
-    const { rows } = await client.query<{ status: CaseStatus }>("SELECT status FROM cases WHERE id = $1 FOR UPDATE", [id]);
+    const { rows } = await client.query<{ status: CaseStatus; stopped_workflow_run_id: string | null }>("SELECT status, stopped_workflow_run_id FROM cases WHERE id = $1 FOR UPDATE", [id]);
     if (!rows.length) {
       await client.query("ROLLBACK");
       return "missing";
     }
     if (rows[0]!.status !== "resolved" && rows[0]!.status !== "failed") {
+      await client.query("ROLLBACK");
+      return "active";
+    }
+    if (rows[0]!.stopped_workflow_run_id && !await stoppedRunSettled(rows[0]!.stopped_workflow_run_id)) {
       await client.query("ROLLBACK");
       return "active";
     }
@@ -295,12 +343,16 @@ export async function restartCase(id: string, deleteBlobs: (ids: string[]) => Pr
   const client = await (await db()).connect();
   try {
     await client.query("BEGIN");
-    const { rows } = await client.query<{ status: CaseStatus }>("SELECT status FROM cases WHERE id = $1 FOR UPDATE", [id]);
+    const { rows } = await client.query<{ status: CaseStatus; stopped_workflow_run_id: string | null }>("SELECT status, stopped_workflow_run_id FROM cases WHERE id = $1 FOR UPDATE", [id]);
     if (!rows.length) {
       await client.query("ROLLBACK");
       return "missing";
     }
     if ((expectedStatus && rows[0]!.status !== expectedStatus) || (rows[0]!.status !== "resolved" && rows[0]!.status !== "failed")) {
+      await client.query("ROLLBACK");
+      return "active";
+    }
+    if (rows[0]!.stopped_workflow_run_id && !await stoppedRunSettled(rows[0]!.stopped_workflow_run_id)) {
       await client.query("ROLLBACK");
       return "active";
     }
@@ -319,7 +371,7 @@ export async function restartCase(id: string, deleteBlobs: (ids: string[]) => Pr
       await client.query(`DELETE FROM ${table} WHERE case_id = $1`, [id]);
     }
     await client.query(
-      "UPDATE cases SET created_at = $2, status = 'queued', submission = submission - 'resolvedLanguage', error = NULL, revision = revision + 1, models = NULL, pipeline_version = NULL WHERE id = $1",
+      "UPDATE cases SET created_at = $2, status = 'queued', submission = submission - 'resolvedLanguage', error = NULL, revision = revision + 1, models = NULL, pipeline_version = NULL, workflow_run_id = NULL, stopped_workflow_run_id = NULL WHERE id = $1",
       [id, new Date().toISOString()]
     );
     await client.query("COMMIT");
@@ -349,7 +401,7 @@ export async function renameCase(oldId: string, newId: string): Promise<void> {
   try {
     await client.query("BEGIN");
     const { rowCount } = await client.query(
-      "INSERT INTO cases (id, created_at, status, submission, owner_id, error, revision, models, pipeline_version) SELECT $2, created_at, status, submission, owner_id, error, revision, models, pipeline_version FROM cases WHERE id = $1",
+      "INSERT INTO cases (id, created_at, status, submission, owner_id, error, revision, models, pipeline_version, workflow_run_id, stopped_workflow_run_id) SELECT $2, created_at, status, submission, owner_id, error, revision, models, pipeline_version, workflow_run_id, stopped_workflow_run_id FROM cases WHERE id = $1",
       [oldId, newId]
     );
     if (rowCount !== 1) throw new Error("case " + oldId + " does not exist");
@@ -460,8 +512,8 @@ export async function openSession(id: string, requestedPipeline: PipelineVersion
       if (rows[0]) selected = await requestedPipeline(rows[0].submission);
     } else selected = requestedPipeline;
     if (sharedPipeline(selected)) await client.query("UPDATE cases SET pipeline_version = " + selected + " WHERE id = $1 AND pipeline_version IS NULL AND models IS NULL AND status = 'queued' AND NOT EXISTS (SELECT 1 FROM events WHERE case_id = $1)", [id]);
-    const { rows } = await client.query<CaseRow>("UPDATE cases SET status = 'in_session', error = NULL, pipeline_version = COALESCE(pipeline_version, 1) WHERE id = $1 RETURNING *", [id]);
-    if (!rows[0]) throw new Error("case " + id + " does not exist");
+    const { rows } = await client.query<CaseRow>("UPDATE cases SET status = 'in_session', error = NULL, pipeline_version = COALESCE(pipeline_version, 1) WHERE id = $1 AND status IN ('queued', 'in_session') RETURNING *", [id]);
+    if (!rows[0]) throw new Error("case " + id + " does not exist or is no longer active");
     if (!sharedPipeline(rows[0].pipeline_version)) await client.query("DELETE FROM events WHERE case_id = $1", [id]);
     await client.query("COMMIT");
     return toRecord(rows[0]);
@@ -483,14 +535,14 @@ export async function finishCase(id: string, status: "resolved" | "failed", erro
   if (status === "failed") {
     // The state change and alert commit together. Retried steps cannot duplicate it.
     await (await db()).query(
-      `WITH updated AS (UPDATE cases SET status = 'failed', error = $2 WHERE id = $1 AND status <> 'failed' RETURNING id)
+      `WITH updated AS (UPDATE cases SET status = 'failed', error = $2 WHERE id = $1 AND status <> 'failed' AND stopped_workflow_run_id IS NULL RETURNING id)
        INSERT INTO admin_notifications (created_at, title, message, case_id)
        SELECT $3, 'Falló un caso', $4, id FROM updated`,
       [id, error ?? null, new Date().toISOString(), caseFailureMessage(error)]
     );
     return;
   }
-  await (await db()).query("UPDATE cases SET status = $1, error = $2, revision = revision + CASE WHEN $1 = 'resolved' AND status <> 'resolved' THEN 1 ELSE 0 END WHERE id = $3", [status, error ?? null, id]);
+  await (await db()).query("UPDATE cases SET status = $1, error = $2, revision = revision + CASE WHEN $1 = 'resolved' AND status <> 'resolved' THEN 1 ELSE 0 END WHERE id = $3 AND stopped_workflow_run_id IS NULL", [status, error ?? null, id]);
 }
 
 // A resolved case whose stored files are gone becomes a failed run that an admin can
