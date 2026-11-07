@@ -23,7 +23,7 @@ const events = ([
   ...(["grok", "gemini", "claude", "chatgpt"] as const).flatMap((by) => ["E1", "E2"].map((sourceId) => ({ type: "source_review_vote", by, sourceId, veto: false, reason: "ok" }))),
 ] as const).map((event, index) => ({ ...event, seq: index + 1, at })) as unknown as RecordedEvent[];
 const rejected = [
-  { ...proposal("https://broken.example/", "c"), by: "gemini" as const, seq: 4, at, reason: "HTTP 404" },
+  { ...proposal("https://broken.example/", "c"), by: "gemini" as const, seq: 4, at, reason: "source_failed", detail: "HTTP 404" },
   { ...proposal(page, "invented"), by: "gemini" as const, seq: 5, at, reason: "quote_not_found" },
 ];
 const gather = (seat: GatherRecord["seat"], elapsedMs: number, finishReason = "stop"): GatherRecord => ({ seat, phase: "instruction", modelId: "m/" + seat, tools: ["p.web_search"], elapsedMs, finishReason, searches: 2, sources: 3, costUsd: 0.01 });
@@ -65,6 +65,12 @@ test("the thresholds gate on latency, quote matching, votes, X posts and tool er
   assert.equal(empty.bySeat.grok.matchedShare, undefined);
   assert.deepEqual([empty.checks.quotes, empty.checks.votes, empty.checks.x], [false, false, false]);
   assert.equal(seatMetrics(uncollected, "grok").duplicates, 0);
+});
+
+test("the report lists each rejected proposal with why its URL could not be read", () => {
+  const report = renderResearchReport([result], { started: at, finished: at, spentUsd: 0.5, maxUsd: 8 });
+  assert.match(report, /- Gemini · A1 · source_failed: https:\/\/broken\.example\/ \(HTTP 404\)/);
+  assert.match(report, /- Gemini · A1 · quote_not_found: https:\/\/www\.example\.org\/report\/\n/);
 });
 
 test("percentile takes the nearest rank", () => {

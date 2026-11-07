@@ -7,8 +7,10 @@ export type GatherRecord = {
   seat: Counsel; phase: "instruction" | "criticism"; modelId: string; tools: string[];
   elapsedMs: number; finishReason: string; searches: number; sources: number; costUsd: number | null; error?: string;
 };
+// detail: why the URL could not be read (the downloader's error), for a fetch failure.
+export type RejectedRecord = RejectedProposal & { detail?: string };
 export type CaseResult = {
-  id: string; references: readonly string[]; events: RecordedEvent[]; rejected: RejectedProposal[]; index: string;
+  id: string; references: readonly string[]; events: RecordedEvent[]; rejected: RejectedRecord[]; index: string;
   gathers: GatherRecord[];
   // Estimated from tokens and list prices, by seat, for the decision generations.
   decisionCostUsd: Partial<Record<Counsel, number>>;
@@ -134,6 +136,8 @@ export function renderResearchReport(results: readonly CaseResult[], run: { star
       const gather = result.gathers.find((g) => g.seat === seat && g.phase === "instruction");
       lines.push(`| ${MODEL_NAME[seat]} | ${gather?.modelId ?? "—"} | ${gather ? seconds(gather.elapsedMs) + " · " + (gather.error ? "error" : gather.finishReason) : "—"} | ${m.searches} | ${m.proposals} | ${m.uniqueUrls} | ${m.fetchFailures} | ${m.matched}/${m.quoteChecked} | ${m.filed} | ${m.duplicates} | ${m.votes}/${m.sources} | ${usd(m.costUsd)} |`);
     }
+    if (result.rejected.length) lines.push("", "Propuestas rechazadas:", "", ...result.rejected.map((p) =>
+      `- ${MODEL_NAME[p.by]} · ${p.claimId} · ${p.reason}: ${p.url}${p.finalUrl && p.finalUrl !== p.url ? " → " + p.finalUrl : ""}${p.detail ? " (" + p.detail.replaceAll("\n", " ") + ")" : ""}`));
     if (result.error) lines.push("", "Error del caso: " + result.error.replaceAll("\n", " "));
   }
   return lines.join("\n") + "\n";

@@ -18,14 +18,17 @@ export async function researchWorker(kind: "web_search" | "x_search", query: str
   return { text: result.text, sources: result.sources, usage: result.usage, modelId: model.id };
 }
 
-export function sourceDownloader(xResearcher: CourtModel, caseId?: string): typeof downloadUrl {
+export function sourceDownloader(xResearcher: CourtModel, caseId?: string, worker = researchWorker): typeof downloadUrl {
   return async (url): Promise<DownloadResult> => {
     const parsed = new URL(normalizeSourceUrl(url));
     if (!["x.com", "www.x.com", "twitter.com", "www.twitter.com"].includes(parsed.hostname)) return downloadUrl(url);
     if (!/^\/[^/]+\/status\/\d+\/?$/.test(parsed.pathname)) return { ok: false, error: "X source requires a public post URL" };
-    const result = await researchWorker("x_search", `Read this exact public post, including all available text and author/date attribution: ${parsed.href}`, xResearcher, caseId);
-    const verified = result.sources.some((source) => source.sourceType === "url" && normalizeSourceUrl(source.url).replace(/twitter\.com/, "x.com") === parsed.href.replace(/twitter\.com/, "x.com"));
-    if (!verified || !result.text.trim()) return { ok: false, error: "X post content unavailable" };
+    const result = await worker("x_search", `Read this exact public post, including all available text and author/date attribution: ${parsed.href}`, xResearcher, caseId);
+    const cited = result.sources.flatMap((source) => source.sourceType === "url" ? [source.url] : []);
+    const verified = cited.some((url) => normalizeSourceUrl(url).replace(/twitter\.com/, "x.com") === parsed.href.replace(/twitter\.com/, "x.com"));
+    // The reason is kept on the failed source operation: say which check failed.
+    if (!verified) return { ok: false, error: "X post content unavailable: the X search did not cite this post (" + (cited.length ? "cited " + cited.slice(0, 3).join(", ") + (cited.length > 3 ? ", …" : "") : "no sources cited") + ")" };
+    if (!result.text.trim()) return { ok: false, error: "X post content unavailable: the X search returned no text" };
     return { ok: true, bytes: new TextEncoder().encode(result.text), finalUrl: parsed.href, contentType: "text/plain", redirects: 0 };
   };
 }

@@ -5,7 +5,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { RESEARCH_CASES, type ResearchCase } from "../evals/research/cases.ts";
-import { renderResearchReport, summarize, type CaseResult, type GatherRecord } from "../evals/research/report.ts";
+import { renderResearchReport, summarize, type CaseResult, type GatherRecord, type RejectedRecord } from "../evals/research/report.ts";
 import { runCall, type Definition } from "../sandbox/harness/instruction-agent.ts";
 import { loadModels } from "../src/court/model-config.ts";
 import { modelSnapshot, seatModel } from "../src/court/models.ts";
@@ -14,12 +14,12 @@ import { holdSession } from "../src/court/procedure.ts";
 import { playSharedTurn } from "../src/court/settled-play.ts";
 import { COUNSEL, project, type CaseRecord, type Counsel, type RecordedEvent } from "../src/domain/court.ts";
 import { MemoryArtifactStore } from "../src/evidence/artifacts.ts";
-import { COLLECTION_BATCH, collectEvidence, fetchProposedUrls, proposedUrls, type FetchedUrl, type RejectedProposal } from "../src/instruction/collection.ts";
+import { COLLECTION_BATCH, collectEvidence, fetchProposedUrls, proposedUrls, type FetchedUrl } from "../src/instruction/collection.ts";
 import { criticismIndex } from "../src/instruction/criticism-index.ts";
 import { NATIVE_CALL_MARGIN_MS } from "../src/instruction/preparation.ts";
 import { sourceDownloader } from "../src/instruction/research.ts";
 import { MemoryOperationRepository } from "../src/instruction/source-store.ts";
-import { fatalSourceFailure, liveSourceDependencies, SourceService } from "../src/instruction/sources.ts";
+import { fatalSourceFailure, liveSourceDependencies, normalizeSourceUrl, SourceService } from "../src/instruction/sources.ts";
 
 // Pipeline 3 research, in this process, with no sandbox and no database: the
 // production prompt builders and native tool table, the harness's call
@@ -115,10 +115,22 @@ async function runCase(entry: ResearchCase): Promise<CaseResult & { trace: unkno
   const docket = { submission, today: new Date().toISOString().slice(0, 10), language: "es", models };
   const artifacts = new MemoryArtifactStore(), operations = new MemoryOperationRepository(), repository = new MemoryPhaseRepository();
   // No case ID for the live dependencies: they would record usage in the database.
-  const dependencies = { ...liveSourceDependencies(models.translator), operations, artifacts, download: sourceDownloader(models["research.x"]) };
+  // Why each URL could not be downloaded (an X post the X search did not
+  // return, an HTTP status), for the rejected proposals of the report.
+  const downloadFailures = new Map<string, string>();
+  const downloader = sourceDownloader(models["research.x"]);
+  const download: typeof downloader = async (...args) => {
+    try {
+      const result = await downloader(...args);
+      if (!result.ok) downloadFailures.set(args[0], result.error);
+      return result;
+    } catch (error) { downloadFailures.set(args[0], safeError(error)); throw error; }
+  };
+  const failureOf = (url: string) => { try { return downloadFailures.get(normalizeSourceUrl(url)); } catch { return undefined; } };
+  const dependencies = { ...liveSourceDependencies(models.translator), operations, artifacts, download };
   const reader = new SourceService(caseId, "es", dependencies);
   const events: RecordedEvent[] = [], gathers: GatherRecord[] = [], trace: unknown[] = [];
-  let rejected: RejectedProposal[] = [];
+  let rejected: RejectedRecord[] = [];
   const decisionCostUsd: Partial<Record<Counsel, number>> = {};
 
   // One call per preparation, as the VM would run it: native research with the
@@ -162,7 +174,7 @@ async function runCase(entry: ResearchCase): Promise<CaseResult & { trace: unkno
       commit: async (batch) => { events.push(...batch); },
       collect: async (log) => {
         const collected = await collectEvidence(log, await fetchInSteps(reader, proposedUrls(log)), reader);
-        rejected = collected.rejected;
+        rejected = collected.rejected.map((proposal) => { const detail = proposal.finalUrl ? undefined : failureOf(proposal.url); return detail ? { ...proposal, detail } : proposal; });
         return collected.events;
       },
       // The eval ends with source review; the debate is out of its scope.
