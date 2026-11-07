@@ -12,7 +12,7 @@ import { CaseUpdates } from "@/components/case-updates.tsx";
 import { GavelIcon } from "@/components/marks.tsx";
 import { CaseResult } from "@/components/case-result.tsx";
 import { SessionProgress } from "@/components/session-progress.tsx";
-import { caseShareMetadata, CHECK_LABEL, submissionExcerpt } from "@/domain/case.ts";
+import { caseShareMetadata, submissionExcerpt } from "@/domain/case.ts";
 import { caseCardImageUrl } from "@/domain/case-card.ts";
 import { checkType, COUNSEL_NAMES, seatModels, type CaseRecord, type RecordedEvent } from "@/domain/court.ts";
 import { project, sharedPipeline } from "@/domain/court.ts";
@@ -115,24 +115,13 @@ async function ResolvedCase({ c, id, revision }: { c: CaseRecord; id: string; re
   const simulated = events.some((e) => e.type === "session_opened" && e.simulated);
   const view = project(events);
   const models = seatModels(c, events);
-  const byJudge = view.claims.filter((cl) => cl.judgment?.method === "judge").length;
   const quick = checkType(c.submission) === "quick";
 
   return (
     <div className="case-enter">
-      <header className="reveal flex flex-wrap items-end justify-between gap-4 pt-4">
-        <div>
-          <p className="font-mono text-xs uppercase tracking-widest text-ink-soft">Caso Nº {c.id} · {date(c.createdAt)}</p>
-          <h1 className="mt-2 font-display text-5xl">{view.dismissal ? "Caso descartado" : "Resultado"}</h1>
-        </div>
-        {quick ? (
-          <p className="max-w-xs text-right text-sm text-ink-soft">{CHECK_LABEL.quick}: cada analista respondió y votó, sin debate.</p>
-        ) : !view.dismissal && (
-          <p className="max-w-xs text-right text-sm text-ink-soft">
-            {view.claims.length} {view.claims.length === 1 ? "afirmación examinada" : "afirmaciones examinadas"}
-            {byJudge > 0 ? ", " + byJudge + " " + (byJudge === 1 ? "desempatada" : "desempatadas") + " por el moderador" : ", todas por mayoría"}.
-          </p>
-        )}
+      <header className="reveal pt-4">
+        <h1 className="font-mono text-xs uppercase tracking-widest text-ink-soft">Caso Nº {c.id} · {date(c.createdAt)}</h1>
+        {view.dismissal && <p className="mt-2 font-display text-5xl">Caso descartado</p>}
       </header>
 
       {simulated && <p role="status" className="mt-4 rounded-sm border border-seal/40 bg-seal/5 p-4 text-sm text-seal">Simulación local: las fuentes, respuestas y el resultado son ficticios y solo sirven para probar el flujo.</p>}

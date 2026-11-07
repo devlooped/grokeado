@@ -77,7 +77,7 @@ function Original({ c, view, models, citations, combined = false }: { c: CaseRec
     <figure className={combined ? "min-w-0" : "min-w-0 rounded-sm border border-rule bg-paper/60 p-5"}>
       <figcaption className="mb-5 flex flex-wrap items-center gap-3">
         <span className="grid size-9 shrink-0 place-items-center rounded-sm border border-rule text-celeste-deep"><MegaphoneIcon className="size-5" /></span>
-        <span className="font-display text-2xl">Contenido</span>
+        <span className="font-display text-2xl">{quick ? "Chequeo Rápido" : "Chequeo Experto"}</span>
         {outcome ? (
           <span className={"ml-auto inline-flex items-center gap-1.5 text-right font-display text-xl " + VERDICT_TEXT[outcome.verdict]} aria-label={"Resultado del contenido completo: " + VERDICT_LABEL[outcome.verdict]}>
             <VerdictDot verdict={outcome.verdict} /> {VERDICT_LABEL[outcome.verdict]}

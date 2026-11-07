@@ -44,7 +44,7 @@ test("the content, panel and claims form an overview immediately before the mode
   const html = render(events);
   const { document } = parseHTML(html);
   const overview = document.querySelector("[data-case-overview]")!;
-  assert.equal(overview.querySelector("figure figcaption")?.textContent, "Contenido");
+  assert.equal(overview.querySelector("figure figcaption")?.textContent, "Chequeo Experto");
   assert.ok(overview.querySelector("figure figcaption svg"), "the content has a margin icon");
   assert.ok(overview.querySelector('[aria-labelledby="case-panel-title"] svg'), "the panel has a margin icon");
   assert.equal(overview.querySelectorAll("article[data-claim]").length, 2);
@@ -94,7 +94,7 @@ test("a text submission identical to its sole claim shares one card with the res
   const card = document.getElementById("A1")!;
   assert.equal(document.querySelectorAll("article[data-claim]").length, 1);
   assert.equal(card.querySelector("figure")?.closest("article"), card);
-  assert.equal(card.querySelector("figcaption")?.textContent, "ContenidoA1");
+  assert.equal(card.querySelector("figcaption")?.textContent, "Chequeo ExpertoA1");
   assert.equal(card.textContent.split(text).length - 1, 1, "the claim's text appears only once");
   assert.ok(!card.querySelector("h3"));
   assert.ok(!card.querySelector("blockquote a"), "no duplicate inline result or vote tooltip");
@@ -383,6 +383,7 @@ test("a Quick check shows the content verdict and four votes with reasons collap
   const { document } = parseHTML(render(input, quick));
   assert.match(document.querySelector('[aria-label="Resultado del contenido completo: Falso"]')!.textContent, /Falso/);
   const figure = document.querySelector("figure")!;
+  assert.ok(figure.querySelector("figcaption")?.textContent?.startsWith("Chequeo Rápido"));
   const votes = figure.querySelector("details")!;
   assert.equal(votes.querySelector("summary")?.textContent, "Fundamentos de cada voto");
   assert.ok(!votes.hasAttribute("open"));
@@ -412,6 +413,7 @@ test("quick content chips distinguish absent votes from recorded no corresponde 
     { kind: "image" as const, mimeType: "image/png", check: "quick" as const },
   ]) {
     const { document } = parseHTML(render(input, { ...c, submission, models: undefined }));
+    assert.equal(document.querySelector("figure figcaption")?.textContent, "Chequeo Rápido");
     const chips = document.querySelector('[aria-label="Votos de los analistas sobre el contenido"]')!;
     assert.ok(chips.querySelector('a[href="#voto-contenido-grok"][aria-label="Ver fundamento de Grok: No corresponde"] [aria-label="Grok: No corresponde"]'));
     assert.ok(chips.querySelector('a[href="#voto-contenido-gemini"] [aria-label="Gemini: Engañoso"]'));
